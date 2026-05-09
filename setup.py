@@ -18,13 +18,14 @@ def instalar_dependencias():
         sys.exit(1)
 
 def descargar_datos():
-    import gdown # Lo importamos aquí para asegurar que ya se instaló en el paso 1
     print("\n☁️  Paso 2: Descargando base de datos y modelo IA desde Google Drive (~150MB+)...")
     try:
-        # Descarga directa usando el ID
-        gdown.download(id=FILE_ID, output=DESTINO_ZIP, quiet=False)
+        # Ejecutamos gdown como un comando de terminal independiente
+        # Esto evita problemas de importación en tiempo real y gestiona mejor la red
+        comando = [sys.executable, "-m", "gdown", "--id", FILE_ID, "-O", DESTINO_ZIP]
+        subprocess.check_call(comando)
     except Exception as e:
-        print(f"❌ Error al descargar: {e}")
+        print(f"❌ Error al descargar con gdown: {e}")
         sys.exit(1)
 
 def extraer_datos():

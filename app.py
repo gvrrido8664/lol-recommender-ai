@@ -1,3 +1,4 @@
+import json
 import tkinter as tk
 from tkinter import ttk, messagebox
 import pickle
@@ -6,6 +7,8 @@ import requests
 from io import BytesIO
 from PIL import Image, ImageTk
 import numpy as np
+import joblib
+
 
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, obtener_version_actual
@@ -15,6 +18,9 @@ from src.recomendador import obtener_counters, obtener_top_items, obtener_campeo
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets", "items")
 os.makedirs(ASSETS_DIR, exist_ok=True)
+modelo_1v1 = joblib.load("data/modelo_1v1.pkl")   # diccionario rol -> modelo binario
+with open("assets/campeones.json", "r", encoding="utf-8-sig") as f:
+    campeones = json.load(f)
 
 class LoLRecommenderApp:
     def __init__(self, root):
@@ -254,34 +260,30 @@ class LoLRecommenderApp:
         self.lbl_resultado_ia.pack(pady=10)
 
     def predecir_ia(self):
-        if not self.modelo_ia:
-            messagebox.showerror("Error", "El modelo de IA no está cargado.")
-            return
-
         rol = self.cb_ia_rol.get()
         aliado = self.cb_ia_aliado.get()
         enemigo = self.cb_ia_enemigo.get()
 
-        if rol not in self.modelo_ia:
-            self.lbl_resultado_ia.config(text="⚠️ Sin entrenamiento para esta línea.", fg="orange")
+        if not aliado or not enemigo:
+            self.lbl_resultado_ia.config(text="Selecciona ambos campeones.")
             return
 
-        datos_modelo = self.modelo_ia[rol]
-        modelo = datos_modelo["model"]
-        champs_conocidos = datos_modelo["champs"]
-
-        if aliado not in champs_conocidos or enemigo not in champs_conocidos:
-            self.lbl_resultado_ia.config(text="⚠️ Datos insuficientes para estos campeones.", fg="orange")
+        if rol not in modelo_1v1:
+            self.lbl_resultado_ia.config(text="Modelo no disponible para este rol.")
             return
 
-        n = len(champs_conocidos)
-        X_input = np.zeros((1, n * 2))
-        X_input[0, champs_conocidos.index(aliado)] = 1
-        X_input[0, n + champs_conocidos.index(enemigo)] = 1
+        modelo = modelo_1v1[rol]
 
-        prob_victoria = modelo.predict_proba(X_input)[0][1] * 100 
-        color = "green" if prob_victoria >= 50 else "red"
-        self.lbl_resultado_ia.config(text=f"Probabilidad de victoria para {aliado}: {prob_victoria:.1f}%", fg=color)
+        # Construir vector one-hot con la lista global limpia (sin abrir JSON)
+        n = len(self.nombres_campeones_global)
+        X = np.zeros(n * 2)
+        if aliado in self.nombres_campeones_global:
+            X[self.nombres_campeones_global.index(aliado)] = 1
+        if enemigo in self.nombres_campeones_global:
+            X[n + self.nombres_campeones_global.index(enemigo)] = 1
+
+        prob = modelo.predict_proba(X.reshape(1, -1))[0][1] * 100
+        self.lbl_resultado_ia.config(text=f"Victoria estimada: {prob:.1f}%")
 
 if __name__ == "__main__":
     root = tk.Tk()

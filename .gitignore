@@ -12,6 +12,7 @@ data/modelo_ia.pkl
 data/champion.json
 data/item_data.json
 assets/items/*.png
+data/modelo_1v1.pkl
 
 # Archivos del sistema operativo
 .DS_Store

@@ -35,3 +35,6 @@ Hemos preparado un script automatizado que instala las dependencias y descarga l
    `python app.py`
 
 *(Nota: Si deseas recolectar tus propios datos más adelante, recuerda configurar tu API Key en `src/recolector_masivo.py`).*
+
+# Nota abomdevp
+Prueba para validar Pull Request

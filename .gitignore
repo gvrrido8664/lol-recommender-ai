@@ -1,0 +1,18 @@
+# Entornos virtuales
+venv/
+env/
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+
+# Archivos de datos pesados y cachés
+data/lol_data.db
+data/modelo_ia.pkl
+data/champion.json
+data/item_data.json
+assets/items/*.png
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db

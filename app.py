@@ -7,6 +7,10 @@ from io import BytesIO
 from PIL import Image, ImageTk
 import numpy as np
 
+import json
+# Tooltip reutilizable para mostrar información al pasar el mouse sobre los iconos
+from src.tooltip import Tooltip
+
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, obtener_version_actual
 from src.recomendador import obtener_counters, obtener_top_items, obtener_campeones_por_rol
@@ -30,6 +34,9 @@ class LoLRecommenderApp:
         self.version_juego = obtener_version_actual()
         self.roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 
+        # Carga datos locales de objetos para tooltips y esta información viene desde data/item_data.json y se consulta usando el ID del objeto.
+        self.item_data = self.cargar_item_data()
+
         self.modelo_ia = None
         modelo_path = os.path.join(DATA_DIR, "modelo_ia.pkl")
         if os.path.exists(modelo_path):
@@ -45,6 +52,48 @@ class LoLRecommenderApp:
         self.crear_interfaz()
         self.actualizar_listas_counter()
         self.actualizar_listas_ia()
+
+    def cargar_item_data(self):
+        """Carga la información local de objetos desde data/item_data.json."""
+        ruta_items = os.path.join(DATA_DIR, "item_data.json")
+
+        if not os.path.exists(ruta_items):
+            print("No se encontró item_data.json")
+            return {}
+
+        try:
+            with open(ruta_items, "r", encoding="utf-8") as archivo:
+                return json.load(archivo)
+        except Exception as error:
+            print(f"Error cargando item_data.json: {error}")
+            return {}
+        
+    def obtener_tooltip_item(self, item_id):
+        """Genera el texto del tooltip para un objeto usando data/item_data.json."""
+        item_id = str(item_id)
+        item = self.item_data.get(item_id)
+
+        if not item:
+            return f"Objeto ID: {item_id}\nSin información disponible."
+
+        nombre = item.get("nombre", f"Objeto {item_id}")
+        oro = item.get("oro", "N/D")
+        tags = item.get("tags", [])
+        avanza_a = item.get("avanza_a", [])
+
+        lineas = [
+            nombre,
+            "",
+            f"Oro: {oro}"
+        ]
+
+        if tags:
+            lineas.append(f"Tags: {', '.join(tags)}")
+
+        if avanza_a:
+            lineas.append(f"Puede avanzar a: {len(avanza_a)} objetos")
+
+        return "\n".join(lineas)
 
     def crear_interfaz(self):
         lbl_titulo = tk.Label(self.root, text="Asistente de Draft & Análisis de Meta", font=("Helvetica", 16, "bold"))
@@ -108,6 +157,10 @@ class LoLRecommenderApp:
         
         lbl_img = tk.Label(frame_padre, image=foto, bg="#eef2f3", bd=2, relief="solid")
         lbl_img.grid(row=fila, column=columna, padx=4)
+
+        # Al pasar el mouse sobre la imagen, se muestra la información del objeto cargada desde item_data.json.
+        tooltip_text = self.obtener_tooltip_item(item_id)
+        Tooltip(lbl_img, tooltip_text)
     
     def armar_tab_counters(self, frame):
         frame.configure(padding=10)

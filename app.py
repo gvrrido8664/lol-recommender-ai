@@ -415,7 +415,7 @@ class LoLRecommenderApp:
         for w in self.frame_iconos_items.winfo_children(): w.destroy()
         for w in self.frame_iconos_runas.winfo_children(): w.destroy()
 
-        resultados = obtener_counters(rol, enemigo, min_partidas=15)
+        resultados = obtener_counters(rol, enemigo, min_partidas=5)
         if not resultados: return messagebox.showinfo("Aviso", "Datos insuficientes.")
 
         for champ, winrate, partidas in resultados[:5]:

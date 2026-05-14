@@ -7,13 +7,29 @@ from .riot_api import cargar_objetos, cargar_runas, cargar_campeones
 ITEMS_DATA = cargar_objetos()
 RUNAS_DATA = cargar_runas()
 
+# Ítems especiales por rol
 ITEMS_JUNGLA = ["1101", "1102", "1103"]
+
+# Starter base de support (por si no hay estadísticas)
 ITEM_SUPP_BASE = "3865"
-# Incluimos absolutamente TODAS las evoluciones de Soporte
+
+# Evoluciones finales de support (objeto de misión mejorado)
 ITEMS_SUPP_FINAL = ["3866", "3867", "3869", "3870", "3871", "3873", "3874"]
 
-# Lista de IDs absolutos de Botas para hacer bypass al filtro de Riot
-BOTAS_REALES = ["1001", "2422", "3006", "3009", "3020", "3047", "3111", "3117", "3158", "3301", "3302", "3303", "3156"]
+# Starters posibles de support (dependen del parche, ajusta si hace falta)
+SUPPORT_STARTERS = ["3865", "3850", "3851", "3854", "3855"]
+
+# Botas reales (solo boots, sin colar items core tipo Maw, etc.)
+BOTAS_REALES = [
+    "1001",  # Botas básicas
+    "3006",  # Grebas de berserker
+    "3009",  # Botas de rapidez
+    "3020",  # Zapatos del hechicero
+    "3047",  # Tabi
+    "3111",  # Mercurial
+    "3117",  # Movilidad
+    "3158",  # Lucidez
+]
 
 def obtener_campeones_por_rol(rol_api, porcentaje_minimo=0.01):
     conn = obtener_conexion()
@@ -48,105 +64,172 @@ def obtener_counters(carril, enemigo, min_partidas=3):
     return resultados
 
 def obtener_top_items(campeon, carril):
+    """
+    Devuelve:
+      - combo_starters: lista de IDs de ítems de inicio (starter + pociones)
+      - build_final: lista de 7 ítems para ADC (BOTTOM) o 6 para el resto,
+        siempre con 1 bota (salvo Cassiopeia) y, si es support, 1 ítem de misión mejorado.
+    Todo se calcula 100% por estadística desde la tabla 'participantes'.
+    """
     conn = obtener_conexion()
     cur = conn.cursor()
-    
-    # 1. Buscamos todas las partidas (Win y Lose) para máximo volumen estadístico
-    cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND team_position = ? AND items != ''", (campeon, carril))
+
+    # 1) Traemos todas las partidas de ese campeón y rol
+    cur.execute(
+        "SELECT items, win FROM participantes "
+        "WHERE champion = ? AND team_position = ? AND items != ''",
+        (campeon, carril),
+    )
     filas_rol = cur.fetchall()
 
+    # Si no hay suficientes datos para ese rol, usamos cualquier posición
     if not filas_rol:
-        cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND items != ''", (campeon,))
+        cur.execute(
+            "SELECT items, win FROM participantes "
+            "WHERE champion = ? AND items != ''",
+            (campeon,),
+        )
         filas_rol = cur.fetchall()
-        
-    conn.close()
 
+    if not filas_rol:
+        conn.close()
+        # Fallback extremo si no hay NADA en la BD para ese campeón
+        return ["1056", "2003", "2003"], []
+
+    # 2) Conteos ponderados por win/lose
     core_count = {}
     botas_count = {}
     supp_final_count = {}
     starters_count = {}
 
     for row in filas_rol:
-        items_lista = row["items"].split(",")
-        is_win = row["win"] == 1
-        # Ponderación doble si el item garantizó la victoria
+        items_lista = [i.strip() for i in row["items"].split(",") if i and i.strip() != "0"]
+        is_win = bool(row["win"])
         peso = 2 if is_win else 1
-        
+
         for i in items_lista:
-            i = str(i).strip()
-            if not i or i == "0": continue
-            
-            # BYPASS: Evaluamos IDs fijos antes de consultar la metadata de Riot
-            es_bota = i in BOTAS_REALES
-            es_supp = i in ITEMS_SUPP_FINAL
-            
             info = ITEMS_DATA.get(i, {})
             costo = info.get("oro", 0)
             tags = info.get("tags", [])
-            
-            if "Consumable" in tags or "Vision" in tags or "Trinket" in tags: continue
-            
-            if not es_bota and info:
-                if "Boots" in tags and costo < 1600:
-                    es_bota = True
 
-            # Clasificación Estadística Directa
+            # Consumibles, wards, trinkets fuera del análisis core
+            if "Consumable" in tags or "Vision" in tags or "Trinket" in tags:
+                continue
+
+            # Clasificación por tipo
+            es_bota = (i in BOTAS_REALES) or ("Boots" in tags and costo < 1600)
+            es_supp = i in ITEMS_SUPP_FINAL
+
             if es_bota:
-                if i not in ["1001", "2422"]: # Ignoramos botas tier 1
+                # Ignoramos botas tier 1 para el build final
+                if i not in ["1001", "2422"]:
                     botas_count[i] = botas_count.get(i, 0) + peso
             elif es_supp:
                 supp_final_count[i] = supp_final_count.get(i, 0) + peso
-            elif costo <= 500 and not es_bota and int(i) not in [2003, 2031, 2033]:
+            elif costo <= 500 and i not in ["2003", "2031", "2033"]:
                 starters_count[i] = starters_count.get(i, 0) + peso
             else:
+                # Core: míticos/legendarios o ítems que no avanzan a nada
                 if costo >= 1500 or (costo == 0 and not info.get("avanza_a")):
                     core_count[i] = core_count.get(i, 0) + peso
 
-    # --- STARTERS ---
+    # 3) Elegir starter principal según rol (estadístico)
     if carril == "JUNGLE":
+        # Sólo starters de jungla
         jg_items = {k: v for k, v in starters_count.items() if k in ITEMS_JUNGLA}
         starter_principal = max(jg_items, key=jg_items.get) if jg_items else "1102"
     elif carril == "UTILITY":
-        starter_principal = ITEM_SUPP_BASE
+        # Support: starters típicos de support por estadística
+        supp_starters = {k: v for k, v in starters_count.items() if k in SUPPORT_STARTERS}
+        if supp_starters:
+            starter_principal = max(supp_starters, key=supp_starters.get)
+        else:
+            starter_principal = ITEM_SUPP_BASE  # último fallback
     else:
+        # Cualquier otro rol: starter más frecuente o anillo de Doran
         starter_principal = max(starters_count, key=starters_count.get) if starters_count else "1056"
 
     combo_starters = [starter_principal]
     costo_base = ITEMS_DATA.get(starter_principal, {}).get("oro", 0)
     pociones = max(0, (500 - costo_base) // 50)
-    for _ in range(pociones): combo_starters.append("2003")
+    for _ in range(pociones):
+        combo_starters.append("2003")
 
-    # --- BUILD FINAL 100% ESTADÍSTICA ---
+    # 4) Build final: botas + (support final) + core por frecuencia
+
     build_final_limpia = []
-    
+
+    # 4.1 Botas (Cassiopeia no compra boots)
     if campeon != "Cassiopeia":
+        if not botas_count:
+            # Fallback estadístico global por rol: botas más usadas en ese carril
+            cur.execute(
+                "SELECT items FROM participantes "
+                "WHERE team_position = ? AND items != ''",
+                (carril,),
+            )
+            filas_botas = cur.fetchall()
+            global_botas = {}
+            for row in filas_botas:
+                for i in row["items"].split(","):
+                    i = i.strip()
+                    if not i or i == "0":
+                        continue
+                    info = ITEMS_DATA.get(i, {})
+                    costo = info.get("oro", 0)
+                    tags = info.get("tags", [])
+                    es_bota = (i in BOTAS_REALES) or ("Boots" in tags and costo < 1600)
+                    if es_bota and i not in ["1001", "2422"]:
+                        global_botas[i] = global_botas.get(i, 0) + 1
+            if global_botas:
+                botas_count = global_botas
+
         if botas_count:
             bota = max(botas_count, key=botas_count.get)
-        else:
-            bota = "3006" if carril == "BOTTOM" else "3111" # Fallback solo en caso crítico
-        build_final_limpia.append(bota)
-        
+            build_final_limpia.append(bota)
+
+    # 4.2 Ítem de misión final de support (mejorado)
     item_supp_mejorado = None
     if carril == "UTILITY":
+        if not supp_final_count:
+            # Fallback estadístico global de supports
+            cur.execute(
+                "SELECT items FROM participantes "
+                "WHERE team_position = 'UTILITY' AND items != ''"
+            )
+            filas_supp = cur.fetchall()
+            global_supp = {}
+            for row in filas_supp:
+                for i in row["items"].split(","):
+                    i = i.strip()
+                    if i in ITEMS_SUPP_FINAL:
+                        global_supp[i] = global_supp.get(i, 0) + 1
+            if global_supp:
+                supp_final_count = global_supp
+
         if supp_final_count:
             item_supp_mejorado = max(supp_final_count, key=supp_final_count.get)
-        else:
-            item_supp_mejorado = "3869" # Fallback extremo
-        build_final_limpia.append(item_supp_mejorado)
-        
-    limite = 7 if carril == "BOTTOM" else 6
-    espacios_restantes = limite - len(build_final_limpia)
-    
-    core_ordenado = sorted(core_count, key=core_count.get, reverse=True)[:espacios_restantes]
-    build_final_limpia.extend(core_ordenado)
+            build_final_limpia.append(item_supp_mejorado)
 
-    # Ordenamos el "Core" por coste, pero mantenemos Bota y Supp fijados al inicio
+    # 4.3 Core: rellenar hasta 7 (ADC) o 6 (resto) con los ítems más frecuentes
+    limite = 7 if carril == "BOTTOM" else 6
+    espacios_restantes = max(0, limite - len(build_final_limpia))
+
+    if core_count and espacios_restantes > 0:
+        core_ordenado = sorted(core_count, key=core_count.get, reverse=True)[:espacios_restantes]
+        build_final_limpia.extend(core_ordenado)
+
+    # 4.4 Ordenar sólo el core por coste, manteniendo botas/supp fijos adelante
     if espacios_restantes > 0:
-        core_items_ordenados = sorted(build_final_limpia[-espacios_restantes:], key=lambda x: ITEMS_DATA.get(x, {}).get("oro", 0))
+        core_items_ordenados = sorted(
+            build_final_limpia[-espacios_restantes:],
+            key=lambda x: ITEMS_DATA.get(x, {}).get("oro", 0)
+        )
         build_final = build_final_limpia[:-espacios_restantes] + core_items_ordenados
     else:
         build_final = build_final_limpia
 
+    conn.close()
     return combo_starters, build_final
 
 def obtener_top_runas(campeon, carril):

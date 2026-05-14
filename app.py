@@ -12,8 +12,8 @@ import joblib
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
-                              obtener_top_runas, obtener_top_hechizos, obtener_mejores_baneos, recomendar_picks_vivo, 
-                              calcular_winrate_5v5, analizar_composicion)
+                              obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, recomendar_picks_vivo, 
+                              calcular_winrate_5v5, analizar_composicion,)
 from src.lcu_api import LCUConnector
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -96,14 +96,37 @@ class LoLRecommenderApp:
         self.root.option_add('*TCombobox*Listbox.selectForeground', BG_DARK)
 
         style = ttk.Style()
-        style.theme_use('clam')
+        style.theme_use("clam")
+
         style.configure("TNotebook", background=BG_DARK, borderwidth=0)
-        style.configure("TNotebook.Tab", background=BG_PANEL, foreground=TEXT_GOLD, font=("Helvetica", 10, "bold"), padding=[15, 5])
-        style.map("TNotebook.Tab", background=[("selected", BORDER_GOLD)], foreground=[("selected", BG_DARK)])
+
+        style.configure(
+            "TNotebook.Tab",
+            background=BG_PANEL,
+            foreground=TEXT_GOLD,
+            font=("Helvetica", 10, "bold"),
+            padding=(15, 5),
+            borderwidth=0,
+            relief="flat"
+        )
+
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", BORDER_GOLD), ("!selected", BG_PANEL)],
+            foreground=[("selected", BG_DARK), ("!selected", TEXT_GOLD)],
+            padding=[("selected", (15, 5)), ("!selected", (15, 5))],
+            relief=[("selected", "flat"), ("!selected", "flat")],
+            expand=[("selected", [0, 0, 0, 0]), ("!selected", [0, 0, 0, 0])]
+        )
+
         style.configure("Treeview", background=BG_PANEL, foreground=TEXT_WHITE, fieldbackground=BG_PANEL, borderwidth=0)
         style.configure("Treeview.Heading", background=BORDER_GOLD, foreground=BG_DARK, font=("Helvetica", 10, "bold"))
         style.configure("TCombobox", fieldbackground=BG_PANEL, background=BG_PANEL, foreground=TEXT_WHITE, arrowcolor=TEXT_GOLD)
-        style.map('TCombobox', fieldbackground=[('readonly', BG_PANEL)], selectbackground=[('readonly', BORDER_GOLD)], selectforeground=[('readonly', BG_DARK)])
+        style.map("TCombobox",
+            fieldbackground=[("readonly", BG_PANEL)],
+            selectbackground=[("readonly", BORDER_GOLD)],
+            selectforeground=[("readonly", BG_DARK)]
+        )
 
         self.champs_dict = cargar_campeones()
         self.nombres_campeones_global = sorted(list(set([data["nombre"] for data in self.champs_dict.values()])))
@@ -147,6 +170,10 @@ class LoLRecommenderApp:
         tab_ia = tk.Frame(notebook, bg=BG_DARK)
         notebook.add(tab_ia, text="🤖 ANÁLISIS 1v1")
         self.armar_tab_ia(tab_ia)
+
+        tab_bans = tk.Frame(notebook, bg=BG_DARK)
+        notebook.add(tab_bans, text=" BANS RECOMENDADOS ")
+        self.armar_tab_bans(tab_bans)
 
     def descargar_imagen(self, id_elemento, tipo):
         carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR}
@@ -653,6 +680,51 @@ class LoLRecommenderApp:
         elif prob < 45: text = f"⚠️ MATCHUP PELIGROSO: {enemigo} tiene ventaja estadística pura en fase de líneas. Juega al escalado."
         else: text = f"⚔️ MATCHUP DE HABILIDAD: La estadística es {prob:.1f}%. El ganador se decide por control de oleadas y ganks."
         self.lbl_analisis_ia.config(text=text)
+
+    # ================= BANS RECOMENDADOS =================
+    def armar_tab_bans(self, frame):
+        ctrls = tk.Frame(frame, bg=BG_DARK)
+        ctrls.pack(fill="x", pady=10)
+
+        tk.Label(ctrls, text="Línea", bg=BG_DARK, fg=TEXT_WHITE).pack(side="left", padx=5)
+
+        self.cbbanrol = ttk.Combobox(ctrls, values=self.roles, state="readonly", width=15)
+        self.cbbanrol.current(0)
+        self.cbbanrol.pack(side="left", padx=5)
+
+        tk.Button(
+            ctrls,
+            text="ANALIZAR BANS",
+            bg=BORDER_GOLD,
+            fg=BG_DARK, 
+            font=("Helvetica", 9, "bold"),
+            command=self.buscar_baneos
+        ).pack(side="left", padx=15)
+
+        self.treebans = ttk.Treeview(
+            frame,
+            columns=("Campeón", "Banrate %", "Partidas"),
+            show="headings",
+            height=12
+        )
+        self.treebans.heading("Campeón", text="Mejores Bans")
+        self.treebans.heading("Banrate %", text="Banrate")
+        self.treebans.heading("Partidas", text="Partidas Analizadas")
+        self.treebans.pack(fill="both", expand=True, pady=10)
+
+    def buscar_baneos(self):
+        rol = self.cbbanrol.get()
+
+        for item in self.treebans.get_children():
+            self.treebans.delete(item)
+
+        resultados = obtenermejoresbaneos(rol, min_partidas=5)
+
+        if not resultados:
+            return messagebox.showinfo("Aviso", "No hay datos suficientes para ese rol.")
+
+        for champ, banrate, partidas in resultados[:10]:
+            self.treebans.insert("", "end", values=(champ, f"{banrate}%", partidas))
 
 if __name__ == "__main__":
     root = tk.Tk()

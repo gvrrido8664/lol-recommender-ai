@@ -2,31 +2,32 @@ import sqlite3
 import os
 import json
 from .db_manager import obtener_conexion, DATA_DIR
-from .riot_api import cargar_objetos, cargar_runas
+from .riot_api import cargar_objetos, cargar_runas, cargar_campeones
 
 ITEMS_DATA = cargar_objetos()
 RUNAS_DATA = cargar_runas()
+
+ITEMS_JUNGLA = ["1101", "1102", "1103"]
+ITEM_SUPP_BASE = "3865"
+# Incluimos absolutamente TODAS las evoluciones de Soporte
+ITEMS_SUPP_FINAL = ["3866", "3867", "3869", "3870", "3871", "3873", "3874"]
+
+# Lista de IDs absolutos de Botas para hacer bypass al filtro de Riot
+BOTAS_REALES = ["1001", "2422", "3006", "3009", "3020", "3047", "3111", "3117", "3158", "3301", "3302", "3303", "3156"]
 
 def obtener_campeones_por_rol(rol_api, porcentaje_minimo=0.01):
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) AS total FROM participantes WHERE team_position = ?", (rol_api,))
     total_partidas = cur.fetchone()["total"]
-    
     if total_partidas == 0:
         conn.close()
         return []
-
     min_partidas_reales = total_partidas * porcentaje_minimo
     cur.execute("""
-        SELECT champion
-        FROM participantes
-        WHERE team_position = ?
-        GROUP BY champion
-        HAVING COUNT(*) >= ?
-        ORDER BY COUNT(*) DESC
+        SELECT champion FROM participantes WHERE team_position = ?
+        GROUP BY champion HAVING COUNT(*) >= ? ORDER BY COUNT(*) DESC
     """, (rol_api, min_partidas_reales))
-    
     resultados = [row["champion"] for row in cur.fetchall()]
     conn.close()
     return resultados
@@ -35,247 +36,276 @@ def obtener_counters(carril, enemigo, min_partidas=3):
     conn = obtener_conexion()
     cur = conn.cursor()
     campeones_validos = obtener_campeones_por_rol(carril)
-
     consulta = """
-        SELECT 
-            p2.champion AS counter_champ,
-            ROUND(SUM(p2.win) * 100.0 / COUNT(*), 1) AS winrate,
-            COUNT(*) AS partidas
-        FROM participantes p1
-        JOIN participantes p2 ON p1.match_id = p2.match_id
+        SELECT p2.champion AS counter_champ, ROUND(SUM(p2.win) * 100.0 / COUNT(*), 1) AS winrate, COUNT(*) AS partidas
+        FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id
         WHERE p1.champion = ? AND p1.team_position = ? AND p2.team_position = p1.team_position AND p1.team != p2.team
-        GROUP BY p2.champion
-        HAVING partidas >= ?
-        ORDER BY winrate DESC
-        LIMIT 50
+        GROUP BY p2.champion HAVING partidas >= ? ORDER BY winrate DESC LIMIT 50
     """
     cur.execute(consulta, (enemigo, carril, min_partidas))
-    resultados_brutos = cur.fetchall()
+    resultados = [(row["counter_champ"], row["winrate"], row["partidas"]) for row in cur.fetchall() if row["counter_champ"] in campeones_validos]
     conn.close()
-    
-    resultados = []
-    for row in resultados_brutos:
-        if row["counter_champ"] in campeones_validos:
-            resultados.append((row["counter_champ"], row["winrate"], row["partidas"]))
-    
     return resultados
 
 def obtener_top_items(campeon, carril):
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT items FROM participantes WHERE champion = ? AND win = 1 AND team_position = ? AND items != ''", (campeon, carril))
-    filas = cur.fetchall()
+    
+    # 1. Buscamos todas las partidas (Win y Lose) para máximo volumen estadístico
+    cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND team_position = ? AND items != ''", (campeon, carril))
+    filas_rol = cur.fetchall()
+
+    if not filas_rol:
+        cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND items != ''", (campeon,))
+        filas_rol = cur.fetchall()
+        
     conn.close()
 
-    conteo = {}
-    for row in filas:
-        for i in row["items"].split(","):
-            if i: conteo[i] = conteo.get(i, 0) + 1
-
+    core_count = {}
+    botas_count = {}
+    supp_final_count = {}
     starters_count = {}
-    finales_count = {}
 
-    for item_id, count in conteo.items():
-        info = ITEMS_DATA.get(item_id)
-        if not info: continue
+    for row in filas_rol:
+        items_lista = row["items"].split(",")
+        is_win = row["win"] == 1
+        # Ponderación doble si el item garantizó la victoria
+        peso = 2 if is_win else 1
         
-        costo = info.get("oro", 0)
-        tags = info.get("tags", [])
-        if "Consumable" in tags or "Vision" in tags or "Trinket" in tags: continue
+        for i in items_lista:
+            i = str(i).strip()
+            if not i or i == "0": continue
+            
+            # BYPASS: Evaluamos IDs fijos antes de consultar la metadata de Riot
+            es_bota = i in BOTAS_REALES
+            es_supp = i in ITEMS_SUPP_FINAL
+            
+            info = ITEMS_DATA.get(i, {})
+            costo = info.get("oro", 0)
+            tags = info.get("tags", [])
+            
+            if "Consumable" in tags or "Vision" in tags or "Trinket" in tags: continue
+            
+            if not es_bota and info:
+                if "Boots" in tags and costo < 1600:
+                    es_bota = True
 
-        es_bota = "Boots" in tags
-        es_bota_mejorada = es_bota and costo > 300
-        
-        # Filtramos pociones de los starters base para calcular la matemática exacta
-        if costo <= 500 and not es_bota_mejorada and int(item_id) not in [2003, 2031, 2033]:
-            starters_count[item_id] = count
-        else:
-            if es_bota_mejorada or (costo >= 1500 and not info.get("avanza_a")) or (costo == 0 and not info.get("avanza_a")):
-                finales_count[item_id] = count
+            # Clasificación Estadística Directa
+            if es_bota:
+                if i not in ["1001", "2422"]: # Ignoramos botas tier 1
+                    botas_count[i] = botas_count.get(i, 0) + peso
+            elif es_supp:
+                supp_final_count[i] = supp_final_count.get(i, 0) + peso
+            elif costo <= 500 and not es_bota and int(i) not in [2003, 2031, 2033]:
+                starters_count[i] = starters_count.get(i, 0) + peso
+            else:
+                if costo >= 1500 or (costo == 0 and not info.get("avanza_a")):
+                    core_count[i] = core_count.get(i, 0) + peso
 
-    # --- 1. LÓGICA DE STARTER (Ítem Base + Pociones Reales) ---
-    starter_principal = None
-    for item_id in sorted(starters_count, key=starters_count.get, reverse=True):
-        starter_principal = item_id
-        break # Tomamos el más popular
-        
-    combo_starters = []
-    if starter_principal:
-        combo_starters.append(starter_principal)
-        info = ITEMS_DATA.get(starter_principal, {})
-        costo = info.get("oro", 0)
-        oro_restante = 500 - costo
-        pociones = oro_restante // 50  # Cada poción estándar cuesta 50g
-        
-        for _ in range(pociones):
-            combo_starters.append("2003") # ID de Poción de Vida
+    # --- STARTERS ---
+    if carril == "JUNGLE":
+        jg_items = {k: v for k, v in starters_count.items() if k in ITEMS_JUNGLA}
+        starter_principal = max(jg_items, key=jg_items.get) if jg_items else "1102"
+    elif carril == "UTILITY":
+        starter_principal = ITEM_SUPP_BASE
     else:
-        # Fallback seguro por línea si la base de datos es pequeña
-        if carril == "JUNGLE": combo_starters = ["1102", "2003"]
-        elif carril == "BOTTOM": combo_starters = ["1055", "2003"]
-        elif carril == "UTILITY": combo_starters = ["3865", "2003", "2003"]
-        else: combo_starters = ["1056", "2003", "2003"]
+        starter_principal = max(starters_count, key=starters_count.get) if starters_count else "1056"
 
-    # --- 2. LÓGICA DE BUILD FINAL (1 Bota + X Objetos) ---
-    bota = None
-    otros = []
-    for item in sorted(finales_count, key=finales_count.get, reverse=True):
-        info = ITEMS_DATA.get(item)
-        if "Boots" in info.get("tags", []):
-            if not bota: bota = item
-        else:
-            otros.append(item)
-        
-    limite_otros = 6 if carril == "BOTTOM" else 5
+    combo_starters = [starter_principal]
+    costo_base = ITEMS_DATA.get(starter_principal, {}).get("oro", 0)
+    pociones = max(0, (500 - costo_base) // 50)
+    for _ in range(pociones): combo_starters.append("2003")
+
+    # --- BUILD FINAL 100% ESTADÍSTICA ---
     build_final_limpia = []
-    if bota: build_final_limpia.append(bota)
-    build_final_limpia.extend(otros[:limite_otros])
-    build_final_limpia.sort(key=lambda x: ITEMS_DATA.get(x, {}).get("oro", 0))
+    
+    if campeon != "Cassiopeia":
+        if botas_count:
+            bota = max(botas_count, key=botas_count.get)
+        else:
+            bota = "3006" if carril == "BOTTOM" else "3111" # Fallback solo en caso crítico
+        build_final_limpia.append(bota)
+        
+    item_supp_mejorado = None
+    if carril == "UTILITY":
+        if supp_final_count:
+            item_supp_mejorado = max(supp_final_count, key=supp_final_count.get)
+        else:
+            item_supp_mejorado = "3869" # Fallback extremo
+        build_final_limpia.append(item_supp_mejorado)
+        
+    limite = 7 if carril == "BOTTOM" else 6
+    espacios_restantes = limite - len(build_final_limpia)
+    
+    core_ordenado = sorted(core_count, key=core_count.get, reverse=True)[:espacios_restantes]
+    build_final_limpia.extend(core_ordenado)
 
-    return combo_starters, build_final_limpia
+    # Ordenamos el "Core" por coste, pero mantenemos Bota y Supp fijados al inicio
+    if espacios_restantes > 0:
+        core_items_ordenados = sorted(build_final_limpia[-espacios_restantes:], key=lambda x: ITEMS_DATA.get(x, {}).get("oro", 0))
+        build_final = build_final_limpia[:-espacios_restantes] + core_items_ordenados
+    else:
+        build_final = build_final_limpia
+
+    return combo_starters, build_final
 
 def obtener_top_runas(campeon, carril):
     conn = obtener_conexion()
     cur = conn.cursor()
-    try:
-        cur.execute("SELECT runes FROM participantes WHERE champion = ? AND win = 1 AND team_position = ? AND runes IS NOT NULL AND runes != ''", (campeon, carril))
+    cur.execute("SELECT runes FROM participantes WHERE champion = ? AND team_position = ? AND runes != ''", (campeon, carril))
+    filas = cur.fetchall()
+    
+    if not filas:
+        cur.execute("SELECT runes FROM participantes WHERE champion = ? AND runes != ''", (campeon,))
         filas = cur.fetchall()
+        
+    conn.close()
+    if not filas: return []
+
+    conteo_principal = {}
+    conteo_shards_1 = {}
+    conteo_shards_2 = {}
+    conteo_shards_3 = {}
+
+    for row in filas:
+        partes = [r for r in row["runes"].split(",") if r]
+        if len(partes) >= 8:
+            main_runes = ",".join(partes[:8])
+            conteo_principal[main_runes] = conteo_principal.get(main_runes, 0) + 1
+        
+        if len(partes) >= 11:
+            s1, s2, s3 = partes[8], partes[9], partes[10]
+            conteo_shards_1[s1] = conteo_shards_1.get(s1, 0) + 1
+            conteo_shards_2[s2] = conteo_shards_2.get(s2, 0) + 1
+            conteo_shards_3[s3] = conteo_shards_3.get(s3, 0) + 1
+
+    mejor_principal = max(conteo_principal, key=conteo_principal.get) if conteo_principal else ""
+    runas_finales = mejor_principal.split(",")
+
+    if conteo_shards_1: runas_finales.append(max(conteo_shards_1, key=conteo_shards_1.get))
+    else: runas_finales.append("5008")
+    
+    if conteo_shards_2: runas_finales.append(max(conteo_shards_2, key=conteo_shards_2.get))
+    else: runas_finales.append("5008")
+    
+    if conteo_shards_3: runas_finales.append(max(conteo_shards_3, key=conteo_shards_3.get))
+    else: runas_finales.append("5011")
+
+    return runas_finales
+
+def obtener_top_hechizos(campeon, carril):
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT spells FROM participantes WHERE champion = ? AND team_position = ? AND spells != ''", (campeon, carril))
+        filas = cur.fetchall()
+        if not filas:
+            cur.execute("SELECT spells FROM participantes WHERE champion = ? AND spells != ''", (campeon,))
+            filas = cur.fetchall()
     except:
         conn.close()
-        return []
+        return ["4", "14"]
     conn.close()
-    
+
     conteo = {}
     for row in filas:
-        r_str = row["runes"]
-        conteo[r_str] = conteo.get(r_str, 0) + 1
-        
-    if not conteo: return []
-    mejor_set = max(conteo, key=conteo.get)
-    return [r for r in mejor_set.split(",") if r]
+        sp_str = row["spells"]
+        partes = sorted([s for s in sp_str.split(",") if s])
+        if len(partes) == 2:
+            llave = f"{partes[0]},{partes[1]}"
+            conteo[llave] = conteo.get(llave, 0) + 1
+
+    if not conteo: return ["4", "14"]
+    return max(conteo, key=conteo.get).split(",")
 
 def obtener_mejores_baneos(rol, limite=5):
     conn = obtener_conexion()
     cur = conn.cursor()
     campeones_validos = obtener_campeones_por_rol(rol)
-    if not campeones_validos:
-        conn.close()
-        return []
-
+    if not campeones_validos: return []
     placeholders = ",".join(["?"] * len(campeones_validos))
     query = f"""
-        SELECT champion,
-               ROUND(SUM(win) * 100.0 / COUNT(*), 1) AS winrate,
-               COUNT(*) AS partidas
-        FROM participantes
-        WHERE team_position = ? AND champion IN ({placeholders})
-        GROUP BY champion
-        HAVING partidas >= 15
-        ORDER BY winrate DESC, partidas DESC
-        LIMIT ?
+        SELECT champion, ROUND(SUM(win) * 100.0 / COUNT(*), 1) AS winrate, COUNT(*) AS partidas
+        FROM participantes WHERE team_position = ? AND champion IN ({placeholders})
+        GROUP BY champion HAVING partidas >= 15 ORDER BY winrate DESC, partidas DESC LIMIT ?
     """
-    
-    params = [rol] + campeones_validos + [limite]
-    cur.execute(query, params)
-    
+    cur.execute(query, [rol] + campeones_validos + [limite])
     resultados = [row["champion"] for row in cur.fetchall()]
     conn.close()
     return resultados
 
-def recomendar_picks_vivo(rol, aliados, enemigos):
-    """Evalúa la composición aliada para suplir faltas (Tanque, AP, AD) y contrarrestar al enemigo."""
-    conn = obtener_conexion()
-    cur = conn.cursor()
-    campeones_rol = obtener_campeones_por_rol(rol)
-    if not campeones_rol:
-        conn.close()
-        return []
-
+def analizar_composicion(aliados):
     ruta_tags = os.path.join(DATA_DIR, "champion_data.json")
     tags_data = {}
     if os.path.exists(ruta_tags):
-        with open(ruta_tags, "r", encoding="utf-8") as f:
-            tags_data = json.load(f)
+        with open(ruta_tags, "r", encoding="utf-8") as f: tags_data = json.load(f)
 
-    tiene_ap = False
-    tiene_ad = False
-    tiene_tank = False
+    ap_count = 0.0
+    ad_count = 0.0
+    tank_count = 0
+    total_aliados = len(aliados) if aliados else 1
 
     for aliado in aliados:
-        info = tags_data.get(aliado, {})
-        tags = info.get("tags", [])
-        if "Mage" in tags or "Support" in tags: tiene_ap = True
-        if "Marksman" in tags or "Assassin" in tags or "Fighter" in tags: tiene_ad = True
-        if "Tank" in tags or "Fighter" in tags: tiene_tank = True
+        tags = tags_data.get(aliado, {}).get("tags", [])
+        es_ap = "Mage" in tags or "Support" in tags
+        es_ad = "Marksman" in tags or "Assassin" in tags or "Fighter" in tags
+        es_tank = "Tank" in tags or "Fighter" in tags
 
-    candidatos_filtrados = []
+        if es_ap and not es_ad: ap_count += 1
+        elif es_ad and not es_ap: ad_count += 1
+        elif es_ap and es_ad: ap_count += 0.5; ad_count += 0.5
+        if es_tank: tank_count += 1
+
+    pct_ad = min(100, int((ad_count / total_aliados) * 100))
+    pct_ap = min(100, int((ap_count / total_aliados) * 100))
+    return pct_ad, pct_ap, tank_count, tags_data
+
+def recomendar_picks_vivo(rol, aliados, enemigos):
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    campeones_rol = obtener_campeones_por_rol(rol)
+    if not campeones_rol: return {}
+
+    pct_ad, pct_ap, tank_count, tags_data = analizar_composicion(aliados)
+    candidatos = {"Sinergia/Balance": [], "Falta Daño Mágico (AP)": [], "Falta Daño Físico (AD)": [], "Falta Tanque/Engage": []}
+    
     for c in campeones_rol:
-        info = tags_data.get(c, {})
-        tags = info.get("tags", [])
+        tags = tags_data.get(c, {}).get("tags", [])
         es_ap = "Mage" in tags or "Support" in tags
         es_tank = "Tank" in tags
         es_ad = "Marksman" in tags or "Assassin" in tags or "Fighter" in tags
 
-        puntaje_sinergia = 0
-        if not tiene_ap and es_ap: puntaje_sinergia += 2
-        if not tiene_tank and es_tank: puntaje_sinergia += 2
-        if not tiene_ad and es_ad: puntaje_sinergia += 1
-
-        candidatos_filtrados.append((c, puntaje_sinergia))
-
-    # Tomamos los 20 campeones que mejor completan la composición
-    candidatos_filtrados.sort(key=lambda x: x[1], reverse=True)
-    top_candidatos = [c[0] for c in candidatos_filtrados[:20]]
-
-    resultados = []
-    for champ in top_candidatos:
-        if not enemigos:
-            cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=? AND team_position=?", (champ, rol))
-            row = cur.fetchone()
-            wr = row[0] if row and row[0] else 50.0
-            resultados.append((champ, wr))
-        else:
-            # Evaluar el WR de este candidato contra la composición enemiga detectada
+        wr = 50.0
+        if enemigos:
             placeholders = ",".join(["?"]*len(enemigos))
-            query = f"""
-                SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1)
-                FROM participantes p1
-                JOIN participantes p2 ON p1.match_id = p2.match_id
-                WHERE p1.champion = ? AND p1.team_position = ?
-                AND p2.champion IN ({placeholders}) AND p1.team != p2.team
-            """
-            cur.execute(query, [champ, rol] + enemigos)
+            query = f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1) FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id WHERE p1.champion = ? AND p1.team_position = ? AND p2.champion IN ({placeholders}) AND p1.team != p2.team"
+            cur.execute(query, [c, rol] + enemigos)
             row = cur.fetchone()
-            wr = row[0] if row and row[0] else 50.0
-            resultados.append((champ, wr))
+            if row and row[0]: wr = row[0]
+            
+        if pct_ad >= 60 and es_ap: candidatos["Falta Daño Mágico (AP)"].append((c, wr, "Aporta AP necesario"))
+        elif pct_ap >= 60 and es_ad: candidatos["Falta Daño Físico (AD)"].append((c, wr, "Aporta AD necesario"))
+        elif tank_count == 0 and es_tank: candidatos["Falta Tanque/Engage"].append((c, wr, "Falta Frontlane"))
+        else: candidatos["Sinergia/Balance"].append((c, wr, "Balance y Sinergia"))
 
     conn.close()
-    resultados.sort(key=lambda x: x[1], reverse=True)
-    return [r[0] for r in resultados[:6]] # Retornamos los mejores 6
+    finales = {}
+    for cat, champs in candidatos.items():
+        if champs:
+            champs.sort(key=lambda x: x[1], reverse=True)
+            finales[cat] = champs[:2]
+    return finales
 
 def calcular_winrate_5v5(aliados, enemigos):
-    """Calcula el winrate promedio de los 5 aliados contra los 5 enemigos basándose en el historial."""
-    if len(aliados) != 5 or len(enemigos) != 5:
-        return 50.0
-        
+    if len(aliados) != 5 or len(enemigos) != 5: return 50.0
     conn = obtener_conexion()
     cur = conn.cursor()
     total_wr = []
-    
     for aliado in aliados:
         placeholders = ",".join(["?"]*len(enemigos))
-        query = f"""
-            SELECT SUM(p1.win)*100.0/COUNT(*)
-            FROM participantes p1
-            JOIN participantes p2 ON p1.match_id = p2.match_id
-            WHERE p1.champion = ? AND p2.champion IN ({placeholders}) AND p1.team != p2.team
-        """
+        query = f"SELECT SUM(p1.win)*100.0/COUNT(*) FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id WHERE p1.champion = ? AND p2.champion IN ({placeholders}) AND p1.team != p2.team"
         cur.execute(query, [aliado] + enemigos)
         row = cur.fetchone()
-        if row and row[0]:
-            total_wr.append(row[0])
-            
+        if row and row[0]: total_wr.append(row[0])
     conn.close()
-    if total_wr:
-        return round(sum(total_wr)/len(total_wr), 1)
-    return 50.0
+    return round(sum(total_wr)/len(total_wr), 1) if total_wr else 50.0

@@ -1,0 +1,92 @@
+{
+  "21": {
+    "nombre": "Barrera",
+    "icono": "SummonerBarrier.png",
+    "descripcion": "Obtienes un escudo temporal."
+  },
+  "1": {
+    "nombre": "Limpiar",
+    "icono": "SummonerBoost.png",
+    "descripcion": "Elimina todas las inhabilitaciones (excepto la supresión y los levantamientos en el aire) y efectos de hechizos de invocador que afectan al campeón, y otorga tenacidad."
+  },
+  "2202": {
+    "nombre": "Destello",
+    "icono": "SummonerCherryFlash.png",
+    "descripcion": "Teleporta a tu campeón una corta distancia hacia la posición del cursor."
+  },
+  "2201": {
+    "nombre": "Huida",
+    "icono": "SummonerCherryHold.png",
+    "descripcion": "Obtienes una breve mejora de velocidad de movimiento, que aumenta mientras huyes de campeones enemigos."
+  },
+  "14": {
+    "nombre": "Prender",
+    "icono": "SummonerDot.png",
+    "descripcion": "Inflige daño verdadero a un campeón enemigo objetivo a lo largo del tiempo y reduce los efectos de curación que este reciba mientras dure el efecto."
+  },
+  "3": {
+    "nombre": "Extenuación",
+    "icono": "SummonerExhaust.png",
+    "descripcion": "Ralentiza al campeón enemigo objetivo y reduce el daño que inflige."
+  },
+  "4": {
+    "nombre": "Destello",
+    "icono": "SummonerFlash.png",
+    "descripcion": "Te teleporta a una corta distancia hacia el cursor."
+  },
+  "6": {
+    "nombre": "Fantasmal",
+    "icono": "SummonerHaste.png",
+    "descripcion": "Obtiene velocidad de movimiento e ignora la colisión con unidades durante este tiempo."
+  },
+  "7": {
+    "nombre": "Curar",
+    "icono": "SummonerHeal.png",
+    "descripcion": "Restaura vida y otorga velocidad de movimiento adicional tanto a ti como al campeón aliado objetivo."
+  },
+  "13": {
+    "nombre": "Claridad",
+    "icono": "SummonerMana.png",
+    "descripcion": "Restaura maná a tu campeón y al campeón aliado."
+  },
+  "30": {
+    "nombre": "¡Al Rey!",
+    "icono": "SummonerPoroRecall.png",
+    "descripcion": "Te envía rápidamente al lado del Rey Poro."
+  },
+  "31": {
+    "nombre": "Porolanzamiento",
+    "icono": "SummonerPoroThrow.png",
+    "descripcion": "Lanza un poro a los enemigos. Si aciertas, a continuación puedes desplazarte rápidamente al objetivo."
+  },
+  "11": {
+    "nombre": "Aplastar",
+    "icono": "SummonerSmite.png",
+    "descripcion": "Inflige daño verdadero a un monstruo o súbdito."
+  },
+  "39": {
+    "nombre": "Marca",
+    "icono": "SummonerSnowURFSnowball_Mark.png",
+    "descripcion": "Lanzas una bola de nieve en línea recta hacia tus enemigos. Si alcanzas a uno, queda marcado, lo que otorga visión verdadera y, a continuación, tu campeón puede desplazarse con rapidez hasta él."
+  },
+  "32": {
+    "nombre": "Marca",
+    "icono": "SummonerSnowball.png",
+    "descripcion": "Lanzas una bola de nieve en línea recta hacia tus enemigos. Si alcanzas a uno, queda marcado, lo que otorga visión verdadera y, a continuación, tu campeón puede desplazarse con rapidez hasta él."
+  },
+  "12": {
+    "nombre": "Teleportar",
+    "icono": "SummonerTeleport.png",
+    "descripcion": "Tras una breve canalización, te vuelves inalcanzable y te desplazas hasta una unidad aliada. Evoluciona a Teleportar desatado, que aumenta notablemente la velocidad del desplazamiento."
+  },
+  "54": {
+    "nombre": "Por determinar",
+    "icono": "Summoner_UltBookPlaceholder.png",
+    "descripcion": "Esta ranura se reemplazará por la definitiva de otro campeón al comienzo de la partida. Habrá 30 segundos para seleccionar una definitiva. ¡Prepárate!"
+  },
+  "55": {
+    "nombre": "Provisional y Aplastar automático",
+    "icono": "Summoner_UltBookSmitePlaceholder.png",
+    "descripcion": "Esta ranura se reemplazará por la definitiva de otro campeón y obtendrás Aplastar automático. Habrá 30 segundos para seleccionar una definitiva. ¡Prepárate!"
+  }
+}

@@ -2,7 +2,7 @@
   "8100": {
     "nombre": "Dominación",
     "icono": "perk-images/Styles/7200_Domination.png",
-    "descripcion": "Rama principal de Dominación"
+    "descripcion": "Rama Dominación"
   },
   "8112": {
     "nombre": "Electrocutar",
@@ -67,7 +67,7 @@
   "8300": {
     "nombre": "Inspiración",
     "icono": "perk-images/Styles/7203_Whimsy.png",
-    "descripcion": "Rama principal de Inspiración"
+    "descripcion": "Rama Inspiración"
   },
   "8351": {
     "nombre": "Mejora glacial",
@@ -132,7 +132,7 @@
   "8000": {
     "nombre": "Precisión",
     "icono": "perk-images/Styles/7201_Precision.png",
-    "descripcion": "Rama principal de Precisión"
+    "descripcion": "Rama Precisión"
   },
   "8005": {
     "nombre": "Ataque intensificado",
@@ -202,7 +202,7 @@
   "8400": {
     "nombre": "Valor",
     "icono": "perk-images/Styles/7204_Resolve.png",
-    "descripcion": "Rama principal de Valor"
+    "descripcion": "Rama Valor"
   },
   "8437": {
     "nombre": "Garras del inmortal",
@@ -267,7 +267,7 @@
   "8200": {
     "nombre": "Brujería",
     "icono": "perk-images/Styles/7202_Sorcery.png",
-    "descripcion": "Rama principal de Brujería"
+    "descripcion": "Rama Brujería"
   },
   "8214": {
     "nombre": "Invocar a Aery",

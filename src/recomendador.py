@@ -20,46 +20,60 @@ ITEMS_SUPP_FINAL = ["3866", "3867", "3869", "3870", "3871", "3873", "3874"]
 SUPPORT_STARTERS = ["3865", "3850", "3851", "3854", "3855"]
 
 # Botas reales (solo boots, sin colar items core tipo Maw, etc.)
-BOTAS_REALES = [
-    "1001",  # Botas básicas
-    "3006",  # Grebas de berserker
-    "3009",  # Botas de rapidez
-    "3020",  # Zapatos del hechicero
-    "3047",  # Tabi
-    "3111",  # Mercurial
-    "3117",  # Movilidad
-    "3158",  # Lucidez
-]
+BOTASREALES = {
+    1001, 2422, 3006, 3009, 3020, 3047,
+    3111, 3117, 3158, 3301, 3302, 3303,
+    3156, 3173, 3174
+}
 
-def obtener_campeones_por_rol(rol_api, porcentaje_minimo=0.01):
+def obtener_campeones_por_rol(rol_api, min_partidas=5):
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS total FROM participantes WHERE team_position = ?", (rol_api,))
-    total_partidas = cur.fetchone()["total"]
-    if total_partidas == 0:
-        conn.close()
-        return []
-    min_partidas_reales = total_partidas * porcentaje_minimo
+
     cur.execute("""
-        SELECT champion FROM participantes WHERE team_position = ?
-        GROUP BY champion HAVING COUNT(*) >= ? ORDER BY COUNT(*) DESC
-    """, (rol_api, min_partidas_reales))
+        SELECT champion
+        FROM participantes
+        WHERE team_position = ?
+        GROUP BY champion
+        HAVING COUNT(*) >= ?
+        ORDER BY COUNT(*) DESC
+    """, (rol_api, min_partidas))
+
     resultados = [row["champion"] for row in cur.fetchall()]
     conn.close()
     return resultados
 
-def obtener_counters(carril, enemigo, min_partidas=3):
+def obtener_counters(carril, enemigo, min_partidas=5):
     conn = obtener_conexion()
     cur = conn.cursor()
-    campeones_validos = obtener_campeones_por_rol(carril)
+
+    campeones_validos = obtener_campeones_por_rol(carril, min_partidas=min_partidas)
+
     consulta = """
-        SELECT p2.champion AS counter_champ, ROUND(SUM(p2.win) * 100.0 / COUNT(*), 1) AS winrate, COUNT(*) AS partidas
-        FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id
-        WHERE p1.champion = ? AND p1.team_position = ? AND p2.team_position = p1.team_position AND p1.team != p2.team
-        GROUP BY p2.champion HAVING partidas >= ? ORDER BY winrate DESC LIMIT 50
+        SELECT
+            p2.champion AS counter_champ,
+            ROUND(SUM(p2.win) * 100.0 / COUNT(*), 1) AS winrate,
+            COUNT(*) AS partidas
+        FROM participantes p1
+        JOIN participantes p2
+            ON p1.match_id = p2.match_id
+        WHERE p1.champion = ?
+          AND p1.team_position = ?
+          AND p2.team_position = p1.team_position
+          AND p1.team != p2.team
+        GROUP BY p2.champion
+        HAVING COUNT(*) >= ?
+        ORDER BY winrate DESC
+        LIMIT 50
     """
+
     cur.execute(consulta, (enemigo, carril, min_partidas))
-    resultados = [(row["counter_champ"], row["winrate"], row["partidas"]) for row in cur.fetchall() if row["counter_champ"] in campeones_validos]
+    resultados = [
+        (row["counter_champ"], row["winrate"], row["partidas"])
+        for row in cur.fetchall()
+        if row["counter_champ"] in campeones_validos
+    ]
+
     conn.close()
     return resultados
 
@@ -119,11 +133,11 @@ def obtener_top_items(campeon, carril):
         peso = 2 if is_win else 1  # victorias pesan doble
 
         for i in items_lista:
-            info = ITEMS_DATA.get(i, {})
+            i = str(i).strip()
+            info = ITEMS_DATA.get(i, {}) or (ITEMS_DATA.get(int(i), {}) if i.isdigit() else {})
             tags = info.get("tags", [])
             costo = info.get("oro", 0)
 
-            # Excluir consumibles, wards, trinkets, etc.
             if "Consumable" in tags or "Vision" in tags or "Trinket" in tags:
                 continue
 
@@ -131,7 +145,6 @@ def obtener_top_items(campeon, carril):
             es_supp_final = i in ITEMS_SUPP_FINAL
 
             if es_bota:
-                # No queremos recomendar botas básicas como ítem final
                 if i not in ("1001", "2422"):
                     botas_count[i] = botas_count.get(i, 0) + peso
             elif es_supp_final:
@@ -139,7 +152,6 @@ def obtener_top_items(campeon, carril):
             elif costo <= 500 and i not in ("2003", "2031", "2033"):
                 starters_count[i] = starters_count.get(i, 0) + peso
             else:
-                # Core: míticos/legendarios o ítems que no avanzan a nada
                 if costo >= 1500 or (costo == 0 and not info.get("avanza_a")):
                     core_count[i] = core_count.get(i, 0) + peso
 

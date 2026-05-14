@@ -1,16 +1,27 @@
 import requests
 import time
-import os
 import random
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
-from .db_manager import obtener_conexion
+from .db_manager import obtener_conexion, inicializar_db
 
 # =============================================================================
 # CONFIGURACIÓN PRO
 # =============================================================================
-API_KEY = "RGAPI-5426a7f5-d646-47a0-a8ad-669b115d599f"
-REGION_ROUTING = "americas" 
+
+# Cargar la API Key dinámicamente desde config.json
+try:
+    with open("config.json", "r") as config_file:
+        config = json.load(config_file)
+        API_KEY = config.get("API_KEY", "")
+except FileNotFoundError:
+    print("❌ Error: No se encontró el archivo config.json en el directorio actual.")
+    API_KEY = ""
+
+REGION_ROUTING = "americas"
+PLATFORM_ROUTING = "la2"
 HEADERS = {"X-Riot-Token": API_KEY}
 
 # Cola de jugadores pendientes y set de control para no repetir
@@ -31,10 +42,45 @@ def peticion_segura(url):
             elif resp.status_code in [500, 502, 503, 504]:
                 time.sleep(5)
             else:
+                print(f"⚠️ Error HTTP {resp.status_code} al consultar la API.")
+                try:
+                    print(f"Detalle de Riot: {resp.json()}")
+                except Exception:
+                    pass
                 return None
         except Exception as e:
             time.sleep(2)
             continue
+
+def sembrar_desde_high_elo():
+    """Obtiene jugadores aleatorios de Challenger para arrancar el crawler."""
+    print(f"🏆 Buscando élite Challenger en el servidor {PLATFORM_ROUTING.upper()}...")
+    url_challenger = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5"
+    datos_liga = peticion_segura(url_challenger)
+
+    if not datos_liga or "entries" not in datos_liga:
+        print("❌ No se pudo obtener la liga Challenger.")
+        return False
+
+    entradas = random.sample(datos_liga["entries"], min(10, len(datos_liga["entries"])))
+    print(f"🔍 Extrayendo PUUIDs directamente de {len(entradas)} jugadores...")
+
+    puuids_semilla = []
+    for entrada in entradas:
+        puuid = entrada.get("puuid")
+        if puuid:
+            puuids_semilla.append(puuid)
+
+    if not puuids_semilla:
+        print("❌ No se encontraron PUUIDs válidos.")
+        return False
+
+    for puuid in puuids_semilla:
+        cola_exploracion.append(puuid)
+        jugadores_visitados.add(puuid)
+
+    print(f"✅ Semilla High-Elo lista. {len(puuids_semilla)} jugadores en cola.")
+    return True
 
 def procesar_jugador(puuid):
     """Descarga el historial de un jugador y procesa sus partidas."""
@@ -55,7 +101,6 @@ def descargar_partida(match_id):
     conn = obtener_conexion()
     cur = conn.cursor()
     
-    # Evitar duplicados en la base de datos
     cur.execute("SELECT 1 FROM matches WHERE match_id = ?", (match_id,))
     if cur.fetchone():
         conn.close()
@@ -69,17 +114,19 @@ def descargar_partida(match_id):
         return False
 
     info = data["info"]
-    # Ignorar remakes
     if info.get("gameDuration", 0) < 600:
         conn.close()
         return False
 
     try:
-        cur.execute("INSERT INTO matches (match_id, game_version, game_duration) VALUES (?, ?, ?)",
-                    (match_id, info.get("gameVersion", "0"), info.get("gameDuration", 0)))
-        
+        version = info.get("gameVersion", "0")
+        parts = version.split(".")
+        patch = f"{parts[0]}.{parts[1]}" if len(parts) >= 2 else "0.0"
+
+        cur.execute("INSERT INTO matches (match_id, game_version, game_duration, patch) VALUES (?, ?, ?, ?)",
+                    (match_id, version, info.get("gameDuration", 0), patch))
+
         for p in info.get("participants", []):
-            # Alimentar la cola con nuevos jugadores encontrados
             p_puuid = p.get("puuid")
             if p_puuid and p_puuid not in jugadores_visitados:
                 cola_exploracion.append(p_puuid)
@@ -88,53 +135,66 @@ def descargar_partida(match_id):
             champ = p.get("championName", "Wukong" if p.get("championName") == "MonkeyKing" else p.get("championName"))
             items = ",".join([str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0])
             
+            # --- LECTURA DE RUNAS Y SHARDS ---
+            styles = p.get("perks", {}).get("styles", [])
+            runas_lista = []
+            for style in styles:
+                runas_lista.append(str(style.get("style")))
+                for seleccion in style.get("selections", []):
+                    runas_lista.append(str(seleccion.get("perk")))
+            
+            # --- NUEVO: Extraer Mini Estadísticas ---
+            statPerks = p.get("perks", {}).get("statPerks", {})
+            if statPerks:
+                runas_lista.append(str(statPerks.get("defense", "")))
+                runas_lista.append(str(statPerks.get("flex", "")))
+                runas_lista.append(str(statPerks.get("offense", "")))
+                
+            runas_str = ",".join([r for r in runas_lista if r])
+            
+            # --- LECTURA DE HECHIZOS Y KDA ---
+            spells = f"{p.get('summoner1Id', 0)},{p.get('summoner2Id', 0)}"
+            kills = p.get('kills', 0)
+            deaths = p.get('deaths', 0)
+            assists = p.get('assists', 0)
+            
+            # Insert con las nuevas columnas
             cur.execute("""
-                INSERT INTO participantes (match_id, champion, team_position, team, win, items)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (match_id, champ, p.get("teamPosition", ""), p.get("teamId", 0), 1 if p.get("win") else 0, items))
+                INSERT INTO participantes (match_id, champion, team_position, team, win, items, runes, spells, kills, deaths, assists)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (match_id, champ, p.get("teamPosition", ""), p.get("teamId", 0), 1 if p.get("win") else 0, items, runas_str, spells, kills, deaths, assists))
         
         conn.commit()
         return True
-    except:
+    except Exception as e:
+        print(f"Error guardando en BD: {e}")
         conn.rollback()
         return False
     finally:
         conn.close()
 
-def ejecutar_recoleccion_masiva(nombre_inicio, tag_inicio, meta=5000):
+def ejecutar_recoleccion_masiva(meta=5000):
     """Orquestador multihilo."""
-    print(f"🌟 Iniciando gran recolección desde {nombre_inicio}#{tag_inicio}")
+    print("🌟 Iniciando gran recolección automatizada High-Elo")
     
-    # Obtener PUUID inicial
-    url_id = f"https://{REGION_ROUTING}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{nombre_inicio}/{tag_inicio}"
-    semilla = peticion_segura(url_id)
-    
-    if not semilla:
-        print("❌ No se pudo encontrar al jugador semilla.")
+    if not sembrar_desde_high_elo():
+        print("❌ Error crítico: No se pudo obtener la semilla. Revisa tu API Key.")
         return
-
-    cola_exploracion.append(semilla["puuid"])
-    jugadores_visitados.add(semilla["puuid"])
     
     total_descargado = 0
     
-    # Usamos ThreadPoolExecutor para procesar varios jugadores a la vez
-    # 3 hilos es un balance seguro para no quemar la API Key de desarrollo rápidamente
     with ThreadPoolExecutor(max_workers=3) as executor:
         while total_descargado < meta and cola_exploracion:
-            # Tomamos al siguiente jugador
             actual = cola_exploracion.popleft()
             
-            # Mandamos la tarea al hilo
             futuro = executor.submit(procesar_jugador, actual)
             resultado = futuro.result()
             
             total_descargado += resultado
             print(f"📈 Total partidas en BD: {total_descargado} / {meta} (En cola: {len(cola_exploracion)})")
             
-            # Pausa para respirar entre ciclos de hilos
             time.sleep(2)
 
 if __name__ == "__main__":
-    # Sustituye con tu nombre y etiqueta real en LAS/NA/LAN
-    ejecutar_recoleccion_masiva("Gvrrido", "LUCKY", meta=20000)
+    inicializar_db()  # <-- Construye las tablas si no existen
+    ejecutar_recoleccion_masiva(meta=20000)

@@ -93,4 +93,4 @@ def limpiar_base_de_datos():
     print("🗑️ Base de datos limpiada.")
 
 if __name__ == "__main__":
-    limpiar_base_de_datos()  # <-- Ejecuta solo esto
+    inicializar_db()

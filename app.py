@@ -47,9 +47,16 @@ ALLY_BG = "#0b1b3d"
 ENEMY_BG = "#3d0b13"     
 
 STAT_SHARDS = {
-    "5008": ("Fuerza Adapt.", "#e74c3c"), "5005": ("Vel. Ataque", "#f1c40f"), "5007": ("Acel. Hab.", "#9b59b6"),
-    "5009": ("Vel. Mov.", "#1abc9c"), "5001": ("Prog. Vida", "#2ecc71"), "5010": ("Vida Plana", "#27ae60"),
-    "5013": ("Tenacidad", "#34495e"), "5002": ("Armadura", "#e67e22"), "5003": ("Res. Mágica", "#3498db")
+    "5008": ("Fuerza Adapt.", "#e74c3c"),
+    "5005": ("Vel. Ataque", "#f1c40f"),
+    "5007": ("Acel. Hab.", "#9b59b6"),
+    "5009": ("Vel. Mov.", "#1abc9c"),
+    "5001": ("Prog. Vida", "#2ecc71"),
+    "5010": ("Vida Plana", "#27ae60"),
+    "5011": ("Vida", "#16a085"),
+    "5013": ("Tenacidad", "#34495e"),
+    "5002": ("Armadura", "#e67e22"),
+    "5003": ("Res. Mágica", "#3498db"),
 }
 
 class ToolTip:
@@ -178,53 +185,189 @@ class LoLRecommenderApp:
         if info_texto: ToolTip(lbl_img, info_texto)
 
     def renderizar_setup_completo(self, ids_runas, ids_spells, frame_padre, is_centered=False):
-        for w in frame_padre.winfo_children(): w.destroy()
-        
-        main_container = tk.Frame(frame_padre, bg=BG_PANEL)
-        if is_centered: main_container.pack(expand=True)
-        else: main_container.pack(side="top", pady=10)
-        
-        col1 = tk.Frame(main_container, bg=BG_PANEL)
-        col1.pack(side="left", padx=20, pady=10, anchor="n")
-        col2 = tk.Frame(main_container, bg=BG_PANEL)
-        col2.pack(side="left", padx=20, pady=10, anchor="n")
-        col3 = tk.Frame(main_container, bg=BG_PANEL)
-        col3.pack(side="left", padx=20, pady=10, anchor="n")
-        
-        # Rama Primaria
-        if len(ids_runas) > 0: self.renderizar_icono(ids_runas[0], "runa", col1, 0, 0, size=35)
-        if len(ids_runas) > 1: self.renderizar_icono(ids_runas[1], "runa", col1, 1, 0, size=55)
-        if len(ids_runas) > 2: self.renderizar_icono(ids_runas[2], "runa", col1, 2, 0, size=35)
-        if len(ids_runas) > 3: self.renderizar_icono(ids_runas[3], "runa", col1, 3, 0, size=35)
-        if len(ids_runas) > 4: self.renderizar_icono(ids_runas[4], "runa", col1, 4, 0, size=35)
-        
-        # Rama Secundaria
-        if len(ids_runas) > 5: self.renderizar_icono(ids_runas[5], "runa", col2, 0, 0, size=30)
-        if len(ids_runas) > 6: self.renderizar_icono(ids_runas[6], "runa", col2, 1, 0, size=35)
-        if len(ids_runas) > 7: self.renderizar_icono(ids_runas[7], "runa", col2, 2, 0, size=35)
-        
-        # Shards
-        shards_recibidos = [str(i) for i in ids_runas[8:11]] if len(ids_runas) > 8 else []
-        ordenados = [
-            next((s for s in shards_recibidos if s in ["5008", "5005", "5007"]), "5008"),
-            next((s for s in shards_recibidos if s in ["5008", "5009", "5001", "5002", "5003"]), "5008"),
-            next((s for s in shards_recibidos if s in ["5010", "5013", "5001", "5011"]), "5010")
-        ]
-        
-        fr_stats = tk.Frame(col2, bg=BG_PANEL)
-        fr_stats.grid(row=3, column=0, pady=15)
-        for idx, stat_id in enumerate(ordenados):
-            texto, color = STAT_SHARDS.get(stat_id, ("Stat", "#ffffff"))
-            lbl = tk.Label(fr_stats, text=texto, bg=BG_DARK, fg=TEXT_WHITE, font=("Helvetica", 8, "bold"), 
-                           width=16, pady=3, highlightbackground=color, highlightthickness=1)
-            lbl.pack(pady=3)
+        for w in frame_padre.winfo_children():
+            w.destroy()
 
-        # Hechizos
-        tk.Label(col3, text="HECHIZOS", bg=BG_PANEL, fg=BORDER_GOLD, font=("Helvetica", 9, "bold")).pack(pady=(0,10))
-        for sp in ids_spells:
-            fr_sp = tk.Frame(col3, bg=BG_PANEL)
-            fr_sp.pack(pady=5)
-            self.renderizar_icono(sp, "spell", fr_sp, 0, 0, size=45)
+        root = tk.Frame(frame_padre, bg=BG_PANEL)
+        if is_centered:
+            root.pack(expand=True, fill="both", padx=10, pady=10)
+        else:
+            root.pack(fill="both", expand=True, padx=10, pady=10)
+
+        main_wrap = tk.Frame(root, bg=BG_PANEL)
+        main_wrap.pack(anchor="center")
+
+        # ================= FILA 1 =================
+        fila_1 = tk.Frame(main_wrap, bg=BG_PANEL)
+        fila_1.pack(fill="x", pady=(0, 15))
+
+        panel_runas = self.crear_panel(fila_1, "Runas")
+        panel_runas.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+
+        panel_spells = self.crear_panel(fila_1, "Hechizos")
+        panel_spells.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+
+        # ================= FILA 2 =================
+        fila_2 = tk.Frame(main_wrap, bg=BG_PANEL)
+        fila_2.pack(fill="x")
+
+        panel_start = self.crear_panel(fila_2, "Start / Early Game")
+        panel_start.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+
+        panel_core = self.crear_panel(fila_2, "Core Build")
+        panel_core.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+
+        # =========================================================
+        # ====================== RUNAS ============================
+        # =========================================================
+        contenido_runas = tk.Frame(panel_runas, bg=BG_PANEL)
+        contenido_runas.pack(padx=10, pady=10)
+
+        col_main = tk.Frame(contenido_runas, bg=BG_PANEL)
+        col_main.pack(side="left", padx=15, anchor="n")
+
+        col_sec = tk.Frame(contenido_runas, bg=BG_PANEL)
+        col_sec.pack(side="left", padx=15, anchor="n")
+
+        # Rama primaria
+        tk.Label(
+            col_main,
+            text="PRIMARIA",
+            bg=BG_PANEL,
+            fg=BORDER_GOLD,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(0, 8))
+
+        fr_main_icons = tk.Frame(col_main, bg=BG_PANEL)
+        fr_main_icons.pack()
+
+        if len(ids_runas) > 0:
+            self.renderizar_icono(ids_runas[0], "runa", fr_main_icons, 0, 0, size=35)
+        if len(ids_runas) > 1:
+            self.renderizar_icono(ids_runas[1], "runa", fr_main_icons, 1, 0, size=55)
+        if len(ids_runas) > 2:
+            self.renderizar_icono(ids_runas[2], "runa", fr_main_icons, 2, 0, size=35)
+        if len(ids_runas) > 3:
+            self.renderizar_icono(ids_runas[3], "runa", fr_main_icons, 3, 0, size=35)
+        if len(ids_runas) > 4:
+            self.renderizar_icono(ids_runas[4], "runa", fr_main_icons, 4, 0, size=35)
+
+        # Rama secundaria
+        tk.Label(
+            col_sec,
+            text="SECUNDARIA",
+            bg=BG_PANEL,
+            fg=BORDER_GOLD,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(0, 8))
+
+        fr_sec_icons = tk.Frame(col_sec, bg=BG_PANEL)
+        fr_sec_icons.pack()
+
+        if len(ids_runas) > 5:
+            self.renderizar_icono(ids_runas[5], "runa", fr_sec_icons, 0, 0, size=30)
+        if len(ids_runas) > 6:
+            self.renderizar_icono(ids_runas[6], "runa", fr_sec_icons, 1, 0, size=35)
+        if len(ids_runas) > 7:
+            self.renderizar_icono(ids_runas[7], "runa", fr_sec_icons, 2, 0, size=35)
+
+        # Shards: YA vienen en orden correcto desde obtener_top_runas:
+        # [ofensivo, flex, defensivo]
+        tk.Label(
+            panel_runas,
+            text="SHARDS / MINI STATS",
+            bg=BG_PANEL,
+            fg=ACCENT_BLUE,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(5, 5))
+
+        fr_shards = tk.Frame(panel_runas, bg=BG_PANEL)
+        fr_shards.pack(pady=(0, 10))
+
+        shards_recibidos = [str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]
+
+        for stat_id in shards_recibidos:
+            texto, color = STAT_SHARDS.get(stat_id, (f"Shard {stat_id}", "#ffffff"))
+            lbl = tk.Label(
+                fr_shards,
+                text=texto,
+                bg=BG_DARK,
+                fg=TEXT_WHITE,
+                font=("Helvetica", 8, "bold"),
+                width=16,
+                pady=4,
+                highlightbackground=color,
+                highlightthickness=1
+            )
+            lbl.pack(side="left", padx=6)
+
+        # =========================================================
+        # ===================== HECHIZOS ==========================
+        # =========================================================
+        cont_spells = tk.Frame(panel_spells, bg=BG_PANEL)
+        cont_spells.pack(expand=True, pady=20)
+
+        tk.Label(
+            cont_spells,
+            text="SUMMONER SPELLS",
+            bg=BG_PANEL,
+            fg=BORDER_GOLD,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(0, 10))
+
+        fr_spells = tk.Frame(cont_spells, bg=BG_PANEL)
+        fr_spells.pack()
+
+        for idx, sp in enumerate(ids_spells):
+            self.renderizar_icono(str(sp), "spell", fr_spells, idx, 0, size=48)
+
+        # =========================================================
+        # ======================= START ===========================
+        # =========================================================
+        cont_start = tk.Frame(panel_start, bg=BG_PANEL)
+        cont_start.pack(expand=True, pady=20)
+
+        tk.Label(
+            cont_start,
+            text="OBJETOS INICIALES",
+            bg=BG_PANEL,
+            fg=BORDER_GOLD,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(0, 10))
+
+        tk.Label(
+            cont_start,
+            text="Los items iniciales se muestran en el panel superior de build.",
+            bg=BG_PANEL,
+            fg=TEXT_WHITE,
+            font=("Helvetica", 9, "italic"),
+            wraplength=220,
+            justify="center"
+        ).pack(pady=10)
+
+        # =========================================================
+        # ===================== CORE BUILD ========================
+        # =========================================================
+        cont_core = tk.Frame(panel_core, bg=BG_PANEL)
+        cont_core.pack(expand=True, pady=20)
+
+        tk.Label(
+            cont_core,
+            text="BUILD PRINCIPAL",
+            bg=BG_PANEL,
+            fg=BORDER_GOLD,
+            font=("Helvetica", 9, "bold")
+        ).pack(pady=(0, 10))
+
+        tk.Label(
+            cont_core,
+            text="La build final se muestra en la sección superior de objetos.",
+            bg=BG_PANEL,
+            fg=TEXT_WHITE,
+            font=("Helvetica", 9, "italic"),
+            wraplength=220,
+            justify="center"
+        ).pack(pady=10)
 
     def mostrar_equipo_vivo(self, frame_padre, picks, is_ally=True):
         for w in frame_padre.winfo_children(): w.destroy()
@@ -444,7 +587,7 @@ class LoLRecommenderApp:
 
         fr_fin = tk.Frame(self.frame_iconos_items, bg=BG_PANEL)
         fr_fin.pack(side="left", padx=20)
-        tk.Label(fr_fin, text="Core Build (100% Correcta)", bg=BG_PANEL, fg=TEXT_WHITE).pack()
+        tk.Label(fr_fin, text="Core Build", bg=BG_PANEL, fg=TEXT_WHITE).pack()
         fr_f_i = tk.Frame(fr_fin, bg=BG_PANEL); fr_f_i.pack()
         for idx, i_id in enumerate(data.get("finales", [])): self.renderizar_icono(i_id, "item", fr_f_i, 0, idx)
 

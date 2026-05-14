@@ -269,44 +269,68 @@ def obtener_top_items(campeon, carril):
 def obtener_top_runas(campeon, carril):
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT runes FROM participantes WHERE champion = ? AND team_position = ? AND runes != ''", (campeon, carril))
+
+    cur.execute(
+        "SELECT runes FROM participantes WHERE champion = ? AND team_position = ? AND runes != ''",
+        (campeon, carril)
+    )
     filas = cur.fetchall()
-    
+
     if not filas:
-        cur.execute("SELECT runes FROM participantes WHERE champion = ? AND runes != ''", (campeon,))
+        cur.execute(
+            "SELECT runes FROM participantes WHERE champion = ? AND runes != ''",
+            (campeon,)
+        )
         filas = cur.fetchall()
-        
+
     conn.close()
-    if not filas: return []
+
+    if not filas:
+        return []
 
     conteo_principal = {}
-    conteo_shards_1 = {}
-    conteo_shards_2 = {}
-    conteo_shards_3 = {}
+    conteo_shard_ofensivo = {}
+    conteo_shard_flex = {}
+    conteo_shard_defensivo = {}
 
     for row in filas:
-        partes = [r for r in row["runes"].split(",") if r]
+        partes = [r.strip() for r in row["runes"].split(",") if r.strip()]
+
+        # Primeras 8 posiciones = runas grandes
         if len(partes) >= 8:
             main_runes = ",".join(partes[:8])
             conteo_principal[main_runes] = conteo_principal.get(main_runes, 0) + 1
-        
+
+        # Las últimas 3 vienen desde el recolector como:
+        # defense, flex, offense
         if len(partes) >= 11:
-            s1, s2, s3 = partes[8], partes[9], partes[10]
-            conteo_shards_1[s1] = conteo_shards_1.get(s1, 0) + 1
-            conteo_shards_2[s2] = conteo_shards_2.get(s2, 0) + 1
-            conteo_shards_3[s3] = conteo_shards_3.get(s3, 0) + 1
+            defensa = partes[-3]
+            flex = partes[-2]
+            ofensivo = partes[-1]
+
+            conteo_shard_ofensivo[ofensivo] = conteo_shard_ofensivo.get(ofensivo, 0) + 1
+            conteo_shard_flex[flex] = conteo_shard_flex.get(flex, 0) + 1
+            conteo_shard_defensivo[defensa] = conteo_shard_defensivo.get(defensa, 0) + 1
 
     mejor_principal = max(conteo_principal, key=conteo_principal.get) if conteo_principal else ""
-    runas_finales = mejor_principal.split(",")
+    runas_finales = mejor_principal.split(",") if mejor_principal else []
 
-    if conteo_shards_1: runas_finales.append(max(conteo_shards_1, key=conteo_shards_1.get))
-    else: runas_finales.append("5008")
-    
-    if conteo_shards_2: runas_finales.append(max(conteo_shards_2, key=conteo_shards_2.get))
-    else: runas_finales.append("5008")
-    
-    if conteo_shards_3: runas_finales.append(max(conteo_shards_3, key=conteo_shards_3.get))
-    else: runas_finales.append("5011")
+    # Devolvemos en orden visual correcto:
+    # ofensivo, flex, defensivo
+    if conteo_shard_ofensivo:
+        runas_finales.append(max(conteo_shard_ofensivo, key=conteo_shard_ofensivo.get))
+    else:
+        runas_finales.append("5008")  # Fuerza adaptativa
+
+    if conteo_shard_flex:
+        runas_finales.append(max(conteo_shard_flex, key=conteo_shard_flex.get))
+    else:
+        runas_finales.append("5008")  # Fuerza adaptativa / fallback
+
+    if conteo_shard_defensivo:
+        runas_finales.append(max(conteo_shard_defensivo, key=conteo_shard_defensivo.get))
+    else:
+        runas_finales.append("5011")  # fallback defensivo
 
     return runas_finales
 

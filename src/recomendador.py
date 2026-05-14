@@ -371,19 +371,32 @@ def obtener_top_hechizos(campeon, carril):
     if not conteo: return ["4", "14"]
     return max(conteo, key=conteo.get).split(",")
 
-def obtener_mejores_baneos(rol, limite=5):
+def obtenermejoresbaneos(carril, min_partidas=5):
     conn = obtener_conexion()
     cur = conn.cursor()
-    campeones_validos = obtener_campeones_por_rol(rol)
-    if not campeones_validos: return []
-    placeholders = ",".join(["?"] * len(campeones_validos))
-    query = f"""
-        SELECT champion, ROUND(SUM(win) * 100.0 / COUNT(*), 1) AS winrate, COUNT(*) AS partidas
-        FROM participantes WHERE team_position = ? AND champion IN ({placeholders})
-        GROUP BY champion HAVING partidas >= 15 ORDER BY winrate DESC, partidas DESC LIMIT ?
-    """
-    cur.execute(query, [rol] + campeones_validos + [limite])
-    resultados = [row["champion"] for row in cur.fetchall()]
+
+    cur.execute("""
+        SELECT
+            champion,
+            ROUND(COUNT(*) * 100.0 / (
+                SELECT COUNT(*)
+                FROM participantes
+                WHERE team_position = ?
+            ), 1) AS banrate,
+            COUNT(*) AS partidas
+        FROM participantes
+        WHERE team_position = ?
+        GROUP BY champion
+        HAVING COUNT(*) >= ?
+        ORDER BY COUNT(*) DESC
+        LIMIT 10
+    """, (carril, carril, min_partidas))
+
+    resultados = [
+        (row["champion"], row["banrate"], row["partidas"])
+        for row in cur.fetchall()
+    ]
+
     conn.close()
     return resultados
 

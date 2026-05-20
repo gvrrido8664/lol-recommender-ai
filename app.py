@@ -1,27 +1,31 @@
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox
-import pickle
 import os
 import requests
 from io import BytesIO
-from PIL import Image, ImageTk
+from PIL import Image
 import numpy as np
 import joblib
+
+# IMPORTACIÓN DE LA NUEVA LIBRERÍA MODERNA
+import customtkinter as ctk
 
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
-                              obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, recomendar_picks_vivo, 
-                              calcular_winrate_5v5, analizar_composicion,)
+                              obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups, 
+                              recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
 from src.lcu_api import LCUConnector
 
+# Configuraciones de rutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 ITEMS_DIR = os.path.join(ASSETS_DIR, "items")
 RUNAS_DIR = os.path.join(ASSETS_DIR, "runas")
 CHAMPS_DIR = os.path.join(ASSETS_DIR, "champs")
 SPELLS_DIR = os.path.join(ASSETS_DIR, "spells")
+
 os.makedirs(ITEMS_DIR, exist_ok=True)
 os.makedirs(RUNAS_DIR, exist_ok=True)
 os.makedirs(CHAMPS_DIR, exist_ok=True)
@@ -33,7 +37,10 @@ RUNAS_DICT = cargar_runas()
 SPELLS_DICT = cargar_hechizos()
 MAPEO_IDS_CAMPEONES = cargar_mapeo_ids()
 
-# --- TEMA HEXTECH DARK (Alto Contraste) ---
+# --- TEMA HEXTECH DARK (Adaptado a CustomTkinter) ---
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
 BG_DARK = "#010a13"      
 BG_PANEL = "#0a1428"     
 BORDER_GOLD = "#c89b3c"  
@@ -60,6 +67,7 @@ STAT_SHARDS = {
 }
 
 class ToolTip:
+    """Clase para mostrar tooltips flotantes al pasar el ratón."""
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
@@ -68,68 +76,59 @@ class ToolTip:
         self.widget.bind("<Leave>", self.hide)
 
     def show(self, event=None):
-        if self.tw or not self.text: return
+        if self.tw or not self.text:
+            return
         x, y, _, _ = self.widget.bbox("insert")
         x += self.widget.winfo_rootx() + 25
         y += self.widget.winfo_rooty() + 25
-        self.tw = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        lbl = tk.Label(tw, text=self.text, justify='left', bg=BG_PANEL, fg=TEXT_WHITE, 
-                       relief='solid', borderwidth=1, highlightbackground=BORDER_GOLD,
-                       wraplength=250, font=("Helvetica", 9), padx=8, pady=8)
+        
+        self.tw = tk.Toplevel(self.widget)
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry(f"+{x}+{y}")
+        
+        lbl = tk.Label(
+            self.tw, 
+            text=self.text, 
+            justify='left', 
+            bg=BG_PANEL, 
+            fg=TEXT_WHITE, 
+            relief='solid', 
+            borderwidth=1, 
+            highlightbackground=BORDER_GOLD,
+            wraplength=250, 
+            font=("Helvetica", 9), 
+            padx=8, 
+            pady=8
+        )
         lbl.pack()
 
     def hide(self, event=None):
-        if self.tw: self.tw.destroy(); self.tw = None
+        if self.tw:
+            self.tw.destroy()
+            self.tw = None
 
 class LoLRecommenderApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("LoL Esports Analytics Pro - V5.1 (Bugfixes Completos)")
-        self.root.geometry("1200x900")
-        self.root.configure(bg=BG_DARK)
+        self.root.title("LoL Esports Analytics Pro - V6.0 (CustomTkinter UI)")
+        self.root.geometry("1450x950")
+        self.root.configure(fg_color=BG_DARK)
         
-        self.root.option_add('*TCombobox*Listbox.background', BG_PANEL)
-        self.root.option_add('*TCombobox*Listbox.foreground', TEXT_WHITE)
-        self.root.option_add('*TCombobox*Listbox.selectBackground', BORDER_GOLD)
-        self.root.option_add('*TCombobox*Listbox.selectForeground', BG_DARK)
-
+        # Configurar estilo estricto para el único widget que Tkinter no reemplaza bien (Treeview)
         style = ttk.Style()
         style.theme_use("clam")
-
-        style.configure("TNotebook", background=BG_DARK, borderwidth=0)
-
-        style.configure(
-            "TNotebook.Tab",
-            background=BG_PANEL,
-            foreground=TEXT_GOLD,
-            font=("Helvetica", 10, "bold"),
-            padding=(15, 5),
-            borderwidth=0,
-            relief="flat"
-        )
-
-        style.map(
-            "TNotebook.Tab",
-            background=[("selected", BORDER_GOLD), ("!selected", BG_PANEL)],
-            foreground=[("selected", BG_DARK), ("!selected", TEXT_GOLD)],
-            padding=[("selected", (15, 5)), ("!selected", (15, 5))],
-            relief=[("selected", "flat"), ("!selected", "flat")],
-            expand=[("selected", [0, 0, 0, 0]), ("!selected", [0, 0, 0, 0])]
-        )
-
-        style.configure("Treeview", background=BG_PANEL, foreground=TEXT_WHITE, fieldbackground=BG_PANEL, borderwidth=0)
-        style.configure("Treeview.Heading", background=BORDER_GOLD, foreground=BG_DARK, font=("Helvetica", 10, "bold"))
-        style.configure("TCombobox", fieldbackground=BG_PANEL, background=BG_PANEL, foreground=TEXT_WHITE, arrowcolor=TEXT_GOLD)
-        style.map("TCombobox",
-            fieldbackground=[("readonly", BG_PANEL)],
-            selectbackground=[("readonly", BORDER_GOLD)],
-            selectforeground=[("readonly", BG_DARK)]
-        )
+        style.configure("Treeview", background=BG_PANEL, foreground=TEXT_WHITE, fieldbackground=BG_PANEL, borderwidth=0, rowheight=30)
+        style.configure("Treeview.Heading", background=BORDER_GOLD, foreground=BG_DARK, font=("Helvetica", 11, "bold"))
+        style.map('Treeview', background=[('selected', BORDER_GOLD)], foreground=[('selected', BG_DARK)])
 
         self.champs_dict = cargar_campeones()
         self.nombres_campeones_global = sorted(list(set([data["nombre"] for data in self.champs_dict.values()])))
+        
+        self.nombre_a_id_img = {v.get("nombre"): k for k, v in self.champs_dict.items()}
+        self.nombre_a_id_img["Wukong"] = "MonkeyKing"
+        self.nombre_a_id_img["MaestroYi"] = "MasterYi"
+        self.nombre_a_id_img["KhaZix"] = "Khazix"
+
         self.version_juego = obtener_version_actual()
         self.roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
         
@@ -138,426 +137,495 @@ class LoLRecommenderApp:
         
         self.lcu = LCUConnector()
         self.radar_activo = False
-        self.ultimo_rol_detectado = None
-        self.last_aliados = []
-        self.last_enemigos = []
-        self.last_my_champ = None
+        
+        self.last_aliados = None
+        self.last_enemigos = None
+        self.last_my_champ = "FORZAR_INICIO"
 
         self.crear_interfaz()
+        
+        # Lanzar el bucle silencioso de auto-detección
+        self.root.after(1000, self.auto_detectar_lcu)
 
     def crear_panel(self, parent, text="", pad=10):
-        fr = tk.Frame(parent, bg=BG_PANEL, highlightbackground=BORDER_GOLD, highlightthickness=1)
+        """Crea un contenedor CustomTkinter con bordes redondeados."""
+        fr = ctk.CTkFrame(parent, fg_color=BG_PANEL, border_width=1, border_color=BORDER_GOLD, corner_radius=8)
         if text:
-            tk.Label(fr, text=text.upper(), bg=BG_PANEL, fg=ACCENT_BLUE, font=("Helvetica", 9, "bold")).pack(anchor="w", padx=pad, pady=(pad, 0))
+            lbl = ctk.CTkLabel(
+                fr, 
+                text=text.upper(), 
+                text_color=ACCENT_BLUE, 
+                font=ctk.CTkFont(family="Helvetica", size=11, weight="bold")
+            )
+            lbl.pack(anchor="w", padx=pad, pady=(pad, 0))
+            fr.label_title = lbl
         return fr
 
     def crear_interfaz(self):
-        header = tk.Frame(self.root, bg=BG_DARK)
+        # Header
+        header = ctk.CTkFrame(self.root, fg_color=BG_DARK)
         header.pack(fill="x", pady=10)
-        tk.Label(header, text="LOL ESPORTS ANALYTICS", font=("Impact", 24), bg=BG_DARK, fg=BORDER_GOLD).pack()
+        ctk.CTkLabel(
+            header, 
+            text="LOL ESPORTS ANALYTICS", 
+            font=ctk.CTkFont(family="Impact", size=32), 
+            text_color=BORDER_GOLD
+        ).pack()
 
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        # CustomTkinter Tabview
+        self.tabview = ctk.CTkTabview(
+            self.root, 
+            fg_color=BG_DARK,
+            segmented_button_selected_color=BORDER_GOLD,
+            segmented_button_selected_hover_color="#a67c2e",
+            segmented_button_unselected_color=BG_PANEL,
+            text_color=TEXT_WHITE,
+            corner_radius=10
+        )
+        self.tabview.pack(fill='both', expand=True, padx=15, pady=10)
 
-        tab_vivo = tk.Frame(notebook, bg=BG_DARK)
-        notebook.add(tab_vivo, text="📡 RADAR EN VIVO")
-        self.armar_tab_vivo(tab_vivo)
+        # Creación de pestañas
+        self.tab_vivo = self.tabview.add("📡 RADAR EN VIVO")
+        self.tab_counters = self.tabview.add("📊 META & BUILDS")
+        self.tab_ia = self.tabview.add("🤖 ANÁLISIS 1v1")
+        self.tab_bans = self.tabview.add(" BANS RECOMENDADOS ")
 
-        tab_counters = tk.Frame(notebook, bg=BG_DARK)
-        notebook.add(tab_counters, text="📊 META & BUILDS")
-        self.armar_tab_counters(tab_counters)
-
-        tab_ia = tk.Frame(notebook, bg=BG_DARK)
-        notebook.add(tab_ia, text="🤖 ANÁLISIS 1v1")
-        self.armar_tab_ia(tab_ia)
-
-        tab_bans = tk.Frame(notebook, bg=BG_DARK)
-        notebook.add(tab_bans, text=" BANS RECOMENDADOS ")
-        self.armar_tab_bans(tab_bans)
+        # Llenar cada pestaña
+        self.armar_tab_vivo(self.tab_vivo)
+        self.armar_tab_counters(self.tab_counters)
+        self.armar_tab_ia(self.tab_ia)
+        self.armar_tab_bans(self.tab_bans)
 
     def descargar_imagen(self, id_elemento, tipo):
         carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR}
-        carpeta = carpetas.get(tipo)
-        ruta_local = os.path.join(carpeta, f"{id_elemento}.png")
-        if os.path.exists(ruta_local): return ruta_local
-        try:
-            if tipo == "runa": url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "spell": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "champ": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{id_elemento}.png"
-            else: url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
+        ruta_local = os.path.join(carpetas.get(tipo), f"{id_elemento}.png")
+        
+        if os.path.exists(ruta_local):
+            return ruta_local
             
+        try:
+            if tipo == "runa": 
+                url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "spell": 
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "champ": 
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{self.nombre_a_id_img.get(id_elemento, id_elemento)}.png"
+            else: 
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
+                
             resp = requests.get(url)
             resp.raise_for_status()
-            Image.open(BytesIO(resp.content)).save(ruta_local)
+            
+            with open(ruta_local, "wb") as f:
+                f.write(resp.content)
+                
             return ruta_local
-        except: return None
+        except Exception as e:
+            return None
 
     def renderizar_icono(self, id_elemento, tipo, frame_padre, fila, columna, info_extra="", size=40):
-        if tipo == "champ" and id_elemento == "Wukong": id_elemento = "MonkeyKing"
         ruta = self.descargar_imagen(id_elemento, tipo)
-        if not ruta: return
-        
-        imagen = Image.open(ruta).resize((size, size), Image.Resampling.LANCZOS)
-        foto = ImageTk.PhotoImage(imagen)
+        if not ruta:
+            return
+            
+        # En CustomTkinter usamos CTkImage para que el escalado sea perfecto
+        img_pil = Image.open(ruta)
+        foto = ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=(size, size))
         self.imagenes_cacheadas.append(foto)
         
         info_texto = info_extra
-        if tipo == "runa": info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "item": info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "spell": info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        if tipo == "runa": 
+            info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "item": 
+            info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "spell": 
+            info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
 
-        border = 0 if tipo == "runa" else 1
-        lbl_img = tk.Label(frame_padre, image=foto, bg=frame_padre.cget("bg"), bd=border, relief="solid", highlightbackground=BORDER_GOLD)
+        # Creamos un label sin texto, solo con la imagen
+        lbl_img = ctk.CTkLabel(frame_padre, text="", image=foto)
         lbl_img.grid(row=fila, column=columna, padx=4, pady=4)
-        if info_texto: ToolTip(lbl_img, info_texto)
+        
+        if info_texto:
+            ToolTip(lbl_img, info_texto)
 
-    def renderizar_setup_completo(self, ids_runas, ids_spells, frame_padre, is_centered=False):
+    def inicializar_panel_setup(self):
+        for w in self.fr_runas_icons_vivo.winfo_children():
+            w.destroy()
+            
+        ctk.CTkLabel(
+            self.fr_runas_icons_vivo, 
+            text="Selecciona o haz pre-pick de un campeón en el\ncliente de LoL para generar su Setup Óptimo.", 
+            text_color="gray", 
+            font=ctk.CTkFont(family="Helvetica", size=14, slant="italic")
+        ).pack(expand=True)
+
+    def _animar_boton(self, btn, text_original):
+        btn.configure(text="¡IMPORTADO! ✔", fg_color=GREEN_WR, text_color=BG_DARK)
+        self.root.after(2000, lambda: btn.configure(text=text_original, fg_color="#1a2b4c", text_color=TEXT_WHITE))
+
+    def accion_importar_runas(self, ids_runas, campeon, btn):
+        if self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"):
+            self._animar_boton(btn, "Exportar a LoL")
+        else:
+            messagebox.showerror("Error", "No se pudo importar las runas al cliente.")
+
+    def accion_importar_spells(self, ids_spells, btn):
+        if len(ids_spells) >= 2 and self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]):
+            self._animar_boton(btn, "Exportar a LoL")
+        else:
+            messagebox.showerror("Error", "No se pudo importar hechizos.")
+
+    def accion_importar_items(self, campeon, ids_start, ids_core, btn):
+        if self.lcu.importar_item_set(campeon, ids_start, ids_core):
+            self._animar_boton(btn, "Crear Item Set")
+        else:
+            messagebox.showerror("Error", "No se pudo crear el Item Set.")
+
+    # =========================================================================
+    # RENDERIZADO VISUAL COMPLETO DE BUILDS (CORRECCIÓN DE LA CUADRÍCULA GRID)
+    # =========================================================================
+    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, frame_padre, is_centered=False):
         for w in frame_padre.winfo_children():
             w.destroy()
 
-        root = tk.Frame(frame_padre, bg=BG_PANEL)
+        # El contenedor principal del Setup debe expandirse y usar una cuadricula
+        main_wrap = ctk.CTkFrame(frame_padre, fg_color="transparent")
         if is_centered:
-            root.pack(expand=True, fill="both", padx=10, pady=10)
+            main_wrap.pack(expand=True, fill="both", padx=5, pady=5)
         else:
-            root.pack(fill="both", expand=True, padx=10, pady=10)
+            main_wrap.pack(fill="both", expand=True, padx=5, pady=5)
 
-        main_wrap = tk.Frame(root, bg=BG_PANEL)
-        main_wrap.pack(anchor="center")
+        # Configuramos la cuadrícula 2x2. ¡ESTO GARANTIZA QUE LOS ITEMS TENGAN ESPACIO FÍSICO!
+        main_wrap.columnconfigure(0, weight=1, uniform="col")
+        main_wrap.columnconfigure(1, weight=1, uniform="col")
+        main_wrap.rowconfigure(0, weight=6, uniform="row") # Runas y Spells son más altos
+        main_wrap.rowconfigure(1, weight=4, uniform="row") # Start y Core son más bajos
 
-        # ================= FILA 1 =================
-        fila_1 = tk.Frame(main_wrap, bg=BG_PANEL)
-        fila_1.pack(fill="x", pady=(0, 15))
+        # Cuadrantes
+        panel_runas = self.crear_panel(main_wrap, "Runas")
+        panel_runas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        panel_runas = self.crear_panel(fila_1, "Runas")
-        panel_runas.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+        panel_spells = self.crear_panel(main_wrap, "Hechizos")
+        panel_spells.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        panel_spells = self.crear_panel(fila_1, "Hechizos")
-        panel_spells.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+        panel_start = self.crear_panel(main_wrap, "Start / Early Game")
+        panel_start.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
-        # ================= FILA 2 =================
-        fila_2 = tk.Frame(main_wrap, bg=BG_PANEL)
-        fila_2.pack(fill="x")
+        panel_core = self.crear_panel(main_wrap, "Core Build")
+        panel_core.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
-        panel_start = self.crear_panel(fila_2, "Start / Early Game")
-        panel_start.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+        # ====== 1. DIBUJAR RUNAS ======
+        contenido_runas = ctk.CTkFrame(panel_runas, fg_color="transparent")
+        contenido_runas.pack(padx=5, pady=5, expand=True)
 
-        panel_core = self.crear_panel(fila_2, "Core Build")
-        panel_core.pack(side="left", fill="both", expand=True, padx=10, ipadx=10, ipady=10)
+        col_main = ctk.CTkFrame(contenido_runas, fg_color="transparent")
+        col_main.pack(side="left", padx=10, anchor="n")
 
-        # =========================================================
-        # ====================== RUNAS ============================
-        # =========================================================
-        contenido_runas = tk.Frame(panel_runas, bg=BG_PANEL)
-        contenido_runas.pack(padx=10, pady=10)
+        col_sec = ctk.CTkFrame(contenido_runas, fg_color="transparent")
+        col_sec.pack(side="left", padx=10, anchor="n")
 
-        col_main = tk.Frame(contenido_runas, bg=BG_PANEL)
-        col_main.pack(side="left", padx=15, anchor="n")
-
-        col_sec = tk.Frame(contenido_runas, bg=BG_PANEL)
-        col_sec.pack(side="left", padx=15, anchor="n")
-
-        # Rama primaria
-        tk.Label(
-            col_main,
-            text="PRIMARIA",
-            bg=BG_PANEL,
-            fg=BORDER_GOLD,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(0, 8))
-
-        fr_main_icons = tk.Frame(col_main, bg=BG_PANEL)
-        fr_main_icons.pack()
-
-        if len(ids_runas) > 0:
-            self.renderizar_icono(ids_runas[0], "runa", fr_main_icons, 0, 0, size=35)
-        if len(ids_runas) > 1:
-            self.renderizar_icono(ids_runas[1], "runa", fr_main_icons, 1, 0, size=55)
-        if len(ids_runas) > 2:
-            self.renderizar_icono(ids_runas[2], "runa", fr_main_icons, 2, 0, size=35)
-        if len(ids_runas) > 3:
-            self.renderizar_icono(ids_runas[3], "runa", fr_main_icons, 3, 0, size=35)
+        ctk.CTkLabel(col_main, text="PRIMARIA", text_color=BORDER_GOLD, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(0, 5))
+        fr_m = ctk.CTkFrame(col_main, fg_color="transparent"); fr_m.pack()
+        
         if len(ids_runas) > 4:
-            self.renderizar_icono(ids_runas[4], "runa", fr_main_icons, 4, 0, size=35)
+            self.renderizar_icono(ids_runas[0], "runa", fr_m, 0, 0, size=35)
+            self.renderizar_icono(ids_runas[1], "runa", fr_m, 1, 0, size=55)
+            self.renderizar_icono(ids_runas[2], "runa", fr_m, 2, 0, size=35)
+            self.renderizar_icono(ids_runas[3], "runa", fr_m, 3, 0, size=35)
+            self.renderizar_icono(ids_runas[4], "runa", fr_m, 4, 0, size=35)
 
-        # Rama secundaria
-        tk.Label(
-            col_sec,
-            text="SECUNDARIA",
-            bg=BG_PANEL,
-            fg=BORDER_GOLD,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(0, 8))
-
-        fr_sec_icons = tk.Frame(col_sec, bg=BG_PANEL)
-        fr_sec_icons.pack()
-
-        if len(ids_runas) > 5:
-            self.renderizar_icono(ids_runas[5], "runa", fr_sec_icons, 0, 0, size=30)
-        if len(ids_runas) > 6:
-            self.renderizar_icono(ids_runas[6], "runa", fr_sec_icons, 1, 0, size=35)
+        ctk.CTkLabel(col_sec, text="SECUNDARIA", text_color=BORDER_GOLD, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(0, 5))
+        fr_s = ctk.CTkFrame(col_sec, fg_color="transparent"); fr_s.pack()
+        
         if len(ids_runas) > 7:
-            self.renderizar_icono(ids_runas[7], "runa", fr_sec_icons, 2, 0, size=35)
+            self.renderizar_icono(ids_runas[5], "runa", fr_s, 0, 0, size=30)
+            self.renderizar_icono(ids_runas[6], "runa", fr_s, 1, 0, size=35)
+            self.renderizar_icono(ids_runas[7], "runa", fr_s, 2, 0, size=35)
 
-        # Shards: YA vienen en orden correcto desde obtener_top_runas:
-        # [ofensivo, flex, defensivo]
-        tk.Label(
-            panel_runas,
-            text="SHARDS / MINI STATS",
-            bg=BG_PANEL,
-            fg=ACCENT_BLUE,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(5, 5))
+        ctk.CTkLabel(panel_runas, text="SHARDS", text_color=ACCENT_BLUE, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(5, 0))
+        fr_shards = ctk.CTkFrame(panel_runas, fg_color="transparent")
+        fr_shards.pack(pady=(0, 5))
 
-        fr_shards = tk.Frame(panel_runas, bg=BG_PANEL)
-        fr_shards.pack(pady=(0, 10))
-
-        shards_recibidos = [str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]
-
-        for stat_id in shards_recibidos:
+        for stat_id in ([str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]):
             texto, color = STAT_SHARDS.get(stat_id, (f"Shard {stat_id}", "#ffffff"))
-            lbl = tk.Label(
-                fr_shards,
-                text=texto,
-                bg=BG_DARK,
-                fg=TEXT_WHITE,
-                font=("Helvetica", 8, "bold"),
-                width=16,
-                pady=4,
-                highlightbackground=color,
-                highlightthickness=1
-            )
-            lbl.pack(side="left", padx=6)
+            # Simulamos el borde de color usando un Frame de fondo
+            border_frame = ctk.CTkFrame(fr_shards, fg_color=color, corner_radius=4)
+            border_frame.pack(side="left", padx=3)
+            lbl = ctk.CTkLabel(border_frame, text=texto, text_color=TEXT_WHITE, fg_color=BG_DARK, font=ctk.CTkFont(size=9, weight="bold"), width=70, corner_radius=3)
+            lbl.pack(padx=1, pady=1) # El padding de 1px simula el borde
 
-        # =========================================================
-        # ===================== HECHIZOS ==========================
-        # =========================================================
-        cont_spells = tk.Frame(panel_spells, bg=BG_PANEL)
-        cont_spells.pack(expand=True, pady=20)
+        btn_imp_runas = ctk.CTkButton(panel_runas, text="Exportar a LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
+        btn_imp_runas.configure(command=lambda: self.accion_importar_runas(ids_runas, campeon, btn_imp_runas))
+        btn_imp_runas.pack(pady=5)
 
-        tk.Label(
-            cont_spells,
-            text="SUMMONER SPELLS",
-            bg=BG_PANEL,
-            fg=BORDER_GOLD,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(0, 10))
-
-        fr_spells = tk.Frame(cont_spells, bg=BG_PANEL)
+        # ====== 2. DIBUJAR HECHIZOS ======
+        cont_spells = ctk.CTkFrame(panel_spells, fg_color="transparent")
+        cont_spells.pack(expand=True, pady=10)
+        
+        fr_spells = ctk.CTkFrame(cont_spells, fg_color="transparent")
         fr_spells.pack()
-
+        
         for idx, sp in enumerate(ids_spells):
-            self.renderizar_icono(str(sp), "spell", fr_spells, idx, 0, size=48)
+            self.renderizar_icono(str(sp), "spell", fr_spells, idx, 0, size=50)
+            
+        btn_imp_spells = ctk.CTkButton(panel_spells, text="Exportar a LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
+        btn_imp_spells.configure(command=lambda: self.accion_importar_spells(ids_spells, btn_imp_spells))
+        btn_imp_spells.pack(side="bottom", pady=10)
 
-        # =========================================================
-        # ======================= START ===========================
-        # =========================================================
-        cont_start = tk.Frame(panel_start, bg=BG_PANEL)
-        cont_start.pack(expand=True, pady=20)
+        # ====== 3. DIBUJAR ITEMS START ======
+        fr_s_i = ctk.CTkFrame(panel_start, fg_color="transparent")
+        fr_s_i.pack(expand=True)
+        
+        if ids_start:
+            for idx, i_id in enumerate(ids_start): 
+                self.renderizar_icono(i_id, "item", fr_s_i, 0, idx, size=40)
+        else:
+            ctk.CTkLabel(fr_s_i, text="Sin datos.", text_color=TEXT_WHITE).grid(row=0, column=0)
 
-        tk.Label(
-            cont_start,
-            text="OBJETOS INICIALES",
-            bg=BG_PANEL,
-            fg=BORDER_GOLD,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(0, 10))
+        # ====== 4. DIBUJAR CORE BUILD ======
+        fr_c_i = ctk.CTkFrame(panel_core, fg_color="transparent")
+        fr_c_i.pack(expand=True)
+        
+        if ids_core:
+            # Dividimos los 6 ítems en 2 filas de 3 para que no se amontonen horizontalmente
+            for idx, i_id in enumerate(ids_core):
+                row_idx = 0 if idx < 3 else 1
+                col_idx = idx % 3
+                self.renderizar_icono(i_id, "item", fr_c_i, row_idx, col_idx, size=40)
+        else:
+            ctk.CTkLabel(fr_c_i, text="Selecciona un campeón...", text_color=TEXT_WHITE).grid(row=0, column=0)
 
-        tk.Label(
-            cont_start,
-            text="Los items iniciales se muestran en el panel superior de build.",
-            bg=BG_PANEL,
-            fg=TEXT_WHITE,
-            font=("Helvetica", 9, "italic"),
-            wraplength=220,
-            justify="center"
-        ).pack(pady=10)
+        btn_imp_items = ctk.CTkButton(panel_core, text="Crear Item Set en LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
+        btn_imp_items.configure(command=lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_imp_items))
+        btn_imp_items.pack(side="bottom", pady=5)
 
-        # =========================================================
-        # ===================== CORE BUILD ========================
-        # =========================================================
-        cont_core = tk.Frame(panel_core, bg=BG_PANEL)
-        cont_core.pack(expand=True, pady=20)
-
-        tk.Label(
-            cont_core,
-            text="BUILD PRINCIPAL",
-            bg=BG_PANEL,
-            fg=BORDER_GOLD,
-            font=("Helvetica", 9, "bold")
-        ).pack(pady=(0, 10))
-
-        tk.Label(
-            cont_core,
-            text="La build final se muestra en la sección superior de objetos.",
-            bg=BG_PANEL,
-            fg=TEXT_WHITE,
-            font=("Helvetica", 9, "italic"),
-            wraplength=220,
-            justify="center"
-        ).pack(pady=10)
 
     def mostrar_equipo_vivo(self, frame_padre, picks, is_ally=True):
-        for w in frame_padre.winfo_children(): w.destroy()
+        for w in frame_padre.winfo_children():
+            w.destroy()
+            
         if not picks:
-            tk.Label(frame_padre, text="Esperando...", bg=BG_PANEL, fg=TEXT_WHITE, font=("Helvetica", 10, "italic")).pack(pady=20)
+            ctk.CTkLabel(frame_padre, text="Esperando equipo...", text_color=TEXT_WHITE, font=ctk.CTkFont(slant="italic")).pack(pady=20)
             return
+            
         bg_card = ALLY_BG if is_ally else ENEMY_BG
         for champ in picks:
-            card = tk.Frame(frame_padre, bg=bg_card, bd=1, relief="solid", highlightbackground=BORDER_GOLD)
-            card.pack(fill="x", pady=4, padx=10)
+            card = ctk.CTkFrame(frame_padre, fg_color=bg_card, border_width=1, border_color=BORDER_GOLD, corner_radius=5)
+            card.pack(fill="x", pady=4, padx=10, ipadx=5, ipady=5)
+            
             self.renderizar_icono(champ, "champ", card, 0, 0, size=35)
-            tk.Label(card, text=champ, bg=bg_card, fg=TEXT_WHITE, font=("Helvetica", 11, "bold")).grid(row=0, column=1, padx=10, sticky="w")
+            ctk.CTkLabel(card, text=champ, text_color=TEXT_WHITE, font=ctk.CTkFont(family="Helvetica", size=14, weight="bold")).grid(row=0, column=1, padx=10, sticky="w")
 
     # ================= RADAR EN VIVO =================
     def armar_tab_vivo(self, frame):
-        top_bar = tk.Frame(frame, bg=BG_DARK)
-        top_bar.pack(fill="x", pady=(0,10))
-        self.btn_radar = tk.Button(top_bar, text="INICIAR RADAR LCU", bg=BG_PANEL, fg=TEXT_WHITE, font=("Helvetica", 10, "bold"), 
-                                   relief="solid", bd=1, highlightbackground=BORDER_GOLD, command=self.toggle_radar)
-        self.btn_radar.pack(side="left", padx=5)
+        top_bar = ctk.CTkFrame(frame, fg_color=BG_DARK)
+        top_bar.pack(fill="x", pady=(0, 10))
         
-        self.fr_wr_widget = tk.Frame(top_bar, bg=BG_DARK)
+        self.lbl_estado_lcu = ctk.CTkLabel(top_bar, text="Buscando Cliente de LoL...", font=ctk.CTkFont(family="Helvetica", size=12, weight="bold"), text_color=YELLOW_WR)
+        self.lbl_estado_lcu.pack(side="left", padx=10)
+        
+        self.fr_wr_widget = ctk.CTkFrame(top_bar, fg_color=BG_DARK)
         self.fr_wr_widget.pack(side="right", padx=20)
-        self.lbl_wr_numero = tk.Label(self.fr_wr_widget, text="--%", font=("Impact", 36), bg=BG_DARK, fg="gray")
+        
+        self.lbl_wr_numero = ctk.CTkLabel(self.fr_wr_widget, text="--%", font=ctk.CTkFont(family="Impact", size=42), text_color="gray")
         self.lbl_wr_numero.pack(side="left")
-        self.lbl_wr_razon = tk.Label(self.fr_wr_widget, text="Esperando equipos...", font=("Helvetica", 10, "italic"), bg=BG_DARK, fg="gray")
+        
+        self.lbl_wr_razon = ctk.CTkLabel(self.fr_wr_widget, text="Esperando equipos...", font=ctk.CTkFont(family="Helvetica", size=12, slant="italic"), text_color="gray")
         self.lbl_wr_razon.pack(side="left", padx=10, anchor="s", pady=10)
 
-        draft_flow = tk.Frame(frame, bg=BG_DARK)
+        draft_flow = ctk.CTkFrame(frame, fg_color=BG_DARK)
         draft_flow.pack(fill="both", expand=True)
 
+        # Columna 1: Enemigos
         col_enemy = self.crear_panel(draft_flow, "Enemigos")
         col_enemy.pack(side="left", fill="both", expand=True, padx=5)
-        self.lbl_enemy_stats = tk.Label(col_enemy, text="AD: --% | AP: --% | Tanks: 0", font=("Helvetica", 9, "bold"), bg=BG_PANEL, fg=RED_WR)
+        
+        self.lbl_enemy_stats = ctk.CTkLabel(col_enemy, text="AD: --% | AP: --% | Tanks: 0", font=ctk.CTkFont(weight="bold"), text_color=RED_WR)
         self.lbl_enemy_stats.pack(pady=5)
-        self.fr_enemigos_picks = tk.Frame(col_enemy, bg=BG_PANEL)
+        
+        self.fr_enemigos_picks = ctk.CTkFrame(col_enemy, fg_color="transparent")
         self.fr_enemigos_picks.pack(fill="both", expand=True, pady=5)
+        
+        self.panel_bans_vivo = self.crear_panel(col_enemy, "Bans Sugeridos (Tu Línea)")
+        self.panel_bans_vivo.pack(fill="x", side="bottom", pady=5)
+        
+        self.fr_bans_icons_vivo = ctk.CTkFrame(self.panel_bans_vivo, fg_color="transparent")
+        self.fr_bans_icons_vivo.pack(pady=5)
 
-        col_center = tk.Frame(draft_flow, bg=BG_DARK)
+        # Columna 2: Central (Sugerencias y Build)
+        col_center = ctk.CTkFrame(draft_flow, fg_color=BG_DARK)
         col_center.pack(side="left", fill="both", expand=True, padx=5)
-        self.lbl_rol_vivo = tk.Label(col_center, text="ASIGNACIÓN PENDIENTE", font=("Helvetica", 14, "bold"), bg=BG_DARK, fg=BORDER_GOLD)
+        
+        self.lbl_rol_vivo = ctk.CTkLabel(col_center, text="ASIGNACIÓN PENDIENTE", font=ctk.CTkFont(family="Helvetica", size=18, weight="bold"), text_color=BORDER_GOLD)
         self.lbl_rol_vivo.pack(pady=5)
         
         self.panel_sugerencias = self.crear_panel(col_center, "Recomendaciones de Pick")
         self.panel_sugerencias.pack(fill="x", pady=5)
-        self.fr_picks_icons = tk.Frame(self.panel_sugerencias, bg=BG_PANEL)
+        
+        self.fr_picks_icons = ctk.CTkFrame(self.panel_sugerencias, fg_color="transparent")
         self.fr_picks_icons.pack(pady=10)
 
-        self.panel_runas_vivo = self.crear_panel(col_center, "Setup Recomendado (Runas & Hechizos)")
+        self.panel_runas_vivo = self.crear_panel(col_center, "Setup Recomendado Integral")
         self.panel_runas_vivo.pack(fill="both", expand=True, pady=5)
-        self.fr_runas_icons_vivo = tk.Frame(self.panel_runas_vivo, bg=BG_PANEL)
+        
+        self.fr_runas_icons_vivo = ctk.CTkFrame(self.panel_runas_vivo, fg_color="transparent")
         self.fr_runas_icons_vivo.pack(fill="both", expand=True, pady=5)
+        
+        self.inicializar_panel_setup() 
 
+        # Columna 3: Aliados
         col_ally = self.crear_panel(draft_flow, "Aliados")
         col_ally.pack(side="left", fill="both", expand=True, padx=5)
-        self.lbl_ally_stats = tk.Label(col_ally, text="AD: --% | AP: --% | Tanks: 0", font=("Helvetica", 9, "bold"), bg=BG_PANEL, fg=ACCENT_BLUE)
+        
+        self.lbl_ally_stats = ctk.CTkLabel(col_ally, text="AD: --% | AP: --% | Tanks: 0", font=ctk.CTkFont(weight="bold"), text_color=ACCENT_BLUE)
         self.lbl_ally_stats.pack(pady=5)
-        self.fr_aliados_picks = tk.Frame(col_ally, bg=BG_PANEL)
+        
+        self.fr_aliados_picks = ctk.CTkFrame(col_ally, fg_color="transparent")
         self.fr_aliados_picks.pack(fill="both", expand=True, pady=5)
 
-    def toggle_radar(self):
+    def auto_detectar_lcu(self):
+        """Bucle silencioso para auto-conectar con el cliente."""
         if not self.radar_activo:
             if self.lcu.conectar():
                 self.radar_activo = True
-                self.btn_radar.config(text="ENLAZADO AL CLIENTE", fg=GREEN_WR)
+                self.lbl_estado_lcu.configure(text="✓ ENLAZADO AL CLIENTE DE LOL", text_color=GREEN_WR)
                 self.actualizar_radar_loop()
-            else: messagebox.showerror("Error", "Abre League of Legends primero.")
-        else:
-            self.radar_activo = False
-            self.btn_radar.config(text="INICIAR RADAR LCU", fg=TEXT_WHITE)
+            else:
+                self.lbl_estado_lcu.configure(text="Buscando Cliente de LoL... (Abre el juego)", text_color=YELLOW_WR)
+                self.root.after(3000, self.auto_detectar_lcu)
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)
-        if final_id != "0": return "Wukong" if MAPEO_IDS_CAMPEONES.get(final_id) == "MonkeyKing" else MAPEO_IDS_CAMPEONES.get(final_id, "Desconocido")
+        if final_id != "0": 
+            return "Wukong" if MAPEO_IDS_CAMPEONES.get(final_id) == "MonkeyKing" else MAPEO_IDS_CAMPEONES.get(final_id, "Desconocido")
         return None
 
     def actualizar_radar_loop(self):
         if not self.radar_activo: return
-        draft = self.lcu.obtener_sesion_draft()
-        if draft:
-            rol_actual = self.lcu.obtener_mi_rol(draft)
-            self.lbl_rol_vivo.config(text=f"LÍNEA ASIGNADA: {rol_actual}")
+        try:
+            draft = self.lcu.obtener_sesion_draft()
+            if draft:
+                rol_actual = self.lcu.obtener_mi_rol(draft)
+                self.lbl_rol_vivo.configure(text=f"LÍNEA ASIGNADA: {rol_actual}")
 
-            picks_al, picks_en = [], []
-            mi_campeon = None
-            mi_celda = draft.get("localPlayerCellId")
+                picks_al, picks_en = [], []
+                mi_campeon = None
+                mi_celda = draft.get("localPlayerCellId")
 
-            for j in draft.get("myTeam", []):
-                champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
-                if champ: picks_al.append(champ)
-                if j.get("cellId") == mi_celda: mi_campeon = champ
+                for j in draft.get("myTeam", []):
+                    champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
+                    if champ: picks_al.append(champ)
+                    if j.get("cellId") == mi_celda: mi_campeon = champ
+                    
+                for j in draft.get("theirTeam", []):
+                    champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
+                    if champ: picks_en.append(champ)
+                    
+                if picks_al != self.last_aliados or picks_en != self.last_enemigos or mi_campeon != self.last_my_champ:
+                    self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
+                    
+                    self.mostrar_equipo_vivo(self.fr_aliados_picks, picks_al, is_ally=True)
+                    self.mostrar_equipo_vivo(self.fr_enemigos_picks, picks_en, is_ally=False)
+                    
+                    ad_al, ap_al, tanks_al, _ = analizar_composicion(picks_al)
+                    self.lbl_ally_stats.configure(text=f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
+                    
+                    ad_en, ap_en, tanks_en, _ = analizar_composicion(picks_en)
+                    self.lbl_enemy_stats.configure(text=f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
+                    
+                    self.mostrar_picks_vivo(rol_actual, picks_al, picks_en)
+                    
+                    for w in self.fr_bans_icons_vivo.winfo_children(): w.destroy()
+                    
+                    if mi_campeon: 
+                        self.panel_bans_vivo.label_title.configure(text=f"BANS SUGERIDOS (VS {mi_campeon.upper()})")
+                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_actual, min_partidas=5)
+                    else: 
+                        self.panel_bans_vivo.label_title.configure(text=f"BANS SUGERIDOS (META {rol_actual})")
+                        bans_sugeridos = obtenermejoresbaneos(rol_actual, min_partidas=5)
+
+                    bans_filtrados = [b for b, wr, p in bans_sugeridos if b not in picks_al and b not in picks_en][:4]
+                    if bans_filtrados:
+                        for i, ban in enumerate(bans_filtrados): 
+                            self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i, f"Prioridad Ban: {ban}", size=35)
+                    else: 
+                        ctk.CTkLabel(self.fr_bans_icons_vivo, text="Sin recomendaciones claras", text_color="gray").grid(row=0, column=0, pady=10)
+
+                    if len(picks_al) == 5 and len(picks_en) == 5:
+                        wr = calcular_winrate_5v5(picks_al, picks_en)
+                        color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
+                        tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
+                        self.lbl_wr_numero.configure(text=f"{wr}%", text_color=color)
+                        self.lbl_wr_razon.configure(text=tendencia, text_color=color)
+
+                if mi_campeon != self.last_my_champ:
+                    self.last_my_champ = mi_campeon
+                    if mi_campeon:
+                        ids_runas = obtener_top_runas(mi_campeon, rol_actual)
+                        ids_spells = obtener_top_hechizos(mi_campeon, rol_actual)
+                        ids_start, ids_core = obtener_top_items(mi_campeon, rol_actual)
+                        self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo, is_centered=True)
+                    else: 
+                        self.inicializar_panel_setup()
+            else:
+                if self.last_my_champ != "FORZAR_INICIO":
+                    self.radar_activo = False
+                    self.last_aliados = None
+                    self.last_enemigos = None
+                    self.last_my_champ = "FORZAR_INICIO"
+                    self.auto_detectar_lcu()
+                    return
+
+        except Exception as e: 
+            pass
             
-            for j in draft.get("theirTeam", []):
-                champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
-                if champ: picks_en.append(champ)
-                
-            if picks_al != self.last_aliados or picks_en != self.last_enemigos:
-                self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
-                
-                self.mostrar_equipo_vivo(self.fr_aliados_picks, picks_al, is_ally=True)
-                self.mostrar_equipo_vivo(self.fr_enemigos_picks, picks_en, is_ally=False)
-                
-                ad_al, ap_al, tanks_al, _ = analizar_composicion(picks_al)
-                self.lbl_ally_stats.config(text=f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
-                
-                ad_en, ap_en, tanks_en, _ = analizar_composicion(picks_en)
-                self.lbl_enemy_stats.config(text=f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
-                
-                self.mostrar_picks_vivo(rol_actual, picks_al, picks_en)
-                
-                if len(picks_al) == 5 and len(picks_en) == 5:
-                    wr = calcular_winrate_5v5(picks_al, picks_en)
-                    color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
-                    tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
-                    self.lbl_wr_numero.config(text=f"{wr}%", fg=color)
-                    self.lbl_wr_razon.config(text=tendencia, fg=color)
-
-            if mi_campeon != self.last_my_champ:
-                self.last_my_champ = mi_campeon
-                if mi_campeon:
-                    ids_runas = obtener_top_runas(mi_campeon, rol_actual)
-                    ids_spells = obtener_top_hechizos(mi_campeon, rol_actual)
-                    self.renderizar_setup_completo(ids_runas, ids_spells, self.fr_runas_icons_vivo, is_centered=True)
-                
         self.root.after(1500, self.actualizar_radar_loop)
 
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
-        for w in self.fr_picks_icons.winfo_children(): w.destroy()
+        for w in self.fr_picks_icons.winfo_children(): 
+            w.destroy()
+            
         sugerencias = recomendar_picks_vivo(rol, aliados, enemigos)
-        
         col_idx = 0
+        
         for categoria, champs in sugerencias.items():
             if not champs: continue
-            fr_cat = tk.Frame(self.fr_picks_icons, bg=BG_PANEL)
-            fr_cat.grid(row=0, column=col_idx, padx=10, sticky="n")
-            tk.Label(fr_cat, text=categoria, bg=BG_PANEL, fg=BORDER_GOLD, font=("Helvetica", 8, "bold")).pack()
             
-            fr_icons = tk.Frame(fr_cat, bg=BG_PANEL)
+            fr_cat = ctk.CTkFrame(self.fr_picks_icons, fg_color="transparent")
+            fr_cat.grid(row=0, column=col_idx, padx=15, sticky="n")
+            
+            ctk.CTkLabel(fr_cat, text=categoria, text_color=BORDER_GOLD, font=ctk.CTkFont(size=10, weight="bold")).pack()
+            
+            fr_icons = ctk.CTkFrame(fr_cat, fg_color="transparent")
             fr_icons.pack()
-            for i, (champ, wr, razon) in enumerate(champs):
-                self.renderizar_icono(champ, "champ", fr_icons, 0, i, f"{champ}\nWR Esperado: {wr}%\nPor qué: {razon}")
+            
+            for i, (champ, wr, razon) in enumerate(champs): 
+                self.renderizar_icono(champ, "champ", fr_icons, i // 2, i % 2, f"{champ}\nWR Esperado: {wr}%\nPor qué: {razon}", size=35)
+                
             col_idx += 1
 
     # ================= META & BUILDS =================
     def armar_tab_counters(self, frame):
-        ctrls = tk.Frame(frame, bg=BG_DARK)
+        ctrls = ctk.CTkFrame(frame, fg_color=BG_DARK)
         ctrls.pack(fill='x', pady=10)
         
-        tk.Label(ctrls, text="Línea:", bg=BG_DARK, fg=TEXT_WHITE).pack(side="left", padx=5)
-        self.cb_rol_counter = ttk.Combobox(ctrls, values=self.roles, state="readonly", width=15)
-        self.cb_rol_counter.current(0)
-        self.cb_rol_counter.pack(side="left", padx=5)
-        self.cb_rol_counter.bind("<<ComboboxSelected>>", self.actualizar_listas_counter)
+        ctk.CTkLabel(ctrls, text="Línea:", text_color=TEXT_WHITE).pack(side="left", padx=5)
         
-        tk.Label(ctrls, text="Vs:", bg=BG_DARK, fg=TEXT_WHITE).pack(side="left", padx=5)
-        self.cb_enemigo = ttk.Combobox(ctrls, state="readonly", width=15)
+        self.cb_rol_counter = ctk.CTkComboBox(ctrls, values=self.roles, command=self.actualizar_listas_counter, width=150)
+        self.cb_rol_counter.set(self.roles[0])
+        self.cb_rol_counter.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(ctrls, text="Vs:", text_color=TEXT_WHITE).pack(side="left", padx=5)
+        
+        self.cb_enemigo = ctk.CTkComboBox(ctrls, values=[], width=150)
         self.cb_enemigo.pack(side="left", padx=5)
         
-        tk.Button(ctrls, text="ANALIZAR", bg=BORDER_GOLD, fg=BG_DARK, font=("Helvetica", 9, "bold"), command=self.buscar_counters).pack(side="left", padx=15)
+        ctk.CTkButton(ctrls, text="ANALIZAR", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.buscar_counters).pack(side="left", padx=15)
         
-        content = tk.Frame(frame, bg=BG_DARK)
+        content = ctk.CTkFrame(frame, fg_color=BG_DARK)
         content.pack(fill="both", expand=True)
         
+        # El Treeview sigue usando ttk porque CustomTkinter no tiene tablas nativas, pero aplicamos el estilo oscuro.
         self.tree_counters = ttk.Treeview(content, columns=("Campeón Aliado", "Winrate %", "Partidas"), show="headings", height=5)
         self.tree_counters.heading("Campeón Aliado", text="Mejores Respuestas")
         self.tree_counters.heading("Winrate %", text="Winrate %")
@@ -567,26 +635,29 @@ class LoLRecommenderApp:
         
         self.panel_visual = self.crear_panel(content, "Setup & Build Óptimas")
         self.panel_visual.pack(fill='both', expand=True, pady=5)
-        self.fr_contenido_visual = tk.Frame(self.panel_visual, bg=BG_PANEL)
+        
+        self.fr_contenido_visual = ctk.CTkFrame(self.panel_visual, fg_color="transparent")
         self.fr_contenido_visual.pack(fill="both", expand=True)
-        self.frame_iconos_items = tk.Frame(self.fr_contenido_visual, bg=BG_PANEL)
-        self.frame_iconos_items.pack(side="top", pady=10)
-        self.frame_iconos_runas = tk.Frame(self.fr_contenido_visual, bg=BG_PANEL)
-        self.frame_iconos_runas.pack(side="top", pady=10)
+        
+        self.frame_setup_visual = ctk.CTkFrame(self.fr_contenido_visual, fg_color="transparent")
+        self.frame_setup_visual.pack(side="top", fill="both", expand=True, pady=10)
 
-        # SOLUCIÓN BUG META & BUILDS: Cargar campeones al iniciar la pestaña
-        self.actualizar_listas_counter()
+        self.actualizar_listas_counter(self.roles[0])
 
     def buscar_counters(self):
         rol = self.cb_rol_counter.get()
         enemigo = self.cb_enemigo.get()
         self.builds_actuales.clear() 
-        for item in self.tree_counters.get_children(): self.tree_counters.delete(item)
-        for w in self.frame_iconos_items.winfo_children(): w.destroy()
-        for w in self.frame_iconos_runas.winfo_children(): w.destroy()
+        
+        for item in self.tree_counters.get_children(): 
+            self.tree_counters.delete(item)
+            
+        for w in self.frame_setup_visual.winfo_children(): 
+            w.destroy()
 
         resultados = obtener_counters(rol, enemigo, min_partidas=5)
-        if not resultados: return messagebox.showinfo("Aviso", "Datos insuficientes.")
+        if not resultados: 
+            return messagebox.showinfo("Aviso", "Datos insuficientes.")
 
         for champ, winrate, partidas in resultados[:5]:
             ids_start, ids_fin = obtener_top_items(champ, rol)
@@ -604,129 +675,121 @@ class LoLRecommenderApp:
         champ = self.tree_counters.item(seleccion[0])['values'][0]
         data = self.builds_actuales.get(champ, {})
         
-        for w in self.frame_iconos_items.winfo_children(): w.destroy()
-        
-        fr_start = tk.Frame(self.frame_iconos_items, bg=BG_PANEL)
-        fr_start.pack(side="left", padx=20)
-        tk.Label(fr_start, text="Start", bg=BG_PANEL, fg=TEXT_WHITE).pack()
-        fr_s_i = tk.Frame(fr_start, bg=BG_PANEL); fr_s_i.pack()
-        for idx, i_id in enumerate(data.get("starters", [])): self.renderizar_icono(i_id, "item", fr_s_i, 0, idx)
-
-        fr_fin = tk.Frame(self.frame_iconos_items, bg=BG_PANEL)
-        fr_fin.pack(side="left", padx=20)
-        tk.Label(fr_fin, text="Core Build", bg=BG_PANEL, fg=TEXT_WHITE).pack()
-        fr_f_i = tk.Frame(fr_fin, bg=BG_PANEL); fr_f_i.pack()
-        for idx, i_id in enumerate(data.get("finales", [])): self.renderizar_icono(i_id, "item", fr_f_i, 0, idx)
-
         if data.get("runas"): 
-            self.renderizar_setup_completo(data["runas"], data.get("spells", []), self.frame_iconos_runas, is_centered=False)
+            self.renderizar_setup_completo(champ, data["runas"], data.get("spells", []), data.get("starters", []), data.get("finales", []), self.frame_setup_visual, is_centered=False)
 
     # ================= ANÁLISIS 1v1 =================
     def armar_tab_ia(self, frame):
         panel_ia = self.crear_panel(frame, "Simulador de Línea")
         panel_ia.pack(fill="x", pady=20)
         
-        ctrls = tk.Frame(panel_ia, bg=BG_PANEL)
+        ctrls = ctk.CTkFrame(panel_ia, fg_color="transparent")
         ctrls.pack(pady=10)
         
-        tk.Label(ctrls, text="Línea:", bg=BG_PANEL, fg=TEXT_WHITE).grid(row=0, column=0, padx=10, pady=10)
-        self.cb_ia_rol = ttk.Combobox(ctrls, values=self.roles, state="readonly"); self.cb_ia_rol.current(0)
-        self.cb_ia_rol.bind("<<ComboboxSelected>>", self.actualizar_listas_ia)
+        ctk.CTkLabel(ctrls, text="Línea:", text_color=TEXT_WHITE).grid(row=0, column=0, padx=10, pady=10)
+        self.cb_ia_rol = ctk.CTkComboBox(ctrls, values=self.roles, command=self.actualizar_listas_ia)
+        self.cb_ia_rol.set(self.roles[0])
         self.cb_ia_rol.grid(row=0, column=1)
         
-        tk.Label(ctrls, text="Tu Pick:", bg=BG_PANEL, fg=TEXT_WHITE).grid(row=0, column=2, padx=10)
-        self.cb_ia_aliado = ttk.Combobox(ctrls, state="readonly"); self.cb_ia_aliado.grid(row=0, column=3)
+        ctk.CTkLabel(ctrls, text="Tu Pick:", text_color=TEXT_WHITE).grid(row=0, column=2, padx=10)
+        self.cb_ia_aliado = ctk.CTkComboBox(ctrls, values=[])
+        self.cb_ia_aliado.grid(row=0, column=3)
         
-        tk.Label(ctrls, text="VS", bg=BG_PANEL, fg=RED_WR, font=("Helvetica", 10, "bold")).grid(row=0, column=4, padx=15)
-        self.cb_ia_enemigo = ttk.Combobox(ctrls, state="readonly"); self.cb_ia_enemigo.grid(row=0, column=5)
+        ctk.CTkLabel(ctrls, text="VS", text_color=RED_WR, font=ctk.CTkFont(weight="bold")).grid(row=0, column=4, padx=15)
         
-        tk.Button(ctrls, text="SIMULAR", bg=BORDER_GOLD, fg=BG_DARK, font=("Helvetica", 9, "bold"), command=self.predecir_ia).grid(row=0, column=6, padx=20)
+        self.cb_ia_enemigo = ctk.CTkComboBox(ctrls, values=[])
+        self.cb_ia_enemigo.grid(row=0, column=5)
         
-        res_panel = tk.Frame(frame, bg=BG_DARK)
+        ctk.CTkButton(ctrls, text="SIMULAR", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.predecir_ia).grid(row=0, column=6, padx=20)
+        
+        res_panel = ctk.CTkFrame(frame, fg_color="transparent")
         res_panel.pack(pady=20)
-        self.lbl_resultado_ia = tk.Label(res_panel, text="", font=("Impact", 30), bg=BG_DARK, fg=TEXT_WHITE)
+        
+        self.lbl_resultado_ia = ctk.CTkLabel(res_panel, text="", font=ctk.CTkFont(family="Impact", size=40), text_color=TEXT_WHITE)
         self.lbl_resultado_ia.pack()
-        self.lbl_analisis_ia = tk.Label(res_panel, text="", font=("Helvetica", 12, "italic"), bg=BG_DARK, fg=ACCENT_BLUE, wraplength=600)
+        
+        self.lbl_analisis_ia = ctk.CTkLabel(res_panel, text="", font=ctk.CTkFont(slant="italic", size=14), text_color=ACCENT_BLUE, wraplength=600)
         self.lbl_analisis_ia.pack(pady=10)
 
-        # SOLUCIÓN BUG: Se inicializan los Combobox de esta pestaña inmediatamente al arrancar.
-        self.actualizar_listas_ia()
+        self.actualizar_listas_ia(self.roles[0])
 
-    def actualizar_listas_counter(self, event=None):
-        self.cb_enemigo['values'] = obtener_campeones_por_rol(self.cb_rol_counter.get())
-        if self.cb_enemigo['values']: self.cb_enemigo.current(0)
+    def actualizar_listas_counter(self, value):
+        champs = obtener_campeones_por_rol(value)
+        self.cb_enemigo.configure(values=champs)
+        if champs: 
+            self.cb_enemigo.set(champs[0])
 
-    def actualizar_listas_ia(self, event=None):
-        champs = obtener_campeones_por_rol(self.cb_ia_rol.get())
-        self.cb_ia_aliado['values'] = self.cb_ia_enemigo['values'] = champs
-        if len(champs) >= 2: self.cb_ia_aliado.current(0); self.cb_ia_enemigo.current(1)
+    def actualizar_listas_ia(self, value):
+        champs = obtener_campeones_por_rol(value)
+        self.cb_ia_aliado.configure(values=champs)
+        self.cb_ia_enemigo.configure(values=champs)
+        if len(champs) >= 2: 
+            self.cb_ia_aliado.set(champs[0])
+            self.cb_ia_enemigo.set(champs[1])
 
     def predecir_ia(self):
-        rol, aliado, enemigo = self.cb_ia_rol.get(), self.cb_ia_aliado.get(), self.cb_ia_enemigo.get()
-        if not aliado or not enemigo or not modelo_1v1.get(rol): return
+        rol = self.cb_ia_rol.get()
+        aliado = self.cb_ia_aliado.get()
+        enemigo = self.cb_ia_enemigo.get()
+        
+        if not aliado or not enemigo or not modelo_1v1.get(rol): 
+            return
         
         n = len(self.nombres_campeones_global)
         X = np.zeros(n * 2)
-        if aliado in self.nombres_campeones_global: X[self.nombres_campeones_global.index(aliado)] = 1
-        if enemigo in self.nombres_campeones_global: X[n + self.nombres_campeones_global.index(enemigo)] = 1
-        
+        if aliado in self.nombres_campeones_global: 
+            X[self.nombres_campeones_global.index(aliado)] = 1
+        if enemigo in self.nombres_campeones_global: 
+            X[n + self.nombres_campeones_global.index(enemigo)] = 1
+            
         prob = modelo_1v1[rol].predict_proba(X.reshape(1, -1))[0][1] * 100
-        self.lbl_resultado_ia.config(text=f"{prob:.1f}% Winrate", fg=GREEN_WR if prob > 50 else RED_WR)
+        
+        self.lbl_resultado_ia.configure(text=f"{prob:.1f}% Winrate", text_color=GREEN_WR if prob > 50 else RED_WR)
         
         tags_al = self.champs_dict.get(aliado, {}).get("tags", [])
         tags_en = self.champs_dict.get(enemigo, {}).get("tags", [])
         
-        if prob > 55: text = f"✅ MATCHUP FAVORABLE: El kit de {aliado} neutraliza naturalmente a {enemigo}." + (" Especialmente fuerte como Asesino vs Mago." if "Assassin" in tags_al and "Mage" in tags_en else "")
-        elif prob < 45: text = f"⚠️ MATCHUP PELIGROSO: {enemigo} tiene ventaja estadística pura en fase de líneas. Juega al escalado."
-        else: text = f"⚔️ MATCHUP DE HABILIDAD: La estadística es {prob:.1f}%. El ganador se decide por control de oleadas y ganks."
-        self.lbl_analisis_ia.config(text=text)
+        if prob > 55: 
+            text = f"✅ MATCHUP FAVORABLE: El kit de {aliado} neutraliza naturalmente a {enemigo}." + (" Especialmente fuerte como Asesino vs Mago." if "Assassin" in tags_al and "Mage" in tags_en else "")
+        elif prob < 45: 
+            text = f"⚠️ MATCHUP PELIGROSO: {enemigo} tiene ventaja estadística pura en fase de líneas. Juega al escalado."
+        else: 
+            text = f"⚔️ MATCHUP DE HABILIDAD: La estadística es {prob:.1f}%. El ganador se decide por control de oleadas y ganks."
+            
+        self.lbl_analisis_ia.configure(text=text)
 
     # ================= BANS RECOMENDADOS =================
     def armar_tab_bans(self, frame):
-        ctrls = tk.Frame(frame, bg=BG_DARK)
+        ctrls = ctk.CTkFrame(frame, fg_color="transparent")
         ctrls.pack(fill="x", pady=10)
-
-        tk.Label(ctrls, text="Línea", bg=BG_DARK, fg=TEXT_WHITE).pack(side="left", padx=5)
-
-        self.cbbanrol = ttk.Combobox(ctrls, values=self.roles, state="readonly", width=15)
-        self.cbbanrol.current(0)
+        
+        ctk.CTkLabel(ctrls, text="Línea", text_color=TEXT_WHITE).pack(side="left", padx=5)
+        
+        self.cbbanrol = ctk.CTkComboBox(ctrls, values=self.roles, width=150)
+        self.cbbanrol.set(self.roles[0])
         self.cbbanrol.pack(side="left", padx=5)
+        
+        ctk.CTkButton(ctrls, text="ANALIZAR BANS", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.buscar_baneos).pack(side="left", padx=15)
 
-        tk.Button(
-            ctrls,
-            text="ANALIZAR BANS",
-            bg=BORDER_GOLD,
-            fg=BG_DARK, 
-            font=("Helvetica", 9, "bold"),
-            command=self.buscar_baneos
-        ).pack(side="left", padx=15)
-
-        self.treebans = ttk.Treeview(
-            frame,
-            columns=("Campeón", "Banrate %", "Partidas"),
-            show="headings",
-            height=12
-        )
+        self.treebans = ttk.Treeview(frame, columns=("Campeón", "Banrate %", "Partidas"), show="headings", height=12)
         self.treebans.heading("Campeón", text="Mejores Bans")
         self.treebans.heading("Banrate %", text="Banrate")
         self.treebans.heading("Partidas", text="Partidas Analizadas")
         self.treebans.pack(fill="both", expand=True, pady=10)
 
     def buscar_baneos(self):
-        rol = self.cbbanrol.get()
-
-        for item in self.treebans.get_children():
+        for item in self.treebans.get_children(): 
             self.treebans.delete(item)
-
-        resultados = obtenermejoresbaneos(rol, min_partidas=5)
-
-        if not resultados:
+            
+        resultados = obtenermejoresbaneos(self.cbbanrol.get(), min_partidas=5)
+        if not resultados: 
             return messagebox.showinfo("Aviso", "No hay datos suficientes para ese rol.")
-
-        for champ, banrate, partidas in resultados[:10]:
+            
+        for champ, banrate, partidas in resultados[:10]: 
             self.treebans.insert("", "end", values=(champ, f"{banrate}%", partidas))
 
+
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ctk.CTk()
     app = LoLRecommenderApp(root)
     root.mainloop()

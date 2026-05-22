@@ -1,15 +1,18 @@
 import json
-import tkinter as tk
-from tkinter import ttk, messagebox
 import os
 import requests
 from io import BytesIO
 from PIL import Image
 import numpy as np
 import joblib
+import sys
 
-# IMPORTACIÓN DE LA NUEVA LIBRERÍA MODERNA
-import customtkinter as ctk
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                               QHBoxLayout, QGridLayout, QLabel, QPushButton, 
+                               QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
+                               QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar)
+from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
+from PySide6.QtCore import Qt, QTimer, QSize
 
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
@@ -18,18 +21,16 @@ from src.recomendador import (obtener_counters, obtener_top_items, obtener_campe
                               recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
 from src.lcu_api import LCUConnector
 
-# Configuraciones de rutas
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 ITEMS_DIR = os.path.join(ASSETS_DIR, "items")
 RUNAS_DIR = os.path.join(ASSETS_DIR, "runas")
 CHAMPS_DIR = os.path.join(ASSETS_DIR, "champs")
 SPELLS_DIR = os.path.join(ASSETS_DIR, "spells")
+PROFILE_ICONS_DIR = os.path.join(ASSETS_DIR, "profile_icons")
 
-os.makedirs(ITEMS_DIR, exist_ok=True)
-os.makedirs(RUNAS_DIR, exist_ok=True)
-os.makedirs(CHAMPS_DIR, exist_ok=True)
-os.makedirs(SPELLS_DIR, exist_ok=True)
+for d in [ITEMS_DIR, RUNAS_DIR, CHAMPS_DIR, SPELLS_DIR, PROFILE_ICONS_DIR]:
+    os.makedirs(d, exist_ok=True)
 
 modelo_1v1 = joblib.load("data/modelo_1v1.pkl") if os.path.exists("data/modelo_1v1.pkl") else {}
 ITEMS_DICT = cargar_objetos()
@@ -37,9 +38,9 @@ RUNAS_DICT = cargar_runas()
 SPELLS_DICT = cargar_hechizos()
 MAPEO_IDS_CAMPEONES = cargar_mapeo_ids()
 
-# --- TEMA HEXTECH DARK (Adaptado a CustomTkinter) ---
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+UI_ROLES = ["TOP", "JUNGLA", "MID", "ADC", "SUPPORT"]
+ROL_TO_API = {"TOP": "TOP", "JUNGLA": "JUNGLE", "MID": "MIDDLE", "ADC": "BOTTOM", "SUPPORT": "UTILITY"}
+API_TO_ROL = {"TOP": "TOP", "JUNGLE": "JUNGLA", "MIDDLE": "MID", "BOTTOM": "ADC", "UTILITY": "SUPPORT"}
 
 BG_DARK = "#010a13"      
 BG_PANEL = "#0a1428"     
@@ -66,438 +67,549 @@ STAT_SHARDS = {
     "5003": ("Res. Mágica", "#3498db"),
 }
 
-class ToolTip:
-    """Clase para mostrar tooltips flotantes al pasar el ratón."""
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tw = None
-        self.widget.bind("<Enter>", self.show)
-        self.widget.bind("<Leave>", self.hide)
+def clear_layout(layout):
+    if layout is not None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None: widget.deleteLater()
+            else: clear_layout(item.layout())
 
-    def show(self, event=None):
-        if self.tw or not self.text:
-            return
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 25
-        
-        self.tw = tk.Toplevel(self.widget)
-        self.tw.wm_overrideredirect(True)
-        self.tw.wm_geometry(f"+{x}+{y}")
-        
-        lbl = tk.Label(
-            self.tw, 
-            text=self.text, 
-            justify='left', 
-            bg=BG_PANEL, 
-            fg=TEXT_WHITE, 
-            relief='solid', 
-            borderwidth=1, 
-            highlightbackground=BORDER_GOLD,
-            wraplength=250, 
-            font=("Helvetica", 9), 
-            padx=8, 
-            pady=8
-        )
-        lbl.pack()
-
-    def hide(self, event=None):
-        if self.tw:
-            self.tw.destroy()
-            self.tw = None
-
-class LoLRecommenderApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("LoL Esports Analytics Pro - V6.0 (CustomTkinter UI)")
-        self.root.geometry("1450x950")
-        self.root.configure(fg_color=BG_DARK)
-        
-        # Configurar estilo estricto para el único widget que Tkinter no reemplaza bien (Treeview)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Treeview", background=BG_PANEL, foreground=TEXT_WHITE, fieldbackground=BG_PANEL, borderwidth=0, rowheight=30)
-        style.configure("Treeview.Heading", background=BORDER_GOLD, foreground=BG_DARK, font=("Helvetica", 11, "bold"))
-        style.map('Treeview', background=[('selected', BORDER_GOLD)], foreground=[('selected', BG_DARK)])
+class LoLRecommenderApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("LoL Esports Analytics Pro - V6.0 (PySide6)")
+        self.resize(1500, 950)
+        self.aplicar_estilos()
 
         self.champs_dict = cargar_campeones()
         self.nombres_campeones_global = sorted(list(set([data["nombre"] for data in self.champs_dict.values()])))
-        
         self.nombre_a_id_img = {v.get("nombre"): k for k, v in self.champs_dict.items()}
         self.nombre_a_id_img["Wukong"] = "MonkeyKing"
         self.nombre_a_id_img["MaestroYi"] = "MasterYi"
         self.nombre_a_id_img["KhaZix"] = "Khazix"
 
         self.version_juego = obtener_version_actual()
-        self.roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-        
         self.builds_actuales = {}
-        self.imagenes_cacheadas = []
-        
         self.lcu = LCUConnector()
         self.radar_activo = False
         
-        self.last_aliados = None
-        self.last_enemigos = None
-        self.last_my_champ = "FORZAR_INICIO"
+        self.last_aliados = []
+        self.last_enemigos = []
+        self.last_my_champ = None
+        self.last_my_role = None
+        self.perfil_cargado = False
 
         self.crear_interfaz()
         
-        # Lanzar el bucle silencioso de auto-detección
-        self.root.after(1000, self.auto_detectar_lcu)
+        self.timer_lcu = QTimer(self)
+        self.timer_lcu.timeout.connect(self.auto_detectar_lcu)
+        self.timer_lcu.start(1500)
 
-    def crear_panel(self, parent, text="", pad=10):
-        """Crea un contenedor CustomTkinter con bordes redondeados."""
-        fr = ctk.CTkFrame(parent, fg_color=BG_PANEL, border_width=1, border_color=BORDER_GOLD, corner_radius=8)
+    def aplicar_estilos(self):
+        self.setStyleSheet(f"""
+            QMainWindow {{ background-color: {BG_DARK}; }}
+            QWidget {{ color: {TEXT_WHITE}; font-family: Helvetica; }}
+            QFrame#Panel {{ background-color: {BG_PANEL}; border: 1px solid {BORDER_GOLD}; border-radius: 8px; }}
+            QFrame#CardAlly {{ background-color: {ALLY_BG}; border: 1px solid {BORDER_GOLD}; border-radius: 5px; }}
+            QFrame#CardEnemy {{ background-color: {ENEMY_BG}; border: 1px solid {BORDER_GOLD}; border-radius: 5px; }}
+            QFrame#BuildCard {{ background-color: #0d1b38; border: 1px solid #1a2b4c; border-radius: 6px; }}
+            QLabel {{ border: none; background: transparent; }}
+            QPushButton {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; border-radius: 4px; padding: 6px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: {ACCENT_BLUE}; color: {BG_DARK}; }}
+            
+            /* TABS ESTILIZADOS PROFESIONALES */
+            QTabWidget::pane {{ border: 1px solid {BORDER_GOLD}; background-color: {BG_PANEL}; border-radius: 8px; border-top-left-radius: 0px; }}
+            QTabBar::tab {{ background: #1a2b4c; color: {TEXT_WHITE}; padding: 12px 30px; border: 1px solid {BORDER_GOLD}; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; font-weight: bold; font-size: 13px; }}
+            QTabBar::tab:selected {{ background: {BG_PANEL}; color: {ACCENT_BLUE}; border-bottom: 2px solid {BG_PANEL}; }}
+            
+            QComboBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 5px; border-radius: 4px; }}
+            QTableWidget {{ background-color: {BG_PANEL}; alternate-background-color: #0d1b38; color: {TEXT_WHITE}; gridline-color: transparent; border: 1px solid {BORDER_GOLD}; border-radius: 8px; font-size: 14px; outline: 0; }}
+            QTableWidget::item {{ padding: 5px; border-bottom: 1px solid #1a2b4c; }}
+            QTableWidget::item:selected {{ background-color: {BORDER_GOLD}; color: {BG_DARK}; }}
+            QHeaderView::section {{ background-color: #1a2b4c; color: {BORDER_GOLD}; font-weight: bold; padding: 8px; border: none; border-bottom: 2px solid {BORDER_GOLD}; }}
+            QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: {RED_WR}; color: white; font-weight: bold; }}
+            QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}
+        """)
+
+    def crear_panel(self, text=""):
+        fr = QFrame()
+        fr.setObjectName("Panel")
+        layout = QVBoxLayout(fr)
+        layout.setAlignment(Qt.AlignTop)
         if text:
-            lbl = ctk.CTkLabel(
-                fr, 
-                text=text.upper(), 
-                text_color=ACCENT_BLUE, 
-                font=ctk.CTkFont(family="Helvetica", size=11, weight="bold")
-            )
-            lbl.pack(anchor="w", padx=pad, pady=(pad, 0))
+            lbl = QLabel(text.upper())
+            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px;")
+            layout.addWidget(lbl)
             fr.label_title = lbl
-        return fr
+        return fr, layout
 
     def crear_interfaz(self):
-        # Header
-        header = ctk.CTkFrame(self.root, fg_color=BG_DARK)
-        header.pack(fill="x", pady=10)
-        ctk.CTkLabel(
-            header, 
-            text="LOL ESPORTS ANALYTICS", 
-            font=ctk.CTkFont(family="Impact", size=32), 
-            text_color=BORDER_GOLD
-        ).pack()
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
-        # CustomTkinter Tabview
-        self.tabview = ctk.CTkTabview(
-            self.root, 
-            fg_color=BG_DARK,
-            segmented_button_selected_color=BORDER_GOLD,
-            segmented_button_selected_hover_color="#a67c2e",
-            segmented_button_unselected_color=BG_PANEL,
-            text_color=TEXT_WHITE,
-            corner_radius=10
-        )
-        self.tabview.pack(fill='both', expand=True, padx=15, pady=10)
+        header_lbl = QLabel("LOL ESPORTS ANALYTICS")
+        header_lbl.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 32px;")
+        header_lbl.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(header_lbl)
 
-        # Creación de pestañas
-        self.tab_vivo = self.tabview.add("📡 RADAR EN VIVO")
-        self.tab_counters = self.tabview.add("📊 META & BUILDS")
-        self.tab_ia = self.tabview.add("🤖 ANÁLISIS 1v1")
-        self.tab_bans = self.tabview.add(" BANS RECOMENDADOS ")
+        self.tabview = QTabWidget()
+        main_layout.addWidget(self.tabview)
 
-        # Llenar cada pestaña
-        self.armar_tab_vivo(self.tab_vivo)
-        self.armar_tab_counters(self.tab_counters)
-        self.armar_tab_ia(self.tab_ia)
-        self.armar_tab_bans(self.tab_bans)
+        self.tab_perfil = QWidget()
+        self.tab_vivo = QWidget()
+        self.tab_counters = QWidget()
+        self.tab_ia = QWidget()
+        self.tab_bans = QWidget()
+
+        self.tabview.addTab(self.tab_perfil, "👤 MI PERFIL")
+        self.tabview.addTab(self.tab_vivo, "📡 RADAR EN VIVO")
+        self.tabview.addTab(self.tab_counters, "📊 META & BUILDS")
+        self.tabview.addTab(self.tab_ia, "🤖 SIMULADOR 1v1")
+        self.tabview.addTab(self.tab_bans, "🚫 TIER LIST DE BANS")
+
+        self.armar_tab_perfil()
+        self.armar_tab_vivo()
+        self.armar_tab_counters()
+        self.armar_tab_ia()
+        self.armar_tab_bans()
+        
+        self.tabview.setCurrentIndex(1) 
 
     def descargar_imagen(self, id_elemento, tipo):
-        carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR}
+        carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR, "profile": PROFILE_ICONS_DIR}
         ruta_local = os.path.join(carpetas.get(tipo), f"{id_elemento}.png")
-        
-        if os.path.exists(ruta_local):
-            return ruta_local
-            
+        if os.path.exists(ruta_local): return ruta_local
         try:
-            if tipo == "runa": 
-                url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "spell": 
-                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "champ": 
-                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{self.nombre_a_id_img.get(id_elemento, id_elemento)}.png"
-            else: 
-                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
+            if tipo == "runa": url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "spell": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "champ": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{self.nombre_a_id_img.get(id_elemento, id_elemento)}.png"
+            elif tipo == "profile": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/profileicon/{id_elemento}.png"
+            else: url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
                 
             resp = requests.get(url)
             resp.raise_for_status()
-            
-            with open(ruta_local, "wb") as f:
-                f.write(resp.content)
-                
+            with open(ruta_local, "wb") as f: f.write(resp.content)
             return ruta_local
-        except Exception as e:
-            return None
+        except: return None
 
-    def renderizar_icono(self, id_elemento, tipo, frame_padre, fila, columna, info_extra="", size=40):
+    def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40):
         ruta = self.descargar_imagen(id_elemento, tipo)
-        if not ruta:
-            return
+        if not ruta: return
             
-        # En CustomTkinter usamos CTkImage para que el escalado sea perfecto
-        img_pil = Image.open(ruta)
-        foto = ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=(size, size))
-        self.imagenes_cacheadas.append(foto)
-        
+        pixmap = QPixmap(ruta).scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         info_texto = info_extra
-        if tipo == "runa": 
-            info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "item": 
-            info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "spell": 
-            info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        if tipo == "runa": info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "item": info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "spell": info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
 
-        # Creamos un label sin texto, solo con la imagen
-        lbl_img = ctk.CTkLabel(frame_padre, text="", image=foto)
-        lbl_img.grid(row=fila, column=columna, padx=4, pady=4)
-        
-        if info_texto:
-            ToolTip(lbl_img, info_texto)
+        lbl_img = QLabel()
+        lbl_img.setPixmap(pixmap)
+        lbl_img.setAlignment(Qt.AlignCenter)
+        if info_texto: lbl_img.setToolTip(info_texto)
 
-    def inicializar_panel_setup(self):
-        for w in self.fr_runas_icons_vivo.winfo_children():
-            w.destroy()
-            
-        ctk.CTkLabel(
-            self.fr_runas_icons_vivo, 
-            text="Selecciona o haz pre-pick de un campeón en el\ncliente de LoL para generar su Setup Óptimo.", 
-            text_color="gray", 
-            font=ctk.CTkFont(family="Helvetica", size=14, slant="italic")
-        ).pack(expand=True)
+        if isinstance(grid_layout, QGridLayout): grid_layout.addWidget(lbl_img, fila, columna)
+        else: grid_layout.addWidget(lbl_img)
+
+    def inicializar_panel_setup(self, layout):
+        clear_layout(layout)
+        lbl = QLabel("Selecciona un campeón para generar su Setup.")
+        lbl.setStyleSheet("color: gray; font-style: italic; font-size: 14px;")
+        lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl)
 
     def _animar_boton(self, btn, text_original):
-        btn.configure(text="¡IMPORTADO! ✔", fg_color=GREEN_WR, text_color=BG_DARK)
-        self.root.after(2000, lambda: btn.configure(text=text_original, fg_color="#1a2b4c", text_color=TEXT_WHITE))
+        btn.setText("¡ÉXITO! ✔")
+        btn.setStyleSheet(f"background-color: {GREEN_WR}; color: {BG_DARK}; font-weight: bold;")
+        QTimer.singleShot(2000, lambda: self._restaurar_boton(btn, text_original))
 
+    def _restaurar_boton(self, btn, text_original):
+        btn.setText(text_original)
+        btn.setStyleSheet("") 
+
+    # ================= FUNCIONES DE BOTONES =================
     def accion_importar_runas(self, ids_runas, campeon, btn):
-        if self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"):
-            self._animar_boton(btn, "Exportar a LoL")
-        else:
-            messagebox.showerror("Error", "No se pudo importar las runas al cliente.")
+        if self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"): self._animar_boton(btn, "Exportar a LoL")
+        else: QMessageBox.critical(self, "Error", "Asegúrate de tener el cliente abierto.")
 
     def accion_importar_spells(self, ids_spells, btn):
-        if len(ids_spells) >= 2 and self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]):
-            self._animar_boton(btn, "Exportar a LoL")
-        else:
-            messagebox.showerror("Error", "No se pudo importar hechizos.")
+        if len(ids_spells) >= 2 and self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]): self._animar_boton(btn, "Exportar a LoL")
+        else: QMessageBox.critical(self, "Error", "Asegúrate de estar en una sala de Draft.")
 
     def accion_importar_items(self, campeon, ids_start, ids_core, btn):
-        if self.lcu.importar_item_set(campeon, ids_start, ids_core):
-            self._animar_boton(btn, "Crear Item Set")
-        else:
-            messagebox.showerror("Error", "No se pudo crear el Item Set.")
+        # FIX: Obtiene el ID en numero para que el LCU enlace el Item Set al campeon
+        champ_id_int = next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0)
+        res = self.lcu.importar_item_set(campeon, champ_id_int, ids_start, ids_core)
+        if res is True: 
+            self._animar_boton(btn, "Crear Item Set en LoL")
+        else: 
+            QMessageBox.critical(self, "Error API LCU", f"No se pudo inyectar el Item Set.\n\nDetalle: {res}")
 
-    # =========================================================================
-    # RENDERIZADO VISUAL COMPLETO DE BUILDS (CORRECCIÓN DE LA CUADRÍCULA GRID)
-    # =========================================================================
-    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, frame_padre, is_centered=False):
-        for w in frame_padre.winfo_children():
-            w.destroy()
+    # ================= REDISEÑO DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
+    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout):
+        clear_layout(parent_layout)
 
-        # El contenedor principal del Setup debe expandirse y usar una cuadricula
-        main_wrap = ctk.CTkFrame(frame_padre, fg_color="transparent")
-        if is_centered:
-            main_wrap.pack(expand=True, fill="both", padx=5, pady=5)
-        else:
-            main_wrap.pack(fill="both", expand=True, padx=5, pady=5)
+        main_wrap = QWidget()
+        wrap_layout = QHBoxLayout(main_wrap)
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+        wrap_layout.setSpacing(10)
 
-        # Configuramos la cuadrícula 2x2. ¡ESTO GARANTIZA QUE LOS ITEMS TENGAN ESPACIO FÍSICO!
-        main_wrap.columnconfigure(0, weight=1, uniform="col")
-        main_wrap.columnconfigure(1, weight=1, uniform="col")
-        main_wrap.rowconfigure(0, weight=6, uniform="row") # Runas y Spells son más altos
-        main_wrap.rowconfigure(1, weight=4, uniform="row") # Start y Core son más bajos
+        # CARD RUNAS
+        card_runas = QFrame()
+        card_runas.setObjectName("BuildCard")
+        l_runas = QVBoxLayout(card_runas)
+        lbl_r = QLabel("RUNAS RECOMENDADAS")
+        lbl_r.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 11px;")
+        l_runas.addWidget(lbl_r, alignment=Qt.AlignCenter)
 
-        # Cuadrantes
-        panel_runas = self.crear_panel(main_wrap, "Runas")
-        panel_runas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-        panel_spells = self.crear_panel(main_wrap, "Hechizos")
-        panel_spells.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-
-        panel_start = self.crear_panel(main_wrap, "Start / Early Game")
-        panel_start.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-
-        panel_core = self.crear_panel(main_wrap, "Core Build")
-        panel_core.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
-
-        # ====== 1. DIBUJAR RUNAS ======
-        contenido_runas = ctk.CTkFrame(panel_runas, fg_color="transparent")
-        contenido_runas.pack(padx=5, pady=5, expand=True)
-
-        col_main = ctk.CTkFrame(contenido_runas, fg_color="transparent")
-        col_main.pack(side="left", padx=10, anchor="n")
-
-        col_sec = ctk.CTkFrame(contenido_runas, fg_color="transparent")
-        col_sec.pack(side="left", padx=10, anchor="n")
-
-        ctk.CTkLabel(col_main, text="PRIMARIA", text_color=BORDER_GOLD, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(0, 5))
-        fr_m = ctk.CTkFrame(col_main, fg_color="transparent"); fr_m.pack()
-        
+        r_grid = QGridLayout()
+        r_grid.setAlignment(Qt.AlignCenter)
         if len(ids_runas) > 4:
-            self.renderizar_icono(ids_runas[0], "runa", fr_m, 0, 0, size=35)
-            self.renderizar_icono(ids_runas[1], "runa", fr_m, 1, 0, size=55)
-            self.renderizar_icono(ids_runas[2], "runa", fr_m, 2, 0, size=35)
-            self.renderizar_icono(ids_runas[3], "runa", fr_m, 3, 0, size=35)
-            self.renderizar_icono(ids_runas[4], "runa", fr_m, 4, 0, size=35)
-
-        ctk.CTkLabel(col_sec, text="SECUNDARIA", text_color=BORDER_GOLD, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(0, 5))
-        fr_s = ctk.CTkFrame(col_sec, fg_color="transparent"); fr_s.pack()
-        
+            self.renderizar_icono(ids_runas[0], "runa", r_grid, 0, 0, size=35)
+            self.renderizar_icono(ids_runas[1], "runa", r_grid, 1, 0, size=50)
+            self.renderizar_icono(ids_runas[2], "runa", r_grid, 2, 0, size=35)
+            self.renderizar_icono(ids_runas[3], "runa", r_grid, 3, 0, size=35)
+            self.renderizar_icono(ids_runas[4], "runa", r_grid, 4, 0, size=35)
         if len(ids_runas) > 7:
-            self.renderizar_icono(ids_runas[5], "runa", fr_s, 0, 0, size=30)
-            self.renderizar_icono(ids_runas[6], "runa", fr_s, 1, 0, size=35)
-            self.renderizar_icono(ids_runas[7], "runa", fr_s, 2, 0, size=35)
+            self.renderizar_icono(ids_runas[5], "runa", r_grid, 0, 1, size=30)
+            self.renderizar_icono(ids_runas[6], "runa", r_grid, 1, 1, size=35)
+            self.renderizar_icono(ids_runas[7], "runa", r_grid, 2, 1, size=35)
+        l_runas.addLayout(r_grid)
 
-        ctk.CTkLabel(panel_runas, text="SHARDS", text_color=ACCENT_BLUE, font=ctk.CTkFont(family="Helvetica", size=10, weight="bold")).pack(pady=(5, 0))
-        fr_shards = ctk.CTkFrame(panel_runas, fg_color="transparent")
-        fr_shards.pack(pady=(0, 5))
-
-        for stat_id in ([str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]):
-            texto, color = STAT_SHARDS.get(stat_id, (f"Shard {stat_id}", "#ffffff"))
-            # Simulamos el borde de color usando un Frame de fondo
-            border_frame = ctk.CTkFrame(fr_shards, fg_color=color, corner_radius=4)
-            border_frame.pack(side="left", padx=3)
-            lbl = ctk.CTkLabel(border_frame, text=texto, text_color=TEXT_WHITE, fg_color=BG_DARK, font=ctk.CTkFont(size=9, weight="bold"), width=70, corner_radius=3)
-            lbl.pack(padx=1, pady=1) # El padding de 1px simula el borde
-
-        btn_imp_runas = ctk.CTkButton(panel_runas, text="Exportar a LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
-        btn_imp_runas.configure(command=lambda: self.accion_importar_runas(ids_runas, campeon, btn_imp_runas))
-        btn_imp_runas.pack(pady=5)
-
-        # ====== 2. DIBUJAR HECHIZOS ======
-        cont_spells = ctk.CTkFrame(panel_spells, fg_color="transparent")
-        cont_spells.pack(expand=True, pady=10)
+        fr_shards = QWidget()
+        layout_shards = QHBoxLayout(fr_shards)
+        layout_shards.setContentsMargins(0, 5, 0, 5)
+        layout_shards.setAlignment(Qt.AlignCenter)
         
-        fr_spells = ctk.CTkFrame(cont_spells, fg_color="transparent")
-        fr_spells.pack()
-        
-        for idx, sp in enumerate(ids_spells):
-            self.renderizar_icono(str(sp), "spell", fr_spells, idx, 0, size=50)
+        shards_list = [str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]
+        for stat_id in shards_list:
+            texto, color = STAT_SHARDS.get(stat_id, (f"Shard", "#ffffff"))
+            lbl_shard = QLabel(texto)
+            lbl_shard.setFixedSize(80, 25) 
+            lbl_shard.setStyleSheet(f"color: {TEXT_WHITE}; border: 1px solid {color}; border-radius: 4px; font-size: 9px; font-weight: bold;")
+            lbl_shard.setAlignment(Qt.AlignCenter)
+            layout_shards.addWidget(lbl_shard)
             
-        btn_imp_spells = ctk.CTkButton(panel_spells, text="Exportar a LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
-        btn_imp_spells.configure(command=lambda: self.accion_importar_spells(ids_spells, btn_imp_spells))
-        btn_imp_spells.pack(side="bottom", pady=10)
+        l_runas.addWidget(fr_shards)
 
-        # ====== 3. DIBUJAR ITEMS START ======
-        fr_s_i = ctk.CTkFrame(panel_start, fg_color="transparent")
-        fr_s_i.pack(expand=True)
+        # ESPACIADOR QUE EMPUJA EL BOTÓN HACIA ABAJO
+        l_runas.addStretch()
+
+        btn_runas = QPushButton("Exportar Runas")
+        btn_runas.clicked.connect(lambda: self.accion_importar_runas(ids_runas, campeon, btn_runas))
+        l_runas.addWidget(btn_runas, alignment=Qt.AlignBottom)
+        wrap_layout.addWidget(card_runas)
+
+        # CARD HECHIZOS
+        card_spells = QFrame()
+        card_spells.setObjectName("BuildCard")
+        l_spells = QVBoxLayout(card_spells)
+        lbl_s = QLabel("HECHIZOS")
+        lbl_s.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 11px;")
+        l_spells.addWidget(lbl_s, alignment=Qt.AlignCenter)
+
+        for sp in ids_spells: self.renderizar_icono(str(sp), "spell", l_spells, size=45)
         
+        # ESPACIADOR QUE EMPUJA EL BOTÓN HACIA ABAJO
+        l_spells.addStretch()
+
+        btn_spells = QPushButton("Exportar")
+        btn_spells.clicked.connect(lambda: self.accion_importar_spells(ids_spells, btn_spells))
+        l_spells.addWidget(btn_spells, alignment=Qt.AlignBottom)
+        wrap_layout.addWidget(card_spells)
+
+        # CARD OBJETOS (START + CORE)
+        card_items = QFrame()
+        card_items.setObjectName("BuildCard")
+        l_items = QVBoxLayout(card_items)
+        
+        lbl_i1 = QLabel("INICIO")
+        lbl_i1.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px;")
+        l_items.addWidget(lbl_i1, alignment=Qt.AlignCenter)
+        
+        w_start = QWidget()
+        grid_start = QHBoxLayout(w_start)
+        grid_start.setContentsMargins(0,0,0,0)
+        grid_start.setAlignment(Qt.AlignCenter)
         if ids_start:
-            for idx, i_id in enumerate(ids_start): 
-                self.renderizar_icono(i_id, "item", fr_s_i, 0, idx, size=40)
-        else:
-            ctk.CTkLabel(fr_s_i, text="Sin datos.", text_color=TEXT_WHITE).grid(row=0, column=0)
-
-        # ====== 4. DIBUJAR CORE BUILD ======
-        fr_c_i = ctk.CTkFrame(panel_core, fg_color="transparent")
-        fr_c_i.pack(expand=True)
+            for i_id in ids_start: self.renderizar_icono(i_id, "item", grid_start, 0, 0, size=40)
+        l_items.addWidget(w_start)
         
+        lbl_i2 = QLabel("CORE BUILD")
+        lbl_i2.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px; padding-top: 10px;")
+        l_items.addWidget(lbl_i2, alignment=Qt.AlignCenter)
+        
+        w_core = QWidget()
+        grid_core = QGridLayout(w_core)
+        grid_core.setContentsMargins(0,0,0,0)
+        grid_core.setAlignment(Qt.AlignCenter)
         if ids_core:
-            # Dividimos los 6 ítems en 2 filas de 3 para que no se amontonen horizontalmente
-            for idx, i_id in enumerate(ids_core):
-                row_idx = 0 if idx < 3 else 1
-                col_idx = idx % 3
-                self.renderizar_icono(i_id, "item", fr_c_i, row_idx, col_idx, size=40)
-        else:
-            ctk.CTkLabel(fr_c_i, text="Selecciona un campeón...", text_color=TEXT_WHITE).grid(row=0, column=0)
+            for idx, i_id in enumerate(ids_core): self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45)
+        l_items.addWidget(w_core)
 
-        btn_imp_items = ctk.CTkButton(panel_core, text="Crear Item Set en LoL", fg_color="#1a2b4c", hover_color=ACCENT_BLUE, height=25)
-        btn_imp_items.configure(command=lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_imp_items))
-        btn_imp_items.pack(side="bottom", pady=5)
+        # ESPACIADOR QUE EMPUJA EL BOTÓN HACIA ABAJO
+        l_items.addStretch()
 
+        btn_items = QPushButton("Crear Item Set")
+        btn_items.clicked.connect(lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items))
+        l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
+        wrap_layout.addWidget(card_items)
 
-    def mostrar_equipo_vivo(self, frame_padre, picks, is_ally=True):
-        for w in frame_padre.winfo_children():
-            w.destroy()
+        parent_layout.addWidget(main_wrap)
+
+    # ================= PESTAÑA MI PERFIL DASHBOARD =================
+    def armar_tab_perfil(self):
+        layout = QVBoxLayout(self.tab_perfil)
+        
+        self.pnl_perfil = QWidget()
+        l_pnl = QHBoxLayout(self.pnl_perfil)
+        l_pnl.setAlignment(Qt.AlignTop)
+        
+        # Columna Izquierda: Identidad y Maestría
+        self.col_id = QVBoxLayout()
+        self.col_id.setAlignment(Qt.AlignTop)
+        
+        self.lbl_prof_icon = QLabel()
+        self.col_id.addWidget(self.lbl_prof_icon, alignment=Qt.AlignCenter)
+        
+        self.lbl_sum_name = QLabel("Esperando al Cliente...")
+        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_GOLD}; font-size: 24px; font-weight: bold;")
+        self.col_id.addWidget(self.lbl_sum_name, alignment=Qt.AlignCenter)
+        
+        self.lbl_sum_lvl = QLabel("Nivel: --")
+        self.lbl_sum_lvl.setStyleSheet("color: gray; font-size: 16px;")
+        self.col_id.addWidget(self.lbl_sum_lvl, alignment=Qt.AlignCenter)
+
+        self.lbl_rank_solo = QLabel("SoloQ: Unranked")
+        self.lbl_rank_solo.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 14px;")
+        self.col_id.addWidget(self.lbl_rank_solo, alignment=Qt.AlignCenter)
+
+        self.lbl_rank_flex = QLabel("Flex: Unranked")
+        self.lbl_rank_flex.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px;")
+        self.col_id.addWidget(self.lbl_rank_flex, alignment=Qt.AlignCenter)
+        
+        # Panel de Campeones Más Jugados
+        self.pnl_mastery, self.l_mastery = self.crear_panel("Mejores Campeones")
+        self.fr_mastery = QHBoxLayout()
+        self.l_mastery.addLayout(self.fr_mastery)
+        self.col_id.addWidget(self.pnl_mastery)
+
+        # Resumen KDA Historial
+        self.pnl_kda, self.l_kda = self.crear_panel("Resumen Reciente (20 Partidas)")
+        self.lbl_resumen_kda = QLabel("--")
+        self.lbl_resumen_kda.setStyleSheet("font-size: 14px; padding: 10px;")
+        self.l_kda.addWidget(self.lbl_resumen_kda)
+        self.col_id.addWidget(self.pnl_kda)
+
+        l_pnl.addLayout(self.col_id, 1)
+        
+        # Columna Derecha: Historial
+        self.col_hist = QVBoxLayout()
+        lbl_h = QLabel("HISTORIAL RECIENTE")
+        lbl_h.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 14px;")
+        self.col_hist.addWidget(lbl_h)
+        
+        self.tb_historial = QTableWidget()
+        self.tb_historial.setColumnCount(4)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "Modo"])
+        self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tb_historial.verticalHeader().setDefaultSectionSize(40)
+        self.tb_historial.setIconSize(QSize(30, 30))
+        self.tb_historial.verticalHeader().setVisible(False)
+        self.col_hist.addWidget(self.tb_historial)
+        
+        l_pnl.addLayout(self.col_hist, 2)
+        layout.addWidget(self.pnl_perfil)
+
+    def cargar_datos_perfil(self):
+        if self.perfil_cargado: return
+        perfil = self.lcu.obtener_perfil()
+        if not perfil: return
+        
+        self.perfil_cargado = True
+        self.lbl_sum_name.setText(perfil.get("displayName", "Invocador"))
+        self.lbl_sum_lvl.setText(f"Nivel: {perfil.get('summonerLevel', '--')}")
+        
+        icon_id = perfil.get("profileIconId")
+        ruta_icon = self.descargar_imagen(icon_id, "profile")
+        if ruta_icon: 
+            self.lbl_prof_icon.setPixmap(QPixmap(ruta_icon).scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+        # Cargar Liga (Fix)
+        ligas = self.lcu.obtener_ligas()
+        if ligas and "queues" in ligas:
+            for queue in ligas["queues"]:
+                tier = queue.get("tier", "")
+                div = queue.get("division", "")
+                lp = queue.get("leaguePoints", 0)
+                
+                # Si tier es NONE, significa Unranked
+                if tier and tier not in ["NONE", "UNRANKED", ""]:
+                    text = f"{tier} {div} ({lp} PL)"
+                else:
+                    text = "Unranked"
+                
+                if queue.get("queueType") == "RANKED_SOLO_5x5": self.lbl_rank_solo.setText(f"SoloQ: {text}")
+                elif queue.get("queueType") == "RANKED_FLEX_SR": self.lbl_rank_flex.setText(f"Flex: {text}")
+
+        # Cargar Maestrias (Fix LCU Endpoint Local Player)
+        maestrias = self.lcu.obtener_maestrias()
+        clear_layout(self.fr_mastery)
+        if maestrias:
+            for m in maestrias[:3]: # Solo top 3
+                cid = str(m.get("championId"))
+                c_name = self.procesar_nombre_champ(cid, 0)
+                lvl = m.get("championLevel")
+                puntos = f"{m.get('championPoints', 0):,}"
+                
+                card_m = QWidget()
+                card_m_ly = QVBoxLayout(card_m)
+                card_m_ly.setAlignment(Qt.AlignCenter)
+                self.renderizar_icono(c_name, "champ", card_m_ly, size=40)
+                lbl = QLabel(f"Lvl {lvl}\n{puntos}")
+                lbl.setStyleSheet("font-size: 10px; color: gray;")
+                lbl.setAlignment(Qt.AlignCenter)
+                card_m_ly.addWidget(lbl)
+                self.fr_mastery.addWidget(card_m)
+
+        # Cargar Historial (Fix "CLASSIC")
+        historial = self.lcu.obtener_historial(perfil.get("puuid"))
+        if not historial: return
+        
+        games = historial.get("games", {}).get("games", [])
+        self.tb_historial.setRowCount(0)
+        
+        total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
+        
+        for g in games:
+            part_info = g.get("participants", [{}])[0]
+            stats = part_info.get("stats", {})
+            champ_id = str(part_info.get("championId", "0"))
+            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
             
-        if not picks:
-            ctk.CTkLabel(frame_padre, text="Esperando equipo...", text_color=TEXT_WHITE, font=ctk.CTkFont(slant="italic")).pack(pady=20)
-            return
+            win = stats.get("win", False)
+            k = stats.get("kills", 0); d = stats.get("deaths", 0); a = stats.get("assists", 0)
             
-        bg_card = ALLY_BG if is_ally else ENEMY_BG
-        for champ in picks:
-            card = ctk.CTkFrame(frame_padre, fg_color=bg_card, border_width=1, border_color=BORDER_GOLD, corner_radius=5)
-            card.pack(fill="x", pady=4, padx=10, ipadx=5, ipady=5)
+            total_k += k; total_d += d; total_a += a; total_games += 1
+            if win: victorias += 1
             
-            self.renderizar_icono(champ, "champ", card, 0, 0, size=35)
-            ctk.CTkLabel(card, text=champ, text_color=TEXT_WHITE, font=ctk.CTkFont(family="Helvetica", size=14, weight="bold")).grid(row=0, column=1, padx=10, sticky="w")
+            row = self.tb_historial.rowCount()
+            self.tb_historial.insertRow(row)
+            
+            item_c = QTableWidgetItem(f"  {champ_name}")
+            icon_p = self.descargar_imagen(champ_name, "champ")
+            if icon_p: item_c.setIcon(QIcon(icon_p))
+            
+            item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
+            item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
+            
+            # Cambiar CLASSIC por Ranked/Draft
+            modo_juego = g.get("gameMode", "Draft")
+            if modo_juego == "CLASSIC": modo_juego = "Ranked/Draft"
+            
+            self.tb_historial.setItem(row, 0, item_c)
+            self.tb_historial.setItem(row, 1, item_w)
+            self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k} / {d} / {a}"))
+            self.tb_historial.setItem(row, 3, QTableWidgetItem(modo_juego))
+
+        if total_games > 0:
+            kda_ratio = round((total_k + total_a) / max(1, total_d), 2)
+            wr = round((victorias / total_games) * 100)
+            color_wr = GREEN_WR if wr >= 50 else RED_WR
+            resumen_html = f"""
+            <span style='color: white;'>Winrate Reciente:</span> <span style='color: {color_wr}; font-weight: bold;'>{wr}%</span><br>
+            <span style='color: white;'>Promedio KDA:</span> <span style='color: {BORDER_GOLD}; font-weight: bold;'>{round(total_k/total_games,1)} / {round(total_d/total_games,1)} / {round(total_a/total_games,1)}</span><br>
+            <span style='color: white;'>Ratio KDA:</span> <span style='color: {ACCENT_BLUE}; font-weight: bold;'>{kda_ratio}</span>
+            """
+            self.lbl_resumen_kda.setText(resumen_html)
 
     # ================= RADAR EN VIVO =================
-    def armar_tab_vivo(self, frame):
-        top_bar = ctk.CTkFrame(frame, fg_color=BG_DARK)
-        top_bar.pack(fill="x", pady=(0, 10))
+    def armar_tab_vivo(self):
+        layout = QVBoxLayout(self.tab_vivo)
+        top_bar = QHBoxLayout()
+        self.lbl_estado_lcu = QLabel("Buscando Cliente de LoL...")
+        self.lbl_estado_lcu.setStyleSheet(f"color: {YELLOW_WR}; font-weight: bold; font-size: 14px;")
+        top_bar.addWidget(self.lbl_estado_lcu)
+        top_bar.addStretch()
         
-        self.lbl_estado_lcu = ctk.CTkLabel(top_bar, text="Buscando Cliente de LoL...", font=ctk.CTkFont(family="Helvetica", size=12, weight="bold"), text_color=YELLOW_WR)
-        self.lbl_estado_lcu.pack(side="left", padx=10)
-        
-        self.fr_wr_widget = ctk.CTkFrame(top_bar, fg_color=BG_DARK)
-        self.fr_wr_widget.pack(side="right", padx=20)
-        
-        self.lbl_wr_numero = ctk.CTkLabel(self.fr_wr_widget, text="--%", font=ctk.CTkFont(family="Impact", size=42), text_color="gray")
-        self.lbl_wr_numero.pack(side="left")
-        
-        self.lbl_wr_razon = ctk.CTkLabel(self.fr_wr_widget, text="Esperando equipos...", font=ctk.CTkFont(family="Helvetica", size=12, slant="italic"), text_color="gray")
-        self.lbl_wr_razon.pack(side="left", padx=10, anchor="s", pady=10)
+        self.lbl_wr_numero = QLabel("--%")
+        self.lbl_wr_numero.setStyleSheet("color: gray; font-family: Impact; font-size: 42px;")
+        top_bar.addWidget(self.lbl_wr_numero)
+        self.lbl_wr_razon = QLabel("Esperando equipos...")
+        self.lbl_wr_razon.setStyleSheet("color: gray; font-style: italic;")
+        top_bar.addWidget(self.lbl_wr_razon)
+        layout.addLayout(top_bar)
 
-        draft_flow = ctk.CTkFrame(frame, fg_color=BG_DARK)
-        draft_flow.pack(fill="both", expand=True)
+        draft_layout = QHBoxLayout()
+        draft_layout.setAlignment(Qt.AlignTop)
 
-        # Columna 1: Enemigos
-        col_enemy = self.crear_panel(draft_flow, "Enemigos")
-        col_enemy.pack(side="left", fill="both", expand=True, padx=5)
+        self.col_enemy, l_enemy = self.crear_panel("Enemigos")
+        self.lbl_enemy_stats = QLabel("AD: --% | AP: --% | Tanks: 0")
+        self.lbl_enemy_stats.setStyleSheet(f"color: {RED_WR}; font-weight: bold;")
+        l_enemy.addWidget(self.lbl_enemy_stats)
         
-        self.lbl_enemy_stats = ctk.CTkLabel(col_enemy, text="AD: --% | AP: --% | Tanks: 0", font=ctk.CTkFont(weight="bold"), text_color=RED_WR)
-        self.lbl_enemy_stats.pack(pady=5)
+        self.fr_enemigos_picks = QVBoxLayout()
+        l_enemy.addLayout(self.fr_enemigos_picks)
         
-        self.fr_enemigos_picks = ctk.CTkFrame(col_enemy, fg_color="transparent")
-        self.fr_enemigos_picks.pack(fill="both", expand=True, pady=5)
-        
-        self.panel_bans_vivo = self.crear_panel(col_enemy, "Bans Sugeridos (Tu Línea)")
-        self.panel_bans_vivo.pack(fill="x", side="bottom", pady=5)
-        
-        self.fr_bans_icons_vivo = ctk.CTkFrame(self.panel_bans_vivo, fg_color="transparent")
-        self.fr_bans_icons_vivo.pack(pady=5)
+        self.panel_bans_vivo, self.l_bans_vivo = self.crear_panel("Bans Sugeridos (Tu Línea)")
+        self.fr_bans_icons_vivo = QHBoxLayout()
+        self.l_bans_vivo.addLayout(self.fr_bans_icons_vivo)
+        l_enemy.addStretch() 
+        l_enemy.addWidget(self.panel_bans_vivo)
+        draft_layout.addWidget(self.col_enemy, 1)
 
-        # Columna 2: Central (Sugerencias y Build)
-        col_center = ctk.CTkFrame(draft_flow, fg_color=BG_DARK)
-        col_center.pack(side="left", fill="both", expand=True, padx=5)
+        col_center = QWidget()
+        l_center = QVBoxLayout(col_center)
+        l_center.setAlignment(Qt.AlignTop)
         
-        self.lbl_rol_vivo = ctk.CTkLabel(col_center, text="ASIGNACIÓN PENDIENTE", font=ctk.CTkFont(family="Helvetica", size=18, weight="bold"), text_color=BORDER_GOLD)
-        self.lbl_rol_vivo.pack(pady=5)
+        self.lbl_rol_vivo = QLabel("ASIGNACIÓN PENDIENTE")
+        self.lbl_rol_vivo.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 18px;")
+        self.lbl_rol_vivo.setAlignment(Qt.AlignCenter)
+        l_center.addWidget(self.lbl_rol_vivo)
         
-        self.panel_sugerencias = self.crear_panel(col_center, "Recomendaciones de Pick")
-        self.panel_sugerencias.pack(fill="x", pady=5)
+        self.panel_sugerencias, self.l_sugerencias = self.crear_panel("Recomendaciones de Pick")
+        self.fr_picks_icons = QGridLayout()
+        self.l_sugerencias.addLayout(self.fr_picks_icons)
+        l_center.addWidget(self.panel_sugerencias)
         
-        self.fr_picks_icons = ctk.CTkFrame(self.panel_sugerencias, fg_color="transparent")
-        self.fr_picks_icons.pack(pady=10)
+        self.panel_runas_vivo, self.l_runas_vivo = self.crear_panel("Setup Recomendado Integral")
+        self.fr_runas_icons_vivo = QVBoxLayout()
+        self.fr_runas_icons_vivo.setAlignment(Qt.AlignTop)
+        self.l_runas_vivo.addLayout(self.fr_runas_icons_vivo)
+        l_center.addWidget(self.panel_runas_vivo, 1)
+        self.inicializar_panel_setup(self.fr_runas_icons_vivo)
+        draft_layout.addWidget(col_center, 2)
 
-        self.panel_runas_vivo = self.crear_panel(col_center, "Setup Recomendado Integral")
-        self.panel_runas_vivo.pack(fill="both", expand=True, pady=5)
+        self.col_ally, l_ally = self.crear_panel("Aliados")
+        self.lbl_ally_stats = QLabel("AD: --% | AP: --% | Tanks: 0")
+        self.lbl_ally_stats.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold;")
+        l_ally.addWidget(self.lbl_ally_stats)
+        self.fr_aliados_picks = QVBoxLayout()
+        l_ally.addLayout(self.fr_aliados_picks)
+        l_ally.addStretch() 
+        draft_layout.addWidget(self.col_ally, 1)
         
-        self.fr_runas_icons_vivo = ctk.CTkFrame(self.panel_runas_vivo, fg_color="transparent")
-        self.fr_runas_icons_vivo.pack(fill="both", expand=True, pady=5)
-        
-        self.inicializar_panel_setup() 
-
-        # Columna 3: Aliados
-        col_ally = self.crear_panel(draft_flow, "Aliados")
-        col_ally.pack(side="left", fill="both", expand=True, padx=5)
-        
-        self.lbl_ally_stats = ctk.CTkLabel(col_ally, text="AD: --% | AP: --% | Tanks: 0", font=ctk.CTkFont(weight="bold"), text_color=ACCENT_BLUE)
-        self.lbl_ally_stats.pack(pady=5)
-        
-        self.fr_aliados_picks = ctk.CTkFrame(col_ally, fg_color="transparent")
-        self.fr_aliados_picks.pack(fill="both", expand=True, pady=5)
+        layout.addLayout(draft_layout)
 
     def auto_detectar_lcu(self):
-        """Bucle silencioso para auto-conectar con el cliente."""
         if not self.radar_activo:
             if self.lcu.conectar():
                 self.radar_activo = True
-                self.lbl_estado_lcu.configure(text="✓ ENLAZADO AL CLIENTE DE LOL", text_color=GREEN_WR)
-                self.actualizar_radar_loop()
+                self.lbl_estado_lcu.setText("✓ ENLAZADO AL CLIENTE DE LOL")
+                self.lbl_estado_lcu.setStyleSheet(f"color: {GREEN_WR}; font-weight: bold; font-size: 14px;")
+                self.cargar_datos_perfil() 
             else:
-                self.lbl_estado_lcu.configure(text="Buscando Cliente de LoL... (Abre el juego)", text_color=YELLOW_WR)
-                self.root.after(3000, self.auto_detectar_lcu)
+                self.lbl_estado_lcu.setText("Buscando Cliente de LoL... (Abre el juego)")
+                self.lbl_estado_lcu.setStyleSheet(f"color: {YELLOW_WR}; font-weight: bold; font-size: 14px;")
+        else:
+            self.actualizar_radar_loop()
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)
-        if final_id != "0": 
-            return "Wukong" if MAPEO_IDS_CAMPEONES.get(final_id) == "MonkeyKing" else MAPEO_IDS_CAMPEONES.get(final_id, "Desconocido")
+        if final_id != "0": return "Wukong" if MAPEO_IDS_CAMPEONES.get(final_id) == "MonkeyKing" else MAPEO_IDS_CAMPEONES.get(final_id, "Desconocido")
         return None
 
     def actualizar_radar_loop(self):
@@ -505,8 +617,9 @@ class LoLRecommenderApp:
         try:
             draft = self.lcu.obtener_sesion_draft()
             if draft:
-                rol_actual = self.lcu.obtener_mi_rol(draft)
-                self.lbl_rol_vivo.configure(text=f"LÍNEA ASIGNADA: {rol_actual}")
+                rol_api = self.lcu.obtener_mi_rol(draft)
+                rol_ui = API_TO_ROL.get(rol_api, "MID")
+                self.lbl_rol_vivo.setText(f"LÍNEA ASIGNADA: {rol_ui}")
 
                 picks_al, picks_en = [], []
                 mi_campeon = None
@@ -521,275 +634,368 @@ class LoLRecommenderApp:
                     champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
                     if champ: picks_en.append(champ)
                     
-                if picks_al != self.last_aliados or picks_en != self.last_enemigos or mi_campeon != self.last_my_champ:
+                if picks_al != self.last_aliados or picks_en != self.last_enemigos:
                     self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
                     
                     self.mostrar_equipo_vivo(self.fr_aliados_picks, picks_al, is_ally=True)
                     self.mostrar_equipo_vivo(self.fr_enemigos_picks, picks_en, is_ally=False)
                     
                     ad_al, ap_al, tanks_al, _ = analizar_composicion(picks_al)
-                    self.lbl_ally_stats.configure(text=f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
-                    
+                    self.lbl_ally_stats.setText(f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
                     ad_en, ap_en, tanks_en, _ = analizar_composicion(picks_en)
-                    self.lbl_enemy_stats.configure(text=f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
+                    self.lbl_enemy_stats.setText(f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
                     
-                    self.mostrar_picks_vivo(rol_actual, picks_al, picks_en)
-                    
-                    for w in self.fr_bans_icons_vivo.winfo_children(): w.destroy()
-                    
-                    if mi_campeon: 
-                        self.panel_bans_vivo.label_title.configure(text=f"BANS SUGERIDOS (VS {mi_campeon.upper()})")
-                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_actual, min_partidas=5)
-                    else: 
-                        self.panel_bans_vivo.label_title.configure(text=f"BANS SUGERIDOS (META {rol_actual})")
-                        bans_sugeridos = obtenermejoresbaneos(rol_actual, min_partidas=5)
-
-                    bans_filtrados = [b for b, wr, p in bans_sugeridos if b not in picks_al and b not in picks_en][:4]
-                    if bans_filtrados:
-                        for i, ban in enumerate(bans_filtrados): 
-                            self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i, f"Prioridad Ban: {ban}", size=35)
-                    else: 
-                        ctk.CTkLabel(self.fr_bans_icons_vivo, text="Sin recomendaciones claras", text_color="gray").grid(row=0, column=0, pady=10)
+                    self.mostrar_picks_vivo(rol_api, picks_al, picks_en)
 
                     if len(picks_al) == 5 and len(picks_en) == 5:
                         wr = calcular_winrate_5v5(picks_al, picks_en)
                         color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
                         tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
-                        self.lbl_wr_numero.configure(text=f"{wr}%", text_color=color)
-                        self.lbl_wr_razon.configure(text=tendencia, text_color=color)
+                        self.lbl_wr_numero.setText(f"{wr}%")
+                        self.lbl_wr_numero.setStyleSheet(f"color: {color}; font-family: Impact; font-size: 42px;")
+                        self.lbl_wr_razon.setText(tendencia)
+                        self.lbl_wr_razon.setStyleSheet(f"color: {color}; font-style: italic;")
 
-                if mi_campeon != self.last_my_champ:
+                if mi_campeon != self.last_my_champ or rol_api != self.last_my_role:
                     self.last_my_champ = mi_campeon
-                    if mi_campeon:
-                        ids_runas = obtener_top_runas(mi_campeon, rol_actual)
-                        ids_spells = obtener_top_hechizos(mi_campeon, rol_actual)
-                        ids_start, ids_core = obtener_top_items(mi_campeon, rol_actual)
-                        self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo, is_centered=True)
+                    self.last_my_role = rol_api
+                    
+                    clear_layout(self.fr_bans_icons_vivo)
+                    if mi_campeon: 
+                        self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS (VS {mi_campeon.upper()})")
+                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=20)
                     else: 
-                        self.inicializar_panel_setup()
+                        self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
+                        bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
+
+                    bans_filtrados = [b for b, wr, p in bans_sugeridos if b not in self.last_aliados and b not in self.last_enemigos][:4]
+                    if bans_filtrados:
+                        for i, ban in enumerate(bans_filtrados): 
+                            self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i, f"Prioridad Ban: {ban}", size=35)
+                    else: 
+                        lbl_noban = QLabel("Sin recomendaciones")
+                        lbl_noban.setStyleSheet("color: gray;")
+                        self.fr_bans_icons_vivo.addWidget(lbl_noban)
+
+                    if mi_campeon:
+                        ids_runas = obtener_top_runas(mi_campeon, rol_api)
+                        ids_spells = obtener_top_hechizos(mi_campeon, rol_api)
+                        ids_start, ids_core = obtener_top_items(mi_campeon, rol_api)
+                        self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo)
+                    else: 
+                        self.inicializar_panel_setup(self.fr_runas_icons_vivo)
             else:
                 if self.last_my_champ != "FORZAR_INICIO":
                     self.radar_activo = False
-                    self.last_aliados = None
-                    self.last_enemigos = None
+                    self.perfil_cargado = False
+                    self.last_aliados = []
+                    self.last_enemigos = []
                     self.last_my_champ = "FORZAR_INICIO"
-                    self.auto_detectar_lcu()
-                    return
+                    self.lbl_estado_lcu.setText("Buscando Cliente de LoL... (Abre el juego)")
+                    self.lbl_estado_lcu.setStyleSheet(f"color: {YELLOW_WR}; font-weight: bold; font-size: 14px;")
 
-        except Exception as e: 
-            pass
+        except Exception as e: pass
+
+    def mostrar_equipo_vivo(self, layout, picks, is_ally=True):
+        clear_layout(layout)
+        if not picks:
+            lbl = QLabel("Esperando equipo...")
+            lbl.setStyleSheet("color: gray; font-style: italic;")
+            lbl.setAlignment(Qt.AlignCenter)
+            layout.addWidget(lbl)
+            return
             
-        self.root.after(1500, self.actualizar_radar_loop)
+        for champ in picks:
+            card = QFrame()
+            card.setObjectName("CardAlly" if is_ally else "CardEnemy")
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(10, 5, 10, 5)
+            
+            icon_layout = QGridLayout()
+            self.renderizar_icono(champ, "champ", icon_layout, 0, 0, size=35)
+            card_layout.addLayout(icon_layout)
+            
+            lbl_name = QLabel(champ)
+            lbl_name.setStyleSheet("font-weight: bold; font-size: 14px;")
+            card_layout.addWidget(lbl_name)
+            card_layout.addStretch()
+            layout.addWidget(card)
 
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
-        for w in self.fr_picks_icons.winfo_children(): 
-            w.destroy()
-            
+        clear_layout(self.fr_picks_icons)
         sugerencias = recomendar_picks_vivo(rol, aliados, enemigos)
         col_idx = 0
         
         for categoria, champs in sugerencias.items():
             if not champs: continue
             
-            fr_cat = ctk.CTkFrame(self.fr_picks_icons, fg_color="transparent")
-            fr_cat.grid(row=0, column=col_idx, padx=15, sticky="n")
+            cat_layout = QVBoxLayout()
+            cat_layout.setAlignment(Qt.AlignTop)
+            lbl_cat = QLabel(categoria)
+            lbl_cat.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px;")
+            lbl_cat.setAlignment(Qt.AlignCenter)
+            cat_layout.addWidget(lbl_cat)
             
-            ctk.CTkLabel(fr_cat, text=categoria, text_color=BORDER_GOLD, font=ctk.CTkFont(size=10, weight="bold")).pack()
-            
-            fr_icons = ctk.CTkFrame(fr_cat, fg_color="transparent")
-            fr_icons.pack()
-            
-            for i, (champ, wr, razon) in enumerate(champs): 
-                self.renderizar_icono(champ, "champ", fr_icons, i // 2, i % 2, f"{champ}\nWR Esperado: {wr}%\nPor qué: {razon}", size=35)
+            grid_icons = QGridLayout()
+            grid_icons.setAlignment(Qt.AlignCenter)
+            for i, (champ, wr, razon) in enumerate(champs[:4]): 
+                self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2, f"{champ}\nWR Esperado: {wr}%\nPor qué: {razon}", size=35)
                 
+            cat_layout.addLayout(grid_icons)
+            self.fr_picks_icons.addLayout(cat_layout, 0, col_idx)
             col_idx += 1
 
     # ================= META & BUILDS =================
-    def armar_tab_counters(self, frame):
-        ctrls = ctk.CTkFrame(frame, fg_color=BG_DARK)
-        ctrls.pack(fill='x', pady=10)
+    def armar_tab_counters(self):
+        layout = QVBoxLayout(self.tab_counters)
         
-        ctk.CTkLabel(ctrls, text="Línea:", text_color=TEXT_WHITE).pack(side="left", padx=5)
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.addWidget(QLabel("Línea:"))
         
-        self.cb_rol_counter = ctk.CTkComboBox(ctrls, values=self.roles, command=self.actualizar_listas_counter, width=150)
-        self.cb_rol_counter.set(self.roles[0])
-        self.cb_rol_counter.pack(side="left", padx=5)
+        self.cb_rol_counter = QComboBox()
+        self.cb_rol_counter.addItems(UI_ROLES)
+        self.cb_rol_counter.currentTextChanged.connect(self.actualizar_listas_counter)
+        ctrl_layout.addWidget(self.cb_rol_counter)
         
-        ctk.CTkLabel(ctrls, text="Vs:", text_color=TEXT_WHITE).pack(side="left", padx=5)
+        ctrl_layout.addWidget(QLabel("Vs:"))
+        self.cb_enemigo = QComboBox()
+        ctrl_layout.addWidget(self.cb_enemigo)
         
-        self.cb_enemigo = ctk.CTkComboBox(ctrls, values=[], width=150)
-        self.cb_enemigo.pack(side="left", padx=5)
+        btn_analizar = QPushButton("ANALIZAR")
+        btn_analizar.clicked.connect(self.buscar_counters)
+        ctrl_layout.addWidget(btn_analizar)
+        ctrl_layout.addStretch()
         
-        ctk.CTkButton(ctrls, text="ANALIZAR", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.buscar_counters).pack(side="left", padx=15)
+        layout.addLayout(ctrl_layout)
         
-        content = ctk.CTkFrame(frame, fg_color=BG_DARK)
-        content.pack(fill="both", expand=True)
+        self.tree_counters = QTableWidget()
+        self.tree_counters.setColumnCount(3)
+        self.tree_counters.setHorizontalHeaderLabels(["Campeón Aliado", "Winrate %", "Partidas Analizadas"])
+        self.tree_counters.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tree_counters.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tree_counters.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tree_counters.itemSelectionChanged.connect(self.mostrar_build_visual)
+        self.tree_counters.setMinimumHeight(150) # FIX: Permite que crezca segun espacio disponible
+        self.tree_counters.verticalHeader().setDefaultSectionSize(40)
+        self.tree_counters.setIconSize(QSize(30, 30))
+        self.tree_counters.verticalHeader().setVisible(False)
+        layout.addWidget(self.tree_counters)
         
-        # El Treeview sigue usando ttk porque CustomTkinter no tiene tablas nativas, pero aplicamos el estilo oscuro.
-        self.tree_counters = ttk.Treeview(content, columns=("Campeón Aliado", "Winrate %", "Partidas"), show="headings", height=5)
-        self.tree_counters.heading("Campeón Aliado", text="Mejores Respuestas")
-        self.tree_counters.heading("Winrate %", text="Winrate %")
-        self.tree_counters.heading("Partidas", text="Partidas Analizadas")
-        self.tree_counters.pack(fill='x', pady=10)
-        self.tree_counters.bind("<<TreeviewSelect>>", self.mostrar_build_visual)
-        
-        self.panel_visual = self.crear_panel(content, "Setup & Build Óptimas")
-        self.panel_visual.pack(fill='both', expand=True, pady=5)
-        
-        self.fr_contenido_visual = ctk.CTkFrame(self.panel_visual, fg_color="transparent")
-        self.fr_contenido_visual.pack(fill="both", expand=True)
-        
-        self.frame_setup_visual = ctk.CTkFrame(self.fr_contenido_visual, fg_color="transparent")
-        self.frame_setup_visual.pack(side="top", fill="both", expand=True, pady=10)
+        self.panel_visual, self.l_visual = self.crear_panel("Setup & Build Óptimas")
+        self.frame_setup_visual = QVBoxLayout()
+        self.frame_setup_visual.setAlignment(Qt.AlignTop)
+        self.l_visual.addLayout(self.frame_setup_visual)
+        layout.addWidget(self.panel_visual, 1)
 
-        self.actualizar_listas_counter(self.roles[0])
+        self.actualizar_listas_counter(UI_ROLES[0])
 
     def buscar_counters(self):
-        rol = self.cb_rol_counter.get()
-        enemigo = self.cb_enemigo.get()
+        rol_api = ROL_TO_API[self.cb_rol_counter.currentText()]
+        enemigo = self.cb_enemigo.currentText()
         self.builds_actuales.clear() 
-        
-        for item in self.tree_counters.get_children(): 
-            self.tree_counters.delete(item)
-            
-        for w in self.frame_setup_visual.winfo_children(): 
-            w.destroy()
+        self.tree_counters.setRowCount(0)
+        clear_layout(self.frame_setup_visual)
 
-        resultados = obtener_counters(rol, enemigo, min_partidas=5)
+        resultados = obtener_counters(rol_api, enemigo, min_partidas=20)
         if not resultados: 
-            return messagebox.showinfo("Aviso", "Datos insuficientes.")
+            QMessageBox.information(self, "Aviso", "Datos insuficientes. Ajusta tus filtros.")
+            return
 
-        for champ, winrate, partidas in resultados[:5]:
-            ids_start, ids_fin = obtener_top_items(champ, rol)
+        for champ, winrate, partidas in resultados[:6]:
+            ids_start, ids_fin = obtener_top_items(champ, rol_api)
             self.builds_actuales[champ] = {
                 "starters": ids_start, 
                 "finales": ids_fin, 
-                "runas": obtener_top_runas(champ, rol),
-                "spells": obtener_top_hechizos(champ, rol)
+                "runas": obtener_top_runas(champ, rol_api),
+                "spells": obtener_top_hechizos(champ, rol_api)
             }
-            self.tree_counters.insert("", "end", values=(champ, f"{winrate}%", partidas))
+            row = self.tree_counters.rowCount()
+            self.tree_counters.insertRow(row)
+            
+            item_champ = QTableWidgetItem(f"  {champ}")
+            icon_path = self.descargar_imagen(champ, "champ")
+            if icon_path: item_champ.setIcon(QIcon(icon_path))
+            
+            item_wr = QTableWidgetItem(f"{winrate}%")
+            if winrate >= 52: item_wr.setForeground(QColor(GREEN_WR))
+            elif winrate <= 48: item_wr.setForeground(QColor(RED_WR))
+            
+            self.tree_counters.setItem(row, 0, item_champ)
+            self.tree_counters.setItem(row, 1, item_wr)
+            self.tree_counters.setItem(row, 2, QTableWidgetItem(str(partidas)))
 
-    def mostrar_build_visual(self, event):
-        seleccion = self.tree_counters.selection()
-        if not seleccion: return
-        champ = self.tree_counters.item(seleccion[0])['values'][0]
+    def mostrar_build_visual(self):
+        filas = self.tree_counters.selectedItems()
+        if not filas: return
+        champ = self.tree_counters.item(filas[0].row(), 0).text().strip()
         data = self.builds_actuales.get(champ, {})
         
         if data.get("runas"): 
-            self.renderizar_setup_completo(champ, data["runas"], data.get("spells", []), data.get("starters", []), data.get("finales", []), self.frame_setup_visual, is_centered=False)
+            self.renderizar_setup_completo(champ, data["runas"], data.get("spells", []), data.get("starters", []), data.get("finales", []), self.frame_setup_visual)
 
-    # ================= ANÁLISIS 1v1 =================
-    def armar_tab_ia(self, frame):
-        panel_ia = self.crear_panel(frame, "Simulador de Línea")
-        panel_ia.pack(fill="x", pady=20)
+    def armar_tab_ia(self):
+        layout = QVBoxLayout(self.tab_ia)
+        panel_ia, l_ia = self.crear_panel("Configuración del Matchup")
         
-        ctrls = ctk.CTkFrame(panel_ia, fg_color="transparent")
-        ctrls.pack(pady=10)
+        ctrls = QHBoxLayout()
+        ctrls.addWidget(QLabel("Línea:"))
+        self.cb_ia_rol = QComboBox()
+        self.cb_ia_rol.addItems(UI_ROLES)
+        self.cb_ia_rol.currentTextChanged.connect(self.actualizar_listas_ia)
+        ctrls.addWidget(self.cb_ia_rol)
         
-        ctk.CTkLabel(ctrls, text="Línea:", text_color=TEXT_WHITE).grid(row=0, column=0, padx=10, pady=10)
-        self.cb_ia_rol = ctk.CTkComboBox(ctrls, values=self.roles, command=self.actualizar_listas_ia)
-        self.cb_ia_rol.set(self.roles[0])
-        self.cb_ia_rol.grid(row=0, column=1)
+        ctrls.addWidget(QLabel("Tu Pick:"))
+        self.cb_ia_aliado = QComboBox()
+        ctrls.addWidget(self.cb_ia_aliado)
         
-        ctk.CTkLabel(ctrls, text="Tu Pick:", text_color=TEXT_WHITE).grid(row=0, column=2, padx=10)
-        self.cb_ia_aliado = ctk.CTkComboBox(ctrls, values=[])
-        self.cb_ia_aliado.grid(row=0, column=3)
+        lbl_vs = QLabel("VS")
+        lbl_vs.setStyleSheet(f"color: {RED_WR}; font-weight: bold;")
+        ctrls.addWidget(lbl_vs)
         
-        ctk.CTkLabel(ctrls, text="VS", text_color=RED_WR, font=ctk.CTkFont(weight="bold")).grid(row=0, column=4, padx=15)
+        self.cb_ia_enemigo = QComboBox()
+        ctrls.addWidget(self.cb_ia_enemigo)
         
-        self.cb_ia_enemigo = ctk.CTkComboBox(ctrls, values=[])
-        self.cb_ia_enemigo.grid(row=0, column=5)
+        btn_simular = QPushButton("SIMULAR ENFRENTAMIENTO")
+        btn_simular.clicked.connect(self.predecir_ia)
+        ctrls.addWidget(btn_simular)
         
-        ctk.CTkButton(ctrls, text="SIMULAR", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.predecir_ia).grid(row=0, column=6, padx=20)
+        l_ia.addLayout(ctrls)
+        layout.addWidget(panel_ia)
         
-        res_panel = ctk.CTkFrame(frame, fg_color="transparent")
-        res_panel.pack(pady=20)
+        hud_panel, l_hud = self.crear_panel("Resultado Predictivo (AI)")
+        batalla_layout = QHBoxLayout()
         
-        self.lbl_resultado_ia = ctk.CTkLabel(res_panel, text="", font=ctk.CTkFont(family="Impact", size=40), text_color=TEXT_WHITE)
-        self.lbl_resultado_ia.pack()
+        self.img_aliado_1v1 = QLabel()
+        self.img_aliado_1v1.setAlignment(Qt.AlignCenter)
+        batalla_layout.addWidget(self.img_aliado_1v1)
         
-        self.lbl_analisis_ia = ctk.CTkLabel(res_panel, text="", font=ctk.CTkFont(slant="italic", size=14), text_color=ACCENT_BLUE, wraplength=600)
-        self.lbl_analisis_ia.pack(pady=10)
+        centro_layout = QVBoxLayout()
+        lbl_vs_grande = QLabel("VS")
+        lbl_vs_grande.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 50px;")
+        lbl_vs_grande.setAlignment(Qt.AlignCenter)
+        centro_layout.addWidget(lbl_vs_grande)
+        
+        self.barra_wr = QProgressBar()
+        self.barra_wr.setRange(0, 100)
+        self.barra_wr.setValue(50)
+        self.barra_wr.setTextVisible(True)
+        self.barra_wr.setFormat("%p% Winrate para tu Pick")
+        self.barra_wr.setFixedHeight(30)
+        centro_layout.addWidget(self.barra_wr)
+        
+        batalla_layout.addLayout(centro_layout)
+        
+        self.img_enemigo_1v1 = QLabel()
+        self.img_enemigo_1v1.setAlignment(Qt.AlignCenter)
+        batalla_layout.addWidget(self.img_enemigo_1v1)
+        
+        l_hud.addLayout(batalla_layout)
+        
+        self.lbl_analisis_ia = QLabel("Selecciona los campeones y presiona Simular.")
+        self.lbl_analisis_ia.setStyleSheet(f"color: {ACCENT_BLUE}; font-style: italic; font-size: 16px; padding: 20px;")
+        self.lbl_analisis_ia.setAlignment(Qt.AlignCenter)
+        self.lbl_analisis_ia.setWordWrap(True)
+        l_hud.addWidget(self.lbl_analisis_ia)
+        layout.addWidget(hud_panel, 1)
 
-        self.actualizar_listas_ia(self.roles[0])
+        self.actualizar_listas_ia(UI_ROLES[0])
 
     def actualizar_listas_counter(self, value):
-        champs = obtener_campeones_por_rol(value)
-        self.cb_enemigo.configure(values=champs)
-        if champs: 
-            self.cb_enemigo.set(champs[0])
+        champs = obtener_campeones_por_rol(ROL_TO_API[value], min_partidas=20)
+        self.cb_enemigo.clear()
+        self.cb_enemigo.addItems(champs)
 
     def actualizar_listas_ia(self, value):
-        champs = obtener_campeones_por_rol(value)
-        self.cb_ia_aliado.configure(values=champs)
-        self.cb_ia_enemigo.configure(values=champs)
-        if len(champs) >= 2: 
-            self.cb_ia_aliado.set(champs[0])
-            self.cb_ia_enemigo.set(champs[1])
+        champs = obtener_campeones_por_rol(ROL_TO_API[value], min_partidas=20)
+        self.cb_ia_aliado.clear()
+        self.cb_ia_enemigo.clear()
+        self.cb_ia_aliado.addItems(champs)
+        self.cb_ia_enemigo.addItems(champs)
+        if len(champs) >= 2: self.cb_ia_enemigo.setCurrentText(champs[1])
 
     def predecir_ia(self):
-        rol = self.cb_ia_rol.get()
-        aliado = self.cb_ia_aliado.get()
-        enemigo = self.cb_ia_enemigo.get()
+        rol_api = ROL_TO_API[self.cb_ia_rol.currentText()]
+        aliado = self.cb_ia_aliado.currentText()
+        enemigo = self.cb_ia_enemigo.currentText()
         
-        if not aliado or not enemigo or not modelo_1v1.get(rol): 
-            return
+        if not aliado or not enemigo or not modelo_1v1.get(rol_api): return
+        
+        ruta_al = self.descargar_imagen(aliado, "champ")
+        ruta_en = self.descargar_imagen(enemigo, "champ")
+        if ruta_al: self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        if ruta_en: self.img_enemigo_1v1.setPixmap(QPixmap(ruta_en).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         
         n = len(self.nombres_campeones_global)
         X = np.zeros(n * 2)
-        if aliado in self.nombres_campeones_global: 
-            X[self.nombres_campeones_global.index(aliado)] = 1
-        if enemigo in self.nombres_campeones_global: 
-            X[n + self.nombres_campeones_global.index(enemigo)] = 1
+        if aliado in self.nombres_campeones_global: X[self.nombres_campeones_global.index(aliado)] = 1
+        if enemigo in self.nombres_campeones_global: X[n + self.nombres_campeones_global.index(enemigo)] = 1
             
-        prob = modelo_1v1[rol].predict_proba(X.reshape(1, -1))[0][1] * 100
-        
-        self.lbl_resultado_ia.configure(text=f"{prob:.1f}% Winrate", text_color=GREEN_WR if prob > 50 else RED_WR)
+        prob = modelo_1v1[rol_api].predict_proba(X.reshape(1, -1))[0][1] * 100
+        self.barra_wr.setValue(int(prob))
+        if prob >= 50: self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: {RED_WR}; color: {BG_DARK}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}")
+        else: self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: {GREEN_WR}; color: {TEXT_WHITE}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 5px; }}")
         
         tags_al = self.champs_dict.get(aliado, {}).get("tags", [])
         tags_en = self.champs_dict.get(enemigo, {}).get("tags", [])
         
-        if prob > 55: 
-            text = f"✅ MATCHUP FAVORABLE: El kit de {aliado} neutraliza naturalmente a {enemigo}." + (" Especialmente fuerte como Asesino vs Mago." if "Assassin" in tags_al and "Mage" in tags_en else "")
-        elif prob < 45: 
-            text = f"⚠️ MATCHUP PELIGROSO: {enemigo} tiene ventaja estadística pura en fase de líneas. Juega al escalado."
-        else: 
-            text = f"⚔️ MATCHUP DE HABILIDAD: La estadística es {prob:.1f}%. El ganador se decide por control de oleadas y ganks."
+        if prob > 55: text = f"✅ VENTAJA CLARA ({prob:.1f}%): El kit de {aliado} contrarresta mecánicamente a {enemigo}." + (" Especialmente fuerte como Asesino vs Mago." if "Assassin" in tags_al and "Mage" in tags_en else "")
+        elif prob < 45: text = f"⚠️ MATCHUP PELIGROSO ({prob:.1f}%): {enemigo} tiene ventaja estadística pura. Prioriza la supervivencia y el escalado."
+        else: text = f"⚔️ MATCHUP DE HABILIDAD ({prob:.1f}%): Choque muy equilibrado. El ganador se decidirá por control de oleadas y rotaciones."
             
-        self.lbl_analisis_ia.configure(text=text)
+        self.lbl_analisis_ia.setText(text)
 
-    # ================= BANS RECOMENDADOS =================
-    def armar_tab_bans(self, frame):
-        ctrls = ctk.CTkFrame(frame, fg_color="transparent")
-        ctrls.pack(fill="x", pady=10)
+    def armar_tab_bans(self):
+        layout = QVBoxLayout(self.tab_bans)
         
-        ctk.CTkLabel(ctrls, text="Línea", text_color=TEXT_WHITE).pack(side="left", padx=5)
+        ctrls = QHBoxLayout()
+        ctrls.addWidget(QLabel("Selecciona la Línea a Proteger:"))
         
-        self.cbbanrol = ctk.CTkComboBox(ctrls, values=self.roles, width=150)
-        self.cbbanrol.set(self.roles[0])
-        self.cbbanrol.pack(side="left", padx=5)
+        self.cbbanrol = QComboBox()
+        self.cbbanrol.addItems(UI_ROLES)
+        ctrls.addWidget(self.cbbanrol)
         
-        ctk.CTkButton(ctrls, text="ANALIZAR BANS", fg_color=BORDER_GOLD, text_color=BG_DARK, hover_color="#a67c2e", font=ctk.CTkFont(weight="bold"), command=self.buscar_baneos).pack(side="left", padx=15)
+        btn_analizar = QPushButton("ANALIZAR BANS DEL META")
+        btn_analizar.clicked.connect(self.buscar_baneos)
+        ctrls.addWidget(btn_analizar)
+        ctrls.addStretch()
+        layout.addLayout(ctrls)
 
-        self.treebans = ttk.Treeview(frame, columns=("Campeón", "Banrate %", "Partidas"), show="headings", height=12)
-        self.treebans.heading("Campeón", text="Mejores Bans")
-        self.treebans.heading("Banrate %", text="Banrate")
-        self.treebans.heading("Partidas", text="Partidas Analizadas")
-        self.treebans.pack(fill="both", expand=True, pady=10)
+        self.treebans = QTableWidget()
+        self.treebans.setColumnCount(3)
+        self.treebans.setHorizontalHeaderLabels(["Campeón", "Banrate Sugerido %", "Partidas Analizadas"])
+        self.treebans.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.treebans.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.treebans.setSelectionMode(QAbstractItemView.NoSelection)
+        self.treebans.verticalHeader().setDefaultSectionSize(45)
+        self.treebans.setIconSize(QSize(35, 35))
+        self.treebans.verticalHeader().setVisible(False)
+        layout.addWidget(self.treebans)
 
     def buscar_baneos(self):
-        for item in self.treebans.get_children(): 
-            self.treebans.delete(item)
-            
-        resultados = obtenermejoresbaneos(self.cbbanrol.get(), min_partidas=5)
+        self.treebans.setRowCount(0)
+        resultados = obtenermejoresbaneos(ROL_TO_API[self.cbbanrol.currentText()], min_partidas=20)
+        
         if not resultados: 
-            return messagebox.showinfo("Aviso", "No hay datos suficientes para ese rol.")
+            QMessageBox.information(self, "Aviso", "No hay datos suficientes para ese rol.")
+            return
             
-        for champ, banrate, partidas in resultados[:10]: 
-            self.treebans.insert("", "end", values=(champ, f"{banrate}%", partidas))
-
+        for champ, banrate, partidas in resultados[:15]: 
+            row = self.treebans.rowCount()
+            self.treebans.insertRow(row)
+            
+            item_champ = QTableWidgetItem(f"  {champ}")
+            icon_path = self.descargar_imagen(champ, "champ")
+            if icon_path: item_champ.setIcon(QIcon(icon_path))
+            
+            item_ban = QTableWidgetItem(f"{banrate}%")
+            item_ban.setForeground(QColor(RED_WR))
+            
+            self.treebans.setItem(row, 0, item_champ)
+            self.treebans.setItem(row, 1, item_ban)
+            self.treebans.setItem(row, 2, QTableWidgetItem(str(partidas)))
 
 if __name__ == "__main__":
-    root = ctk.CTk()
-    app = LoLRecommenderApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = LoLRecommenderApp()
+    window.show()
+    sys.exit(app.exec())

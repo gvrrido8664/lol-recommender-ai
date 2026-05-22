@@ -23,6 +23,17 @@ AP_EXCEPTIONS = {"Sylas", "Akali", "Diana", "Ekko", "Evelynn", "Fizz", "Gwen", "
                  "Mordekaiser", "Nidalee", "Rumble", "Shaco", "Singed", "Vladimir", "Zac", 
                  "Gragas", "Elise", "Volibear", "Kennen", "Teemo", "Azir", "Kassadin", "Leblanc"}
 
+# Tanques que hacen daño AP (para el cálculo AD/AP)
+AP_TANKS = {"Amumu", "ChoGath", "Galio", "Malphite", "Maokai", "Nunu", "Ornn",
+            "Rammus", "Sejuani", "Shen", "Sion", "Zac", "Skarner"}
+
+# Campeones con tag "Fighter" que NO son frontlane (asesinos, duelistas frágiles)
+FRONTLANE_EXCLUDE = {"Fizz", "KhaZix", "MasterYi", "Quinn", "Rengar", "Shaco",
+                     "Tryndamere", "Yasuo", "Yone", "Fiora", "Gwen", "Irelia",
+                     "Kayn", "LeeSin", "Nidalee", "Riven", "Viego", "BelVeth",
+                     "Elise", "Evelynn", "Katarina", "Akali", "Sylas", "Diana",
+                     "Ekko", "Kassadin", "Leblanc"}
+
 def obtener_campeones_por_rol(rol_api, min_partidas=20):
     conn = obtener_conexion()
     cur = conn.cursor()
@@ -85,7 +96,95 @@ def obtener_peores_matchups(campeon, carril, min_partidas=20):
     conn.close()
     return resultados
 
-def obtener_top_items(campeon, carril):
+def _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril):
+    """Analiza el draft enemigo y recomienda las botas óptimas.
+    
+    Args:
+        botas_count: dict {id_bota: frecuencia} de las botas más usadas estadísticamente
+        enemigos: lista de nombres de campeones enemigos
+        campeon: nombre del campeón aliado
+        carril: posición (TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY)
+    
+    Returns:
+        id de la bota recomendada
+    """
+    if not enemigos or not botas_count:
+        return None
+    
+    # Cargar tags de campeones
+    ruta_tags = os.path.join(DATA_DIR, "champion_data.json")
+    tags_data = {}
+    if os.path.exists(ruta_tags):
+        with open(ruta_tags, "r", encoding="utf-8") as f:
+            tags_data = json.load(f)
+    
+    # Analizar amenazas enemigas
+    ad_count = 0
+    marksman_count = 0
+    cc_count = 0
+    
+    for enemigo in enemigos:
+        tags = tags_data.get(enemigo, {}).get("tags", [])
+        dano = _clasificar_dano(enemigo, tags)
+        
+        if dano == "AD":
+            ad_count += 1
+        if "Marksman" in tags:
+            marksman_count += 1
+            ad_count += 1  # Los tiradores son amenaza AD extra
+        if "Tank" in tags or "Support" in tags:
+            cc_count += 1  # Tanques y soportes suelen tener CC fuerte
+        if "Mage" in tags:
+            cc_count += 0.5  # Los magos suelen tener al menos 1 CC
+    
+    # Mapa de botas disponibles
+    BOTA_STEELCAPS = "3047"   # vs AD/autoataques
+    BOTA_MERCURY = "3111"     # vs CC/AP
+    BOTA_SORCERER = "3020"    # magic pen (AP)
+    BOTA_BERSERKER = "3006"   # attack speed (ADC)
+    BOTA_IONIAN = "3158"      # ability haste (general)
+    BOTA_SWIFTNESS = "3009"   # slow resist + MS
+    
+    # Elegir bota según amenazas
+    bota_recomendada = None
+    
+    if ad_count >= 4 or marksman_count >= 2:
+        # Mucho AD o varios tiradores → Steelcaps
+        bota_recomendada = BOTA_STEELCAPS
+    elif cc_count >= 3:
+        # Mucho CC → Mercury's Treads
+        bota_recomendada = BOTA_MERCURY
+    elif ad_count >= 3:
+        # AD significativo → Steelcaps
+        bota_recomendada = BOTA_STEELCAPS
+    elif cc_count >= 2:
+        # CC moderado → Mercury's
+        bota_recomendada = BOTA_MERCURY
+    
+    # Si no hay amenaza clara, usar la mejor bota estadística
+    if not bota_recomendada or bota_recomendada not in botas_count:
+        if botas_count:
+            return max(botas_count, key=botas_count.get)
+        return None
+    
+    # Verificar que la bota recomendada existe en los datos
+    if bota_recomendada in botas_count:
+        return bota_recomendada
+    
+    # Si no existe en datos, buscar alternativa similar
+    alternativas = {
+        BOTA_STEELCAPS: [BOTA_STEELCAPS, BOTA_MERCURY, BOTA_IONIAN],
+        BOTA_MERCURY: [BOTA_MERCURY, BOTA_STEELCAPS, BOTA_IONIAN],
+    }
+    for alt in alternativas.get(bota_recomendada, []):
+        if alt in botas_count:
+            return alt
+    
+    # Fallback: la más usada
+    return max(botas_count, key=botas_count.get) if botas_count else None
+
+
+def obtener_top_items(campeon, carril, enemigos=None):
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND team_position = ? AND items != ''", (campeon, carril))
@@ -145,7 +244,12 @@ def obtener_top_items(campeon, carril):
                     tags = ITEMS_DATA.get(iid, {}).get("tags", [])
                     if "Boots" in tags and "Consumable" not in tags and "Vision" not in tags and iid not in ("1001", "2422"):
                         botas_count[iid] = botas_count.get(iid, 0) + 1
-        if botas_count: build_final.append(max(botas_count, key=botas_count.get))
+        if botas_count:
+            if enemigos:
+                bota_inteligente = _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril)
+                build_final.append(bota_inteligente if bota_inteligente else max(botas_count, key=botas_count.get))
+            else:
+                build_final.append(max(botas_count, key=botas_count.get))
 
     item_supp_mejorado = None
     if carril == "UTILITY":
@@ -225,38 +329,61 @@ def obtenermejoresbaneos(carril, min_partidas=20):
     conn.close()
     return resultados
 
+def _clasificar_dano(champ, tags):
+    """Devuelve 'AD', 'AP' o 'HYBRID' según el tipo de daño principal del campeón."""
+    if champ in AP_EXCEPTIONS:
+        return "AP"
+    if "Mage" in tags or "Support" in tags:
+        return "AP"
+    if champ in AP_TANKS:
+        return "AP"
+    if "Marksman" in tags:
+        return "AD"
+    if "Assassin" in tags:
+        return "AD"
+    if "Fighter" in tags:
+        return "AD"
+    if "Tank" in tags:
+        return "AD"
+    return "AD"
+
+def _es_frontlane(champ, tags):
+    """Determina si un campeón puede hacer de frontlane (absorber daño/engagear)."""
+    if "Tank" in tags:
+        return True
+    if "Fighter" in tags and champ not in FRONTLANE_EXCLUDE:
+        return True
+    return False
+
 def analizar_composicion(aliados):
     ruta_tags = os.path.join(DATA_DIR, "champion_data.json")
     tags_data = {}
     if os.path.exists(ruta_tags):
         with open(ruta_tags, "r", encoding="utf-8") as f: tags_data = json.load(f)
 
-    ap_count, ad_count, tank_count = 0.0, 0.0, 0
+    ad_count, ap_count, tank_count = 0.0, 0.0, 0
 
     for aliado in aliados:
         tags = tags_data.get(aliado, {}).get("tags", [])
         
-        # Filtro de Fuerza para EXCEPCIONES AP
-        if aliado in AP_EXCEPTIONS:
-            ap_count += 1
-            if "Tank" in tags or "Fighter" in tags: tank_count += 1
-            continue
-            
-        es_ap = "Mage" in tags or "Support" in tags
-        es_ad = "Marksman" in tags or "Assassin" in tags or "Fighter" in tags
-        es_tank = "Tank" in tags or "Fighter" in tags
-
-        if es_ap and not es_ad: ap_count += 1
-        elif es_ad and not es_ap: ad_count += 1
-        elif es_ap and es_ad: ap_count += 0.5; ad_count += 0.5
-            
-        if es_tank: tank_count += 1
+        dano = _clasificar_dano(aliado, tags)
+        if dano == "AP":
+            ap_count += 1.0
+        elif dano == "AD":
+            ad_count += 1.0
+        else:  # HYBRID
+            ad_count += 0.5
+            ap_count += 0.5
+        
+        if _es_frontlane(aliado, tags):
+            tank_count += 1
 
     total_dmg = ad_count + ap_count
     if total_dmg > 0:
         pct_ad = min(100, int((ad_count / total_dmg) * 100))
         pct_ap = min(100, int((ap_count / total_dmg) * 100))
-    else: pct_ad, pct_ap = 50, 50
+    else:
+        pct_ad, pct_ap = 50, 50
 
     return pct_ad, pct_ap, tank_count, tags_data
 
@@ -298,15 +425,68 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
         if champs: finales[cat] = sorted(champs, key=lambda x: x[1], reverse=True)[:4]
     return finales
 
-def calcular_winrate_5v5(aliados, enemigos):
-    if len(aliados) != 5 or len(enemigos) != 5: return 50.0
+def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None):
+    """Calcula el winrate estimado de un equipo 5v5 usando matchups por línea.
+    Empareja cada aliado con su enemigo de misma posición para mayor precisión.
+    """
+    if len(aliados) != 5 or len(enemigos) != 5:
+        return 50.0
+    
     conn = obtener_conexion()
     cur = conn.cursor()
-    total_wr = []
-    for aliado in aliados:
-        placeholders = ",".join(["?"]*len(enemigos))
-        cur.execute(f"SELECT SUM(p1.win)*100.0/COUNT(*) FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id WHERE p1.champion = ? AND p2.champion IN ({placeholders}) AND p1.team != p2.team", [aliado] + enemigos)
-        row = cur.fetchone()
-        if row and row[0]: total_wr.append(row[0])
+    
+    # Asignar posiciones por defecto si no vienen del draft
+    if not pos_aliados:
+        pos_aliados = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+    if not pos_enemigos:
+        pos_enemigos = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+    
+    # Crear diccionario aliado → posición
+    al_pos = dict(zip(aliados, pos_aliados))
+    en_pos = dict(zip(enemigos, pos_enemigos))
+    
+    # Mapa de posiciones equivalentes para emparejar
+    pos_equivalentes = {
+        "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
+        "MIDDLE": "MIDDLE", "MID": "MIDDLE",
+        "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
+        "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
+    }
+    
+    wr_por_lane = []
+    
+    for aliado, pos_al in al_pos.items():
+        # Buscar enemigo en la misma posición
+        pos_norm = pos_equivalentes.get(pos_al.upper(), pos_al.upper())
+        enemigo_lane = None
+        for en, pos_en in en_pos.items():
+            if pos_equivalentes.get(pos_en.upper(), pos_en.upper()) == pos_norm:
+                enemigo_lane = en
+                break
+        
+        if enemigo_lane:
+            # WR específico del matchup por línea
+            cur.execute("""
+                SELECT ROUND(SUM(p1.win)*100.0/COUNT(*), 1) as wr, COUNT(*) as partidas
+                FROM participantes p1
+                JOIN participantes p2 ON p1.match_id = p2.match_id
+                WHERE p1.champion = ? AND p1.team_position = ?
+                  AND p2.champion = ? AND p2.team_position = ?
+                  AND p1.team != p2.team
+            """, (aliado, pos_al, enemigo_lane, pos_norm))
+            row = cur.fetchone()
+            if row and row["wr"] is not None:
+                # Suavizar con prior (50% WR) si hay pocas partidas
+                n = row["partidas"]
+                wr = (row["wr"] * n + 50.0 * max(0, 10 - n)) / max(10, n)
+                wr_por_lane.append(wr)
+            else:
+                wr_por_lane.append(50.0)
+        else:
+            wr_por_lane.append(50.0)
+    
     conn.close()
-    return round(sum(total_wr)/len(total_wr), 1) if total_wr else 50.0
+    
+    if wr_por_lane:
+        return round(sum(wr_por_lane) / len(wr_por_lane), 1)
+    return 50.0

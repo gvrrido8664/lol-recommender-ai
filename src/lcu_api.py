@@ -95,24 +95,60 @@ class LCUConnector:
         return None
 
     def obtener_ligas(self):
+        """Obtiene datos de ranked desde LCU, con fallback a Riot API.
+        Normaliza la respuesta a: {"queues": [{"tier":..., "division":..., "leaguePoints":..., "wins":..., "losses":..., "queueType":...}]}
+        """
         if self.port:
-            try:
-                url = f"{self.protocol}://127.0.0.1:{self.port}/lol-ranked/v1/current-ranks"
-                res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-                if res.status_code == 200:
+            for endpoint in [
+                "/lol-ranked/v1/current-ranked-stats",
+                "/lol-ranked/v1/current-ranks",
+            ]:
+                try:
+                    url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
+                    res = requests.get(url, headers=self.headers, verify=False, timeout=3)
+                    if res.status_code != 200:
+                        continue
                     data = res.json()
-                    if isinstance(data, dict):
-                        if "queueMap" in data and isinstance(data["queueMap"], dict):
-                            data["queues"] = [
-                                {**v, "queueType": k}
-                                for k, v in data["queueMap"].items()
-                                if isinstance(v, dict)
-                            ]
-                        return data
-                    if isinstance(data, list):
-                        return {"queues": data}
-            except: pass
 
+                    queues = []
+
+                    if isinstance(data, list):
+                        # Riot-style: lista de entries [{tier, rank, leaguePoints, ...}, ...]
+                        for entry in data:
+                            entry["division"] = entry.get("division") or entry.get("rank") or ""
+                            queues.append(entry)
+
+                    elif isinstance(data, dict):
+                        # --- queueMap ---
+                        qmap = data.get("queueMap", {})
+                        if isinstance(qmap, dict):
+                            for qtype, qdata in qmap.items():
+                                if isinstance(qdata, dict) and qdata.get("tier"):
+                                    qdata["division"] = qdata.get("division") or qdata.get("rank") or ""
+                                    queues.append({**qdata, "queueType": qtype})
+
+                        # --- queues (dentro del dict, si queueMap no encontró nada) ---
+                        if not queues:
+                            qlist = data.get("queues", [])
+                            if isinstance(qlist, list):
+                                for entry in qlist:
+                                    if isinstance(entry, dict):
+                                        entry["division"] = entry.get("division") or entry.get("rank") or ""
+                                        queues.append(entry)
+
+                        # --- La raíz misma tiene tier (raro pero posible) ---
+                        if not queues and data.get("tier"):
+                            data["division"] = data.get("division") or data.get("rank") or ""
+                            queues.append(data)
+
+                    if queues:
+                        print(f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType','?'), q.get('tier','?')) for q in queues]}")
+                        return {"queues": queues}
+                except Exception as e:
+                    print(f"[LCU] Error en {endpoint}: {e}")
+                    continue
+
+        # ===== FALLBACK: Riot API =====
         region = self.obtener_region_local()
         api_key = self.obtener_api_key_local()
         if region and api_key:
@@ -127,8 +163,14 @@ class LCUConnector:
                         league_url = f"https://{region.lower()}.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_id}"
                         res = requests.get(league_url, headers={"X-Riot-Token": api_key}, timeout=5)
                         if res.status_code == 200:
-                            return {"queues": res.json()}
-                    except: pass
+                            entries = res.json()
+                            # Riot API usa "rank" en vez de "division", normalizar
+                            for e in entries:
+                                e["division"] = e.get("rank", "")
+                            print(f"[RiotAPI] Ligas encontradas: {[(e.get('queueType','?'), e.get('tier','?')) for e in entries]}")
+                            return {"queues": entries}
+                    except Exception as e:
+                        print(f"[RiotAPI] Error: {e}")
         return None
 
     def obtener_maestrias(self, count=3):

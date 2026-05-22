@@ -1,231 +1,65 @@
-# 🤖 LoL Recommender AI – Asistente de Draft con Machine Learning
+﻿# 🤖 LoL Recommender v1.0 — Asistente de Draft con IA
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![CustomTkinter](https://img.shields.io/badge/GUI-CustomTkinter-green)
-![Scikit-learn](https://img.shields.io/badge/ML-Random%20Forest-orange)
+![PySide6](https://img.shields.io/badge/GUI-PySide6-green)
+![Version](https://img.shields.io/badge/version-1.0-gold)
 
-Sistema inteligente de recomendación para **League of Legends** que analiza miles de partidas de alto elo para ofrecerte:
+Sistema inteligente para **League of Legends** que analiza partidas para ofrecerte:
 
-- ✅ **Counter picks** en tiempo real para tu línea
-- ✅ **Análisis 1v1** con predicción de winrate basada en machine learning
-- ✅ **Setup óptimo** (runas, hechizos, items) basado en datos estadísticos
-- ✅ **Radar en vivo** que se conecta al cliente de LoL durante el draft
-- ✅ **Recomendación de bans** para tu rol
-- ✅ **Análisis de composición de equipo** (balance AD/AP, tanques)
-
-Todo esto con una interfaz moderna, oscura y estilizada estilo **Hextech**.
+- Counter picks en tiempo real | Analisis 1v1 con ML + datos reales | Setup optimo con botas inteligentes | Radar en vivo conectado al cliente | Recomendacion de bans | WR 5v5 por linea | Perfil completo con historial, WR por linea, maestrias y ligas
 
 ---
 
-## 📋 Paso 1: Clona el repositorio
-
-Abre una terminal y ejecuta:
+## 🚀 Instalacion rapida
 
 ```bash
-git clone https://github.com/tu_usuario/lol-recommender-ai.git
-cd lol-recommender-ai
-```
-
-> Reemplaza `tu_usuario` con tu nombre de usuario de GitHub.
-
----
-
-## 📋 Paso 2: Crea y activa un entorno virtual
-
-**En Windows:**
-
-```bash
+git clone https://github.com/tu_usuario/lol-recommender-v2.git
+cd lol-recommender-v2
 python -m venv venv
 venv\Scripts\activate
-```
-
-**En Linux / Mac:**
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
----
-
-## 📋 Paso 3: Ejecuta el instalador automático
-
-```bash
+pip install -r requirements.txt
 python setup.py
-```
-
-Este comando hará lo siguiente:
-
-- Instalará todas las dependencias: `requests`, `scikit-learn`, `pandas`, `numpy`, `pillow`, `gdown`, `customtkinter`
-- Descargará una base de datos pre-entrenada (+9,000 partidas de High Elo) y los modelos de IA desde Google Drive
-- Extraerá los archivos en las carpetas correctas y eliminará el ZIP temporal
-
-> No necesitas una API Key de Riot para usar la aplicación con los datos pre-entrenados. Solo necesitas la API Key si quieres recolectar tus propias partidas (Paso 6).
-
----
-
-## 📋 Paso 4: Inicia la aplicación
-
-Una vez que el instalador termine, ejecuta:
-
-```bash
 python app.py
 ```
 
-La interfaz gráfica se abrirá automáticamente.
+---
+
+## 🎮 Uso
+
+| Pestana | Funcion |
+|---------|---------|
+| Mi Perfil | Nombre, nivel, ligas, maestrias, historial, WR por linea, filtro por champ y modo |
+| Radar en Vivo | Draft en tiempo real: counters, builds con botas adaptativas, bans, WR 5v5 por matchup |
+| Meta & Builds | Analisis de matchups y builds optimas |
+| Simulador 1v1 | Prediccion ML + datos reales + consejos tacticos por clase de campeon |
+| Tier List de Bans | Mejores bans por linea |
 
 ---
 
-## 📋 Paso 5: Cómo usar la aplicación
+## 🛠️ Estructura
 
-La aplicación tiene 4 pestañas principales:
-
-### 📡 RADAR EN VIVO
-
-- Se conecta automáticamente al cliente de LoL cuando entras en una partida.
-- Muestra tu rol asignado, los picks enemigos y la composición de equipo (balance AD/AP, tanques).
-- Calcula el winrate estimado de la partida.
-- Te sugiere counter picks con su setup completo (runas, hechizos, items de inicio y core).
-- Recomienda bans basados en tu rol y en el campeón que estás jugando.
-
-### 📊 META & BUILDS
-
-- Selecciona una línea: **TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY**.
-- Selecciona un campeón enemigo.
-- Haz clic en **ANALIZAR**.
-- Se mostrarán los mejores counter picks en una tabla.
-- Haz clic en cualquier campeón de la tabla para ver su setup óptimo (runas, hechizos, items de inicio y core).
-
-### 🤖 ANÁLISIS 1v1
-
-- Selecciona tu línea.
-- Selecciona tu campeón.
-- Selecciona el campeón enemigo.
-- Haz clic en **SIMULAR**.
-- La IA te dará el porcentaje de winrate esperado y un análisis textual del matchup.
-
-### 🔒 BANS RECOMENDADOS
-
-- Selecciona tu línea.
-- Haz clic en **ANALIZAR BANS**.
-- Se mostrarán los campeones con mayor banrate para esa línea, basados en datos reales.
-
----
-
-## 📋 Paso 6 (Opcional): Recolecta tus propios datos
-
-Si deseas entrenar el modelo con tus propias partidas (o ampliar la base de datos), necesitas una **API Key de Riot Games**.
-
-1. Solicita tu API Key en el Portal de Desarrolladores de Riot Games.
-2. Crea un archivo llamado `config.json` en la raíz del proyecto con el siguiente contenido:
-
-```json
-{
-  "API_KEY": "TU_API_KEY_AQUI"
-}
 ```
-
-3. Ejecuta el recolector masivo:
-
-```bash
-python -m src.recolector_masivo
-```
-
-El recolector descargará partidas desde Challenger/Grandmaster/Master en **LAS, LAN, NA y BR**.  
-Puedes ajustar la meta de partidas (por ejemplo, `meta=20000`) editando el código en `src/recolector_masivo.py`.
-
-> No subas tu archivo `config.json` a GitHub. Ya está incluido en `.gitignore` para tu seguridad.
-
----
-
-## 📋 Paso 7 (Opcional): Entrena el modelo con tus datos
-
-Una vez que hayas recolectado suficientes partidas (al menos 500 por línea), entrena los modelos:
-
-```bash
-python -m src.entrenador_ia
-```
-
-Esto generará los archivos:
-
-- `data/modelo_ia.pkl` → Modelo de IA entrenado (multiclase)
-- `data/modelo_1v1.pkl` → Modelo de IA entrenado (1v1)
-
----
-
-## 📁 Estructura del proyecto
-
-```text
-lol-recommender-ai/
-├── assets/                  # Imágenes de campeones, runas, objetos y hechizos
-│   ├── champs/
-│   ├── runas/
-│   ├── items/
-│   └── campeones.json       # Mapeo de IDs a nombres
-├── data/                    # Datos estáticos y base de datos
-│   ├── lol_data.db          # Base de datos SQLite con partidas
-│   ├── modelo_ia.pkl        # Modelo de IA entrenado (multiclase)
-│   ├── modelo_1v1.pkl       # Modelo de IA entrenado (1v1)
-│   └── champion_data.json   # Etiquetas por campeón (roles, etc.)
-├── src/                     # Código fuente
-│   ├── db_manager.py        # Gestión de la base de datos
-│   ├── recolector_masivo.py # Crawler de partidas desde Riot API
-│   ├── entrenador_ia.py     # Entrenamiento de los modelos Random Forest
-│   ├── motor_ia.py          # Motor de inferencia (predicción de counters)
-│   ├── recomendador.py      # Lógica de builds, runas, counters y bans
-│   ├── lcu_api.py           # Conexión con el cliente de LoL (LCU)
-│   ├── riot_api.py          # Descarga de datos de Data Dragon
-│   └── app.py               # Interfaz gráfica CustomTkinter
-├── setup.py                 # Instalador automático
-├── requirements.txt         # Dependencias de Python
-└── README.md
+├── app.py              # Interfaz principal (PySide6)
+├── setup.py            # Instalador de datos iniciales
+├── requirements.txt    # Dependencias
+├── config.json         # API Key (no incluido en git)
+├── src/
+│   ├── lcu_api.py      # Conexion con el cliente de LoL
+│   ├── riot_api.py     # Data Dragon y Riot API
+│   ├── recomendador.py # Algoritmos de recomendacion
+│   ├── db_manager.py   # Base de datos SQLite
+│   ├── motor_ia.py     # Modelo ML Random Forest
+│   ├── entrenador_ia.py
+│   └── recolector_masivo.py
+├── assets/             # Iconos (auto-descargados)
+└── data/               # Base de datos y modelos
 ```
 
 ---
 
-## 🛠️ Tecnologías utilizadas
+## 📝 Notas
 
-- **Python 3.10+**
-- **CustomTkinter** – Interfaz gráfica moderna y oscura
-- **SQLite3** – Base de datos local
-- **Scikit-learn** – Modelos Random Forest para predicción multiclase y 1v1
-- **Pandas & NumPy** – Procesamiento de datos
-- **Requests** – Llamadas a la API de Riot y Data Dragon
-- **Pillow** – Manejo de imágenes
-- **ThreadPoolExecutor** – Recolección masiva concurrente
-
----
-
-## 📌 Requisitos previos
-
-- League of Legends instalado (para usar el radar en vivo)
-- Python 3.10 o superior
-- Conexión a Internet (para descargar los datos iniciales y actualizar assets)
-
----
-
-## 🤝 Contribuciones
-
-Si quieres mejorar el proyecto, ¡eres bienvenido! Algunas ideas:
-
-- Añadir soporte para otros modos (ARAM, Clash).
-- Implementar más métricas de análisis (KDA por campeón, control de visión).
-- Optimizar la interfaz para resolución móvil.
-- Agregar más visualizaciones de datos (gráficos de winrate por parche).
-- Integración con bot de Discord para consultas en vivo.
-
-Para contribuir, abre un **issue** o envía un **pull request**.
-
----
-
-## 📄 Licencia
-
-**MIT** – Libre para uso personal y educativo.  
-No incluye los datos de Riot Games como propios.
-
----
-
-## 💬 Soporte
-
-Si tienes problemas o preguntas, abre un **issue** en GitHub.  
-¡Buena suerte en la Grieta! 🏆
+- La primera ejecucion descarga automaticamente los iconos de Data Dragon
+- El radar en vivo requiere tener League of Legends abierto
+- Los datos de ligas usan primero la LCU con fallback a Riot API
+- No subas tu `config.json` a GitHub (esta en `.gitignore`)

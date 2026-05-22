@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+import threading
 from io import BytesIO
 from PIL import Image
 import numpy as np
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar)
 from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
-from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
 from src.db_manager import DATA_DIR
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
@@ -76,6 +77,8 @@ def clear_layout(layout):
             else: clear_layout(item.layout())
 
 class LoLRecommenderApp(QMainWindow):
+    lcu_task_finished = Signal(object, object, str, str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LoL Esports Analytics Pro - V6.0 (PySide6)")
@@ -93,6 +96,7 @@ class LoLRecommenderApp(QMainWindow):
         self.builds_actuales = {}
         self.lcu = LCUConnector()
         self.radar_activo = False
+        self.lcu_task_finished.connect(self._on_lcu_task_finished)
         
         self.last_aliados = []
         self.last_enemigos = []
@@ -229,22 +233,64 @@ class LoLRecommenderApp(QMainWindow):
         btn.setStyleSheet("") 
 
     # ================= FUNCIONES DE BOTONES =================
+    def _run_lcu_task(self, task, btn, success_text, error_message):
+        res = task()
+        self.lcu_task_finished.emit(btn, res, success_text, error_message)
+
+    def _format_lcu_error(self, res):
+        texto = str(res)
+        if "read timed out" in texto.lower():
+            return "Tiempo de espera agotado al guardar el item set. Es posible que el item set ya se haya creado en el cliente."
+        if "404" in texto:
+            return "Endpoint de item sets no disponible en esta versión del cliente. Actualiza LoL o prueba otro método."
+        if len(texto) > 240:
+            return texto.splitlines()[0][:240] + "..."
+        return texto
+
+    def _on_lcu_task_finished(self, btn, res, success_text, error_message):
+        btn.setEnabled(True)
+        if res is True:
+            self._animar_boton(btn, success_text)
+        else:
+            detalle = self._format_lcu_error(res)
+            QMessageBox.critical(self, "Error API LCU", f"{error_message}\n\nDetalle: {detalle}")
+
     def accion_importar_runas(self, ids_runas, campeon, btn):
-        if self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"): self._animar_boton(btn, "Exportar a LoL")
-        else: QMessageBox.critical(self, "Error", "Asegúrate de tener el cliente abierto.")
+        btn.setEnabled(False)
+        threading.Thread(
+            target=self._run_lcu_task,
+            args=(lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), btn, "Exportar a LoL", "Asegúrate de tener el cliente abierto."),
+            daemon=True
+        ).start()
 
     def accion_importar_spells(self, ids_spells, btn):
-        if len(ids_spells) >= 2 and self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]): self._animar_boton(btn, "Exportar a LoL")
-        else: QMessageBox.critical(self, "Error", "Asegúrate de estar en una sala de Draft.")
+        if len(ids_spells) < 2:
+            QMessageBox.critical(self, "Error", "Selecciona los dos hechizos primero.")
+            return
+        btn.setEnabled(False)
+        threading.Thread(
+            target=self._run_lcu_task,
+            args=(lambda: self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]), btn, "Exportar a LoL", "Asegúrate de estar en una sala de Draft."),
+            daemon=True
+        ).start()
 
     def accion_importar_items(self, campeon, ids_start, ids_core, btn):
-        # FIX: Obtiene el ID en numero para que el LCU enlace el Item Set al campeon
-        champ_id_int = next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0)
-        res = self.lcu.importar_item_set(campeon, champ_id_int, ids_start, ids_core)
-        if res is True: 
-            self._animar_boton(btn, "Crear Item Set en LoL")
-        else: 
-            QMessageBox.critical(self, "Error API LCU", f"No se pudo inyectar el Item Set.\n\nDetalle: {res}")
+        btn.setEnabled(False)
+        threading.Thread(
+            target=self._run_lcu_task,
+            args=(
+                lambda: self.lcu.importar_item_set(
+                    campeon,
+                    next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
+                    ids_start,
+                    ids_core
+                ),
+                btn,
+                "Crear Item Set en LoL",
+                "No se pudo inyectar el Item Set."
+            ),
+            daemon=True
+        ).start()
 
     # ================= REDISEÑO DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
     def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout):
@@ -381,11 +427,11 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_sum_lvl.setStyleSheet("color: gray; font-size: 16px;")
         self.col_id.addWidget(self.lbl_sum_lvl, alignment=Qt.AlignCenter)
 
-        self.lbl_rank_solo = QLabel("SoloQ: Unranked")
+        self.lbl_rank_solo = QLabel("SoloQ: --")
         self.lbl_rank_solo.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 14px;")
         self.col_id.addWidget(self.lbl_rank_solo, alignment=Qt.AlignCenter)
 
-        self.lbl_rank_flex = QLabel("Flex: Unranked")
+        self.lbl_rank_flex = QLabel("Flex: --")
         self.lbl_rank_flex.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px;")
         self.col_id.addWidget(self.lbl_rank_flex, alignment=Qt.AlignCenter)
         
@@ -430,30 +476,48 @@ class LoLRecommenderApp(QMainWindow):
         if not perfil: return
         
         self.perfil_cargado = True
-        self.lbl_sum_name.setText(perfil.get("displayName", "Invocador"))
+        display_name = perfil.get("displayName") or perfil.get("gameName") or perfil.get("summonerName") or perfil.get("name") or "Invocador"
+        tagline = perfil.get("tagLine")
+        if tagline and tagline not in display_name:
+            display_name = f"{display_name}#{tagline}"
+        self.lbl_sum_name.setText(display_name)
         self.lbl_sum_lvl.setText(f"Nivel: {perfil.get('summonerLevel', '--')}")
         
         icon_id = perfil.get("profileIconId")
         ruta_icon = self.descargar_imagen(icon_id, "profile")
-        if ruta_icon: 
+        if ruta_icon:
             self.lbl_prof_icon.setPixmap(QPixmap(ruta_icon).scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         # Cargar Liga (Fix)
         ligas = self.lcu.obtener_ligas()
-        if ligas and "queues" in ligas:
-            for queue in ligas["queues"]:
-                tier = queue.get("tier", "")
-                div = queue.get("division", "")
-                lp = queue.get("leaguePoints", 0)
-                
-                # Si tier es NONE, significa Unranked
-                if tier and tier not in ["NONE", "UNRANKED", ""]:
-                    text = f"{tier} {div} ({lp} PL)"
-                else:
-                    text = "Unranked"
-                
-                if queue.get("queueType") == "RANKED_SOLO_5x5": self.lbl_rank_solo.setText(f"SoloQ: {text}")
-                elif queue.get("queueType") == "RANKED_FLEX_SR": self.lbl_rank_flex.setText(f"Flex: {text}")
+        queues = []
+        if isinstance(ligas, dict):
+            if "queues" in ligas:
+                queues = ligas["queues"]
+            elif "queueMap" in ligas and isinstance(ligas["queueMap"], dict):
+                queues = [
+                    {**v, "queueType": k}
+                    for k, v in ligas["queueMap"].items()
+                    if isinstance(v, dict)
+                ]
+        elif isinstance(ligas, list):
+            queues = ligas
+
+        for queue in queues:
+            tier = queue.get("tier") or queue.get("rank") or queue.get("division") or ""
+            div = queue.get("division") or queue.get("rankDivision") or ""
+            lp = queue.get("leaguePoints") or queue.get("lp") or 0
+            queue_type = str(queue.get("queueType") or queue.get("queueId") or queue.get("rankQueueType") or queue.get("queue") or "").upper()
+            
+            if tier and tier not in ["NONE", "UNRANKED", ""]:
+                text = f"{tier} {div} ({lp} PL)"
+            else:
+                text = "Unranked"
+
+            if "SOLO" in queue_type and "FLEX" not in queue_type:
+                self.lbl_rank_solo.setText(f"SoloQ: {text}")
+            elif "FLEX" in queue_type:
+                self.lbl_rank_flex.setText(f"Flex: {text}")
 
         # Cargar Maestrias (Fix LCU Endpoint Local Player)
         maestrias = self.lcu.obtener_maestrias()

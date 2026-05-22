@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 import urllib3
 from base64 import b64encode
@@ -57,13 +58,77 @@ class LCUConnector:
         except: pass
         return None
 
-    def obtener_ligas(self):
-        if not self.port: return None
+    def obtener_region_local(self):
+        config_path = os.path.join(self.lol_path, "Config", "LeagueClientSettings.yaml")
+        if not os.path.exists(config_path):
+            return None
         try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-ranked/v1/current-ranks"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200: return res.json()
+            with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if line.strip().startswith("region:"):
+                        return line.split(":", 1)[1].strip().strip('"').strip("'")
         except: pass
+        return None
+
+    def obtener_api_key_local(self):
+        root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(root_path, "config.json")
+        if not os.path.exists(config_path):
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                return config.get("API_KEY")
+        except: pass
+        return None
+
+    def obtener_encrypted_summoner_id(self, puuid, region):
+        api_key = self.obtener_api_key_local()
+        if not api_key or not region or not puuid:
+            return None
+        try:
+            url = f"https://{region.lower()}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+            res = requests.get(url, headers={"X-Riot-Token": api_key}, timeout=5)
+            if res.status_code == 200:
+                return res.json().get("id")
+        except: pass
+        return None
+
+    def obtener_ligas(self):
+        if self.port:
+            try:
+                url = f"{self.protocol}://127.0.0.1:{self.port}/lol-ranked/v1/current-ranks"
+                res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, dict):
+                        if "queueMap" in data and isinstance(data["queueMap"], dict):
+                            data["queues"] = [
+                                {**v, "queueType": k}
+                                for k, v in data["queueMap"].items()
+                                if isinstance(v, dict)
+                            ]
+                        return data
+                    if isinstance(data, list):
+                        return {"queues": data}
+            except: pass
+
+        region = self.obtener_region_local()
+        api_key = self.obtener_api_key_local()
+        if region and api_key:
+            perfil = self.obtener_perfil()
+            if perfil:
+                encrypted_id = perfil.get("summonerId") or perfil.get("accountId")
+                if not encrypted_id:
+                    puuid = perfil.get("puuid")
+                    encrypted_id = self.obtener_encrypted_summoner_id(puuid, region)
+                if encrypted_id:
+                    try:
+                        league_url = f"https://{region.lower()}.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_id}"
+                        res = requests.get(league_url, headers={"X-Riot-Token": api_key}, timeout=5)
+                        if res.status_code == 200:
+                            return {"queues": res.json()}
+                    except: pass
         return None
 
     def obtener_maestrias(self, count=3):
@@ -90,7 +155,7 @@ class LCUConnector:
         if not self.port: return False
         url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champ-select/v1/session/my-selection"
         try:
-            res = requests.patch(url, headers=self.headers, json={"spell1Id": int(spell1), "spell2Id": int(spell2)}, verify=False)
+            res = requests.patch(url, headers=self.headers, json={"spell1Id": int(spell1), "spell2Id": int(spell2)}, verify=False, timeout=3)
             return res.status_code in [200, 204]
         except: return False
 
@@ -98,16 +163,17 @@ class LCUConnector:
         if not self.port or len(ids_runas) < 11: return False
         try:
             url_pages = f"{self.protocol}://127.0.0.1:{self.port}/lol-perks/v1/pages"
-            res = requests.get(url_pages, headers=self.headers, verify=False)
+            res = requests.get(url_pages, headers=self.headers, verify=False, timeout=3)
             if res.status_code == 200:
                 editables = [p for p in res.json() if p.get('isEditable', True)]
-                if editables: requests.delete(f"{url_pages}/{editables[0]['id']}", headers=self.headers, verify=False)
+                if editables:
+                    requests.delete(f"{url_pages}/{editables[0]['id']}", headers=self.headers, verify=False, timeout=3)
             
             data = {
                 "name": nombre, "primaryStyleId": int(ids_runas[0]), "subStyleId": int(ids_runas[5]),
                 "selectedPerkIds": [int(x) for x in ids_runas[1:5] + ids_runas[6:8] + ids_runas[8:11]], "current": True
             }
-            res_post = requests.post(url_pages, headers=self.headers, json=data, verify=False)
+            res_post = requests.post(url_pages, headers=self.headers, json=data, verify=False, timeout=3)
             return res_post.status_code == 200
         except: return False
 
@@ -118,26 +184,44 @@ class LCUConnector:
             
         try:
             url_sum = f"{self.protocol}://127.0.0.1:{self.port}/lol-summoner/v1/current-summoner"
-            sum_res = requests.get(url_sum, headers=self.headers, verify=False)
+            sum_res = requests.get(url_sum, headers=self.headers, verify=False, timeout=3)
             if sum_res.status_code != 200: return False
-            summoner_id = sum_res.json()['summonerId']
+            summoner_id = sum_res.json().get('summonerId')
+            if not summoner_id: return False
 
-            url_sets = f"{self.protocol}://127.0.0.1:{self.port}/lol-item-sets/v1/item-sets/{summoner_id}/sets"
-            items_res = requests.get(url_sets, headers=self.headers, verify=False)
-            item_sets_data = items_res.json() if items_res.status_code == 200 else {"accountId": summoner_id, "itemSets": []}
+            url_sets_base = f"{self.protocol}://127.0.0.1:{self.port}/lol-item-sets/v1/item-sets"
+            url_sets_with_id = f"{url_sets_base}/{summoner_id}/sets"
+
+            item_sets_data = {"accountId": summoner_id, "itemSets": []}
+            try:
+                items_res = requests.get(url_sets_base, headers=self.headers, verify=False, timeout=3)
+                if items_res.status_code == 200:
+                    item_sets_data = items_res.json()
+                else:
+                    items_res = requests.get(url_sets_with_id, headers=self.headers, verify=False, timeout=3)
+                    if items_res.status_code == 200:
+                        item_sets_data = items_res.json()
+            except (ValueError, requests.exceptions.RequestException):
+                item_sets_data = {"accountId": summoner_id, "itemSets": []}
 
             clean_start = [{"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"]
             clean_core = [{"id": str(i).strip(), "count": 1} for i in ids_core if str(i).strip() and str(i).strip() != "0"]
 
             nuevo_set = {
                 "associatedChampions": [champ_id_int] if champ_id_int > 0 else [], # CLAVE PARA QUE FUNCIONE EN PARTIDA
-                "associatedMaps": [11, 12], 
+                "associatedMaps": [11],
                 "blocks": [
                     {"type": "Start & Early Game", "items": clean_start},
                     {"type": "Core Build", "items": clean_core}
                 ],
                 "title": f"LEA - {campeon}",
-                "uid": f"lea_custom_build_{campeon.lower()}"
+                "uid": f"lea_custom_build_{campeon.lower()}",
+                "type": "custom",
+                "map": "any",
+                "mode": "any",
+                "preferredItemSlots": [],
+                "sortrank": 0,
+                "startedFrom": "blank"
             }
 
             lista_sets = item_sets_data.get("itemSets", [])
@@ -149,8 +233,22 @@ class LCUConnector:
                     break
             if not reemplazado: lista_sets.append(nuevo_set)
             
-            item_sets_data["itemSets"] = lista_sets
-            put_res = requests.put(url_sets, headers=self.headers, json=item_sets_data, verify=False)
-            return put_res.status_code in [200, 204]
+            item_sets_data = {"accountId": summoner_id, "itemSets": lista_sets}
+            try:
+                put_res = requests.put(url_sets_base, headers=self.headers, json=item_sets_data, verify=False, timeout=30)
+                if put_res.status_code in [200, 201, 204]:
+                    return True
+
+                put_res2 = requests.put(url_sets_with_id, headers=self.headers, json={"itemSets": lista_sets}, verify=False, timeout=30)
+                if put_res2.status_code in [200, 201, 204]:
+                    return True
+
+                if put_res.status_code == 404 or put_res2.status_code == 404:
+                    return "Endpoint inválido. No se pudo guardar el item set en el cliente de LoL."
+                return f"Error al guardar item set: {put_res.status_code} / {put_res2.status_code}"
+            except requests.exceptions.ReadTimeout:
+                return "Tiempo de espera agotado al guardar el item set. El set puede haberse creado; verifica en el cliente."
+            except requests.exceptions.RequestException as exc:
+                return f"Error de conexión al guardar item set: {exc}"
         except Exception as e:
             return f"Excepción fatal: {str(e)}"

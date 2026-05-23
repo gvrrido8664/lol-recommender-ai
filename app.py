@@ -24,6 +24,11 @@ from src.recomendador import (obtener_counters, obtener_top_items, obtener_campe
 from src.lcu_api import LCUConnector
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# PyInstaller: cuando es .exe, los datos están en _MEIPASS
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 ITEMS_DIR = os.path.join(ASSETS_DIR, "items")
 RUNAS_DIR = os.path.join(ASSETS_DIR, "runas")
@@ -34,7 +39,16 @@ PROFILE_ICONS_DIR = os.path.join(ASSETS_DIR, "profile_icons")
 for d in [ITEMS_DIR, RUNAS_DIR, CHAMPS_DIR, SPELLS_DIR, PROFILE_ICONS_DIR]:
     os.makedirs(d, exist_ok=True)
 
-modelo_1v1 = joblib.load("data/modelo_1v1.pkl") if os.path.exists("data/modelo_1v1.pkl") else {}
+modelo_1v1 = {}
+ruta_modelo = os.path.join(BASE_DIR, "data", "modelo_1v1.pkl")
+if os.path.exists(ruta_modelo):
+    try:
+        modelo_1v1 = joblib.load(ruta_modelo)
+        print(f"[App] Modelo 1v1 cargado: {len(modelo_1v1)} roles")
+    except Exception as e:
+        print(f"[App] Error cargando modelo 1v1: {e}")
+else:
+    print(f"[App] AVISO: No se encuentra {ruta_modelo}. El simulador 1v1 no funcionará.")
 ITEMS_DICT = cargar_objetos()
 RUNAS_DICT = cargar_runas()
 SPELLS_DICT = cargar_hechizos()
@@ -81,6 +95,7 @@ class LoLRecommenderApp(QMainWindow):
     lcu_task_finished = Signal(object, object, str, str)
     perfil_listo = Signal(dict)
     radar_listo = Signal(object)
+    meta_builds_listo = Signal(list, str, str)  # (resultados, rol_api, enemigo)
 
     def __init__(self):
         super().__init__()
@@ -102,6 +117,7 @@ class LoLRecommenderApp(QMainWindow):
         self.lcu_task_finished.connect(self._on_lcu_task_finished)
         self.perfil_listo.connect(self._on_perfil_listo)
         self.radar_listo.connect(self._on_radar_listo)
+        self.meta_builds_listo.connect(self._on_meta_builds_listo)
         
         self.last_aliados = []
         self.last_enemigos = []
@@ -109,9 +125,13 @@ class LoLRecommenderApp(QMainWindow):
         self.last_my_role = None
         self.perfil_cargado = False
         
-        # Flags anti-freeze: evitan operaciones LCU concurrentes
+        # Cache de imágenes descargadas para evitar HTTP repetidos
+        self._cache_imagenes = {}
+        
+        # Flags anti-freeze
         self._cargando_perfil = False
         self._actualizando_radar = False
+        self._cargando_meta = False
 
         self.crear_interfaz()
         
@@ -196,9 +216,16 @@ class LoLRecommenderApp(QMainWindow):
         self.tabview.setCurrentIndex(0)  # Abrir en MI PERFIL
 
     def descargar_imagen(self, id_elemento, tipo):
+        # Cache en RAM: evita HTTP repetidos
+        cache_key = f"{tipo}_{id_elemento}"
+        if cache_key in self._cache_imagenes:
+            return self._cache_imagenes[cache_key]
+        
         carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR, "profile": PROFILE_ICONS_DIR}
-        ruta_local = os.path.join(carpetas.get(tipo), f"{id_elemento}.png")
-        if os.path.exists(ruta_local): return ruta_local
+        ruta_local = os.path.join(carpetas.get(tipo, CHAMPS_DIR), f"{id_elemento}.png")
+        if os.path.exists(ruta_local):
+            self._cache_imagenes[cache_key] = ruta_local
+            return ruta_local
         try:
             if tipo == "runa": url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
             elif tipo == "spell": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
@@ -206,11 +233,13 @@ class LoLRecommenderApp(QMainWindow):
             elif tipo == "profile": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/profileicon/{id_elemento}.png"
             else: url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
                 
-            resp = requests.get(url)
+            resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             with open(ruta_local, "wb") as f: f.write(resp.content)
+            self._cache_imagenes[cache_key] = ruta_local
             return ruta_local
-        except: return None
+        except:
+            return None
 
     def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40):
         ruta = self.descargar_imagen(id_elemento, tipo)
@@ -836,36 +865,43 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_card_most_val.setText("--")
             self.lbl_card_best_val.setText("--")
 
-        # --- WR POR LÍNEA (usando DB local para determinar rol de cada campeón) ---
+        # --- WR POR LÍNEA (1 sola query para todos los campeones) ---
         conn = obtener_conexion()
         cur = conn.cursor()
-        rol_por_champ = {}  # cache: {champ_name: rol_api}
         
-        rol_stats = {}  # {rol_ui: {"wins": N, "games": N}}
+        # Recoger campeones únicos del historial
+        champs_hist = list(set(
+            self.procesar_nombre_champ(str(g.get("participants", [{}])[0].get("championId", "0")), "0") or "?"
+            for g in self.historial_games
+        ))
+        
+        # 1 sola query: rol más frecuente de cada campeón
+        rol_por_champ = {}
+        if champs_hist:
+            placeholders = ",".join(["?"] * len(champs_hist))
+            cur.execute(f"""
+                SELECT champion, team_position FROM (
+                    SELECT champion, team_position,
+                           ROW_NUMBER() OVER (PARTITION BY champion ORDER BY COUNT(*) DESC) as rn
+                    FROM participantes
+                    WHERE champion IN ({placeholders})
+                    GROUP BY champion, team_position
+                ) WHERE rn = 1
+            """, champs_hist)
+            for row in cur.fetchall():
+                rol_por_champ[row["champion"]] = row["team_position"]
+        
+        rol_stats = {}
         for g in self.historial_games:
             part_info = g.get("participants", [{}])[0]
             champ_id = str(part_info.get("championId", "0"))
             champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
-            
-            # Determinar el rol del campeón usando la DB local
-            if champ_name not in rol_por_champ:
-                cur.execute("""
-                    SELECT team_position FROM participantes 
-                    WHERE champion = ? 
-                    GROUP BY team_position 
-                    ORDER BY COUNT(*) DESC 
-                    LIMIT 1
-                """, (champ_name,))
-                row = cur.fetchone()
-                rol_por_champ[champ_name] = row["team_position"] if row else None
-            
             rol_api = rol_por_champ.get(champ_name)
             if not rol_api:
                 continue
             rol_ui = API_TO_ROL.get(rol_api.upper(), rol_api.upper())
             if rol_ui not in rol_stats:
                 rol_stats[rol_ui] = {"wins": 0, "games": 0}
-            
             win = part_info.get("stats", {}).get("win", False)
             rol_stats[rol_ui]["games"] += 1
             if win:
@@ -1252,36 +1288,53 @@ class LoLRecommenderApp(QMainWindow):
         self.actualizar_listas_counter(UI_ROLES[0])
 
     def buscar_counters(self):
+        """Lanza la búsqueda en hilo secundario para no congelar la UI."""
+        if self._cargando_meta:
+            return
+        self._cargando_meta = True
         rol_api = ROL_TO_API[self.cb_rol_counter.currentText()]
         enemigo = self.cb_enemigo.currentText()
-        self.builds_actuales.clear() 
+        threading.Thread(target=self._fetch_meta_builds, args=(rol_api, enemigo), daemon=True).start()
+
+    def _fetch_meta_builds(self, rol_api, enemigo):
+        """Hilo secundario: ejecuta todas las queries de Meta Builds."""
+        try:
+            resultados = obtener_counters(rol_api, enemigo, min_partidas=20)
+            self.meta_builds_listo.emit(resultados, rol_api, enemigo)
+        except Exception as e:
+            print(f"[MetaBuilds] Error: {e}")
+            self.meta_builds_listo.emit([], rol_api, enemigo)
+
+    def _on_meta_builds_listo(self, resultados, rol_api, enemigo):
+        """Hilo principal: pinta la tabla con los resultados ya calculados."""
+        self._cargando_meta = False
+        self.builds_actuales.clear()
         self.tree_counters.setRowCount(0)
         clear_layout(self.frame_setup_visual)
 
-        resultados = obtener_counters(rol_api, enemigo, min_partidas=20)
-        if not resultados: 
+        if not resultados:
             QMessageBox.information(self, "Aviso", "Datos insuficientes. Ajusta tus filtros.")
             return
 
         for champ, winrate, partidas in resultados[:6]:
-            ids_start, ids_fin = obtener_top_items(champ, rol_api)
+            ids_start, ids_fin = obtener_top_items(champ, rol_api, enemigos=[enemigo])
             self.builds_actuales[champ] = {
-                "starters": ids_start, 
-                "finales": ids_fin, 
+                "starters": ids_start,
+                "finales": ids_fin,
                 "runas": obtener_top_runas(champ, rol_api),
                 "spells": obtener_top_hechizos(champ, rol_api)
             }
             row = self.tree_counters.rowCount()
             self.tree_counters.insertRow(row)
-            
             item_champ = QTableWidgetItem(f"  {champ}")
             icon_path = self.descargar_imagen(champ, "champ")
-            if icon_path: item_champ.setIcon(QIcon(icon_path))
-            
+            if icon_path:
+                item_champ.setIcon(QIcon(icon_path))
             item_wr = QTableWidgetItem(f"{winrate}%")
-            if winrate >= 52: item_wr.setForeground(QColor(GREEN_WR))
-            elif winrate <= 48: item_wr.setForeground(QColor(RED_WR))
-            
+            if winrate >= 52:
+                item_wr.setForeground(QColor(GREEN_WR))
+            elif winrate <= 48:
+                item_wr.setForeground(QColor(RED_WR))
             self.tree_counters.setItem(row, 0, item_champ)
             self.tree_counters.setItem(row, 1, item_wr)
             self.tree_counters.setItem(row, 2, QTableWidgetItem(str(partidas)))

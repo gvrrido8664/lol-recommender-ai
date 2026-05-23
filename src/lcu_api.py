@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import urllib3
+import sys
 from base64 import b64encode
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -71,7 +72,10 @@ class LCUConnector:
         return None
 
     def obtener_api_key_local(self):
-        root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if getattr(sys, 'frozen', False):
+            root_path = sys._MEIPASS
+        else:
+            root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_path = os.path.join(root_path, "config.json")
         if not os.path.exists(config_path):
             return None

@@ -2,8 +2,14 @@ import requests
 import json
 import os
 import re
+import sys
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def _get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+BASE_DIR = _get_base_dir()
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 CACHE_CHAMPS = os.path.join(DATA_DIR, "champion_data.json")

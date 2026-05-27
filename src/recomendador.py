@@ -268,8 +268,15 @@ def _clasificar_dano(champ, tags=None):
     return obtener_dano(champ)
 
 def _es_frontlane(champ, tags=None):
-    """Determina si un campeón puede hacer de frontlane (absorber daño/engagear)."""
-    return es_tanque(champ) or es_luchador(champ)
+    """Determina si un campeon puede hacer de frontlane (absorber dano/engagear).
+    Los Skirmishers (Yasuo, Yone, Yi, etc.) NO son frontlane aunque sean Fighters."""
+    if es_tanque(champ):
+        return True
+    if es_luchador(champ):
+        tag = obtener_tag(champ)
+        # Solo Divers y Juggernauts son frontlane; Skirmishers no
+        return tag.get("sub_class") in ("Diver", "Juggernaut")
+    return False
 
 def analizar_composicion(aliados):
     ad_count, ap_count, tank_count = 0.0, 0.0, 0
@@ -284,7 +291,7 @@ def analizar_composicion(aliados):
             ad_count += 0.5
             ap_count += 0.5
 
-        if es_tanque(aliado) or es_luchador(aliado):
+        if _es_frontlane(aliado):
             tank_count += 1
 
     total_dmg = ad_count + ap_count
@@ -307,7 +314,7 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
     
     for c in campeones_rol:
         dano = obtener_dano(c)
-        es_tank = es_tanque(c) or es_luchador(c)
+        es_tank = _es_frontlane(c)
         es_ap = dano in ("AP", "HYBRID")
         es_ad = dano in ("AD", "HYBRID")
 

@@ -739,6 +739,14 @@ class LoLRecommenderApp(QMainWindow):
         self.fr_mastery = QHBoxLayout()
         self.l_mastery.addLayout(self.fr_mastery)
         self.col_id.addWidget(self.pnl_mastery)
+
+        # ===== PANEL DE FATIGA (columna izquierda, abajo) =====
+        self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL")
+        self.lbl_fatiga = QLabel("Analizando...")
+        self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
+        self.lbl_fatiga.setWordWrap(True)
+        self.l_fatiga.addWidget(self.lbl_fatiga)
+        self.col_id.addWidget(self.pnl_fatiga)
         
         l_pnl.addLayout(self.col_id, 1)
         
@@ -794,14 +802,6 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
         self.l_season.addWidget(self.tb_season_champs)
         self.col_hist.addWidget(self.pnl_season)
-
-        # ===== PANEL DE FATIGA / ESTADO MENTAL =====
-        self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL & FATIGA")
-        self.lbl_fatiga = QLabel("Conecta al cliente para analizar tu rendimiento")
-        self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
-        self.lbl_fatiga.setWordWrap(True)
-        self.l_fatiga.addWidget(self.lbl_fatiga)
-        self.col_hist.addWidget(self.pnl_fatiga)
         
         # Filtro por campeón y modo de juego
         self.fr_filtro = QHBoxLayout()
@@ -832,16 +832,13 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
-        self.tb_historial.verticalHeader().setDefaultSectionSize(38)
-        self.tb_historial.setIconSize(QSize(28, 28))
+        self.tb_historial.verticalHeader().setDefaultSectionSize(32)  # mas compacto
+        self.tb_historial.setIconSize(QSize(24, 24))
         self.tb_historial.verticalHeader().setVisible(False)
         self.col_hist.addWidget(self.tb_historial, 1)
         
-        # Boton "Cargar mas partidas" (lazy loading)
-        self.btn_cargar_mas = QPushButton("📥 Cargar más partidas")
-        self.btn_cargar_mas.clicked.connect(self._cargar_mas_partidas)
-        self.btn_cargar_mas.setVisible(False)
-        self.col_hist.addWidget(self.btn_cargar_mas)  # Stretch factor 1 para que ocupe el espacio restante
+        # Scroll infinito: detecta cuando el usuario llega al final
+        self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)  # Stretch factor 1 para que ocupe el espacio restante
         
         l_pnl.addLayout(self.col_hist, 2)
         layout.addWidget(self.pnl_perfil)
@@ -997,9 +994,6 @@ class LoLRecommenderApp(QMainWindow):
         games = historial.get("games", {}).get("games", [])
         self.historial_games = games
         self._renderizar_historial(games)
-        
-        # Mostrar boton de cargar mas si hay mas partidas disponibles
-        self.btn_cargar_mas.setVisible(len(games) >= 20 and len(games) < 100)
 
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
@@ -1179,22 +1173,35 @@ class LoLRecommenderApp(QMainWindow):
         except:
             pass
 
-    def _cargar_mas_partidas(self):
-        """Lazy loading: carga 20 partidas mas del historial."""
-        if not self.lcu or not self.lcu.port or not self.perfil_cargado:
-            return
-        offset = len(self.historial_games) if hasattr(self, 'historial_games') else 0
-        perfil = self.lcu.obtener_perfil()
-        if not perfil: return
-        puuid = perfil.get("puuid")
-        if not puuid: return
-        nuevas = self.lcu.obtener_historial(puuid, count=offset + 20)
-        if nuevas:
-            games = nuevas.get("games", {}).get("games", [])
-            if len(games) > len(self.historial_games):
-                self.historial_games = games
-                self._renderizar_historial(self.historial_games)
-                self.btn_cargar_mas.setVisible(len(self.historial_games) < 100)
+    def _on_scroll_historial(self, value):
+        """Scroll infinito: carga mas partidas cuando el usuario llega al final."""
+        scrollbar = self.tb_historial.verticalScrollBar()
+        if scrollbar.maximum() > 0 and value >= scrollbar.maximum() - 50:
+            if not hasattr(self, '_cargando_historial'):
+                self._cargando_historial = False
+            if self._cargando_historial:
+                return
+            self._cargando_historial = True
+            self._cargar_mas_partidas_scroll()
+
+    def _cargar_mas_partidas_scroll(self):
+        """Carga 20 partidas adicionales via LCU."""
+        try:
+            if not self.lcu or not self.lcu.port: return
+            current = len(self.historial_games) if hasattr(self, 'historial_games') else 0
+            if current >= 100: return
+            perfil = self.lcu.obtener_perfil()
+            if not perfil: return
+            puuid = perfil.get("puuid")
+            if not puuid: return
+            nuevas = self.lcu.obtener_historial(puuid, count=current + 20)
+            if nuevas:
+                games = nuevas.get("games", {}).get("games", [])
+                if len(games) > current:
+                    self.historial_games = games
+                    self._renderizar_historial(self.historial_games)
+        finally:
+            self._cargando_historial = False
 
     def filtrar_historial(self, _=None):
         """Filtra la tabla de historial por campeón Y modo de juego."""
@@ -1732,7 +1739,7 @@ class LoLRecommenderApp(QMainWindow):
         layout.addWidget(self.pnl_pro)
 
     def actualizar_ingame(self):
-        """Detecta si hay partida en vivo y actualiza la tabla de jugadores con KDA, rachas y power spikes."""
+        """Detecta partida en vivo usando LCU o Live Client Data API (puerto 2999)."""
         if not self.lcu or not self.lcu.port:
             return
         fase = self.lcu.obtener_fase_juego()
@@ -1741,13 +1748,66 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_ingame_status.setText("🎮 Esperando partida...")
             self.tb_ingame.setVisible(False)
             self.lbl_ingame_comp.setText("")
+            self.pnl_pro.setVisible(False)
             return
 
+        # Intentar Live Client Data API (puerto 2999) - datos mas ricos en vivo
+        jugadores, game_info = self.lcu.obtener_liveclient_data()
+        if jugadores:
+            self._renderizar_ingame_liveclient(jugadores, game_info)
+            return
+
+        # Fallback: LCU gameflow data
         jugadores = self.lcu.obtener_summoners_partida()
         if not jugadores:
             self.lbl_ingame_status.setText("🎮 Partida detectada - cargando jugadores...")
             return
+        self._renderizar_ingame_lcu(jugadores)
 
+    def _renderizar_ingame_liveclient(self, jugadores, game_info):
+        """Renderiza datos del Live Client Data API (KDA, CS, items en tiempo real)."""
+        self.lbl_ingame_status.setVisible(False)
+        self.tb_ingame.setVisible(True)
+        aliados_raw = [j for j in jugadores if j.get("team") == "ORDER"]
+        enemigos_raw = [j for j in jugadores if j.get("team") == "CHAOS"]
+        self.tb_ingame.setRowCount(0)
+        for team_name, team_players, bg in [("🔵 ALIADOS", aliados_raw, ALLY_BG), ("🔴 ENEMIGOS", enemigos_raw, ENEMY_BG)]:
+            row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
+            hdr = QTableWidgetItem(team_name); hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_GOLD))
+            font = hdr.font(); font.setBold(True); hdr.setFont(font)
+            self.tb_ingame.setItem(row, 0, hdr)
+            for c in range(1, self.tb_ingame.columnCount()):
+                e = QTableWidgetItem(""); e.setBackground(QColor(bg)); self.tb_ingame.setItem(row, c, e)
+            for j in team_players:
+                cname = j.get("championName", "?")
+                sname = j.get("summonerName", "???")
+                lvl = j.get("level", 1); k = j.get("kills", 0); d = j.get("deaths", 0); a = j.get("assists", 0)
+                cs = j.get("creepScore", 0)
+                stars = self._dificultad_stars(cname) if self.user_settings.get("mostrar_dificultad", True) else ""
+                spike = self._power_spike_champ(cname) if self.user_settings.get("mostrar_power_spikes", True) else ""
+                tips = self._tips_principiante(cname) if self.user_settings.get("modo_principiante", False) else ""
+                row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
+                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)} {stars}")
+                icon_p = self.descargar_imagen(cname, "champ")
+                if icon_p: item_c.setIcon(QIcon(icon_p))
+                self.tb_ingame.setItem(row, 0, item_c)
+                self.tb_ingame.setItem(row, 1, QTableWidgetItem(f"{sname} (Nv.{lvl})"))
+                self.tb_ingame.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
+                self.tb_ingame.setItem(row, 3, QTableWidgetItem(str(cs)))
+                self.tb_ingame.setItem(row, 4, QTableWidgetItem(j.get("isDead", False) and "💀 Muerto" or "✅ Vivo"))
+                self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
+                item_tips = QTableWidgetItem(tips); item_tips.setForeground(QColor("#8fa3b8"))
+                self.tb_ingame.setItem(row, 6, item_tips)
+        self._actualizar_recordatorios()
+        self.lbl_ingame_comp.setText(f"⏱️ {game_info.get('gameTime', 0):.0f}s de partida")
+        if self.user_settings.get("modo_profesional", False):
+            aliados_n = [j["championName"] for j in aliados_raw]
+            enemigos_n = [j["championName"] for j in enemigos_raw]
+            if len(aliados_n) == 5 and len(enemigos_n) == 5:
+                self._actualizar_analisis_pro(aliados_n, enemigos_n)
+
+    def _renderizar_ingame_lcu(self, jugadores):
+        """Renderiza usando datos de LCU (champion, summoner, sin KDA en vivo)."""
         self.lbl_ingame_status.setVisible(False)
         self.tb_ingame.setVisible(True)
 

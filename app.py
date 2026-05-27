@@ -199,8 +199,8 @@ class SettingsDialog(QDialog):
 
         # ── EXTRA ──
         _seccion("⚡ EXTRA (general)")
-        self.cb_sonido = _check("Sonidos de alerta", "sonidos",
-            "Suena al detectar partida o cambios en el draft (proximamente).")
+        self.cb_sonido = _check("Sonidos de alerta al detectar partida o cambios", "sonidos",
+            "Suena al conectarse al cliente, detectar draft o iniciar partida.")
 
         layout.addStretch()
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -1014,7 +1014,7 @@ class LoLRecommenderApp(QMainWindow):
             
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
-            item_c = QTableWidgetItem(f"  {champ_name}")
+            item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(champ_name)}")
             icon_p = self.descargar_imagen(champ_name, "champ")
             if icon_p: item_c.setIcon(QIcon(icon_p))
             item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
@@ -1172,7 +1172,7 @@ class LoLRecommenderApp(QMainWindow):
 
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
-            item_c = QTableWidgetItem(f"  {champ_name}")
+            item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(champ_name)}")
             icon_p = self.descargar_imagen(champ_name, "champ")
             if icon_p: item_c.setIcon(QIcon(icon_p))
             item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
@@ -1276,6 +1276,17 @@ class LoLRecommenderApp(QMainWindow):
             if not self.timer_lcu.isActive():
                 self.timer_lcu.start()
 
+    def _reproducir_sonido(self, tipo="info"):
+        """Reproduce un sonido de alerta si los sonidos estan activados."""
+        if not self.user_settings.get("sonidos", False):
+            return
+        try:
+            import winsound
+            if tipo == "info": winsound.MessageBeep(winsound.MB_ICONINFORMATION)
+            elif tipo == "alerta": winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            elif tipo == "draft": winsound.MessageBeep(winsound.MB_OK)
+        except: pass
+
     def auto_detectar_lcu(self):
         """Solo hace operaciones rápidas (leer lockfile). El trabajo pesado (HTTP)
         se lanza en hilos secundarios para no congelar la UI."""
@@ -1298,6 +1309,7 @@ class LoLRecommenderApp(QMainWindow):
         # Cliente detectado por primera vez
         if not self.radar_activo:
             self.radar_activo = True
+            self._reproducir_sonido("info")
             self.lbl_estado_lcu.setText("✓ ENLAZADO AL CLIENTE DE LOL")
             self.lbl_estado_lcu.setStyleSheet(f"color: {GREEN_WR}; font-weight: bold; font-size: 14px;")
         
@@ -1530,7 +1542,7 @@ class LoLRecommenderApp(QMainWindow):
                     row = self.tb_season_champs.rowCount(); self.tb_season_champs.insertRow(row)
                     wr_c = round(cs["wins"] * 100 / cs["games"], 1) if cs["games"] > 0 else 0
                     kda = round((cs["kills"] + cs["assists"]) / max(1, cs["deaths"]), 1)
-                    item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}")
+                    item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(cname)}")
                     icon = self.descargar_imagen(cname, "champ")
                     if icon: item_c.setIcon(QIcon(icon))
                     self.tb_season_champs.setItem(row, 0, item_c)
@@ -1815,6 +1827,17 @@ class LoLRecommenderApp(QMainWindow):
             d = tag.get("difficulty", 2)
             return "⭐" * d
         except: return "⭐⭐"
+
+    def _nombre_con_dificultad(self, champion):
+        """Nombre del campeon con estrellas si mostrar_dificultad esta activo."""
+        nombre = self._nombre_display(champion)
+        if self.user_settings.get("mostrar_dificultad", True):
+            return f"{nombre} {self._dificultad_stars(champion)}"
+        return nombre
+
+    def _tooltip_size(self):
+        """Tamano de tooltip segun setting tooltips_grandes."""
+        return 55 if self.user_settings.get("tooltips_grandes", False) else 35
 
     def _tips_principiante(self, champion):
         """Devuelve consejos basicos para jugadores nuevos que no conocen al campeon."""

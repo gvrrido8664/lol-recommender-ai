@@ -112,7 +112,6 @@ class LCUConnector:
                 return data.get("displayName", data.get("gameName", ""))
         except: pass
         return ""
-        return []
 
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
     
@@ -261,6 +260,41 @@ class LCUConnector:
             if res.status_code == 200: return res.json()
         except: pass
         return None
+
+    def obtener_ranked_stats(self):
+        """Obtiene estadisticas completas de ranked (season actual) desde LCU."""
+        if not self.port: return None
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-ranked/v1/current-ranked-stats"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=3)
+            if res.status_code == 200:
+                data = res.json()
+                result = {"queues": {}, "seasons": data.get("seasons", {})}
+                qmap = data.get("queueMap", {})
+                for qtype, qdata in qmap.items():
+                    if isinstance(qdata, dict) and qdata.get("tier"):
+                        result["queues"][qtype] = qdata
+                return result
+        except: pass
+        return None
+
+    def obtener_historial_extendido(self, puuid: str = None, inicio: int = 0, cantidad: int = 100):
+        """Obtiene historial de partidas via LCU (hasta 100)."""
+        if not self.port: return []
+        try:
+            if not puuid:
+                perfil = self.obtener_perfil()
+                if perfil: puuid = perfil.get("puuid", "")
+            if not puuid: return []
+            url = (f"{self.protocol}://127.0.0.1:{self.port}"
+                   f"/lol-match-history/v1/products/lol/{puuid}/matches"
+                   f"?begIndex={inicio}&endIndex={inicio + cantidad}")
+            res = requests.get(url, headers=self.headers, verify=False, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("games", {}).get("games", [])
+        except: pass
+        return []
 
     # ================= FUNCIONES DE AUTO-IMPORTACIÓN =================
     def importar_hechizos(self, spell1, spell2):

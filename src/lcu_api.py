@@ -324,6 +324,8 @@ class LCUConnector:
         except:
             pass
         return [], {}
+
+    def obtener_ranked_stats(self):
         """Obtiene estadisticas completas de ranked (season actual) desde LCU."""
         if not self.port: return None
         try:

@@ -1040,6 +1040,11 @@ class LoLRecommenderApp(QMainWindow):
         self.fr_bans_icons_vivo = QHBoxLayout()
         self.l_bans_vivo.addLayout(self.fr_bans_icons_vivo)
         l_enemy.addWidget(self.panel_bans_vivo)
+        
+        self.panel_counters_vivo, self.l_counters_vivo = self.crear_panel("Counters vs Rival")
+        self.fr_counters_vivo = QHBoxLayout()
+        self.l_counters_vivo.addLayout(self.fr_counters_vivo)
+        l_enemy.addWidget(self.panel_counters_vivo)
         draft_layout.addWidget(self.col_enemy, 1)
 
         col_center = QWidget()
@@ -1168,11 +1173,15 @@ class LoLRecommenderApp(QMainWindow):
                     pos_al.append(j.get("assignedPosition", "MIDDLE"))
                 if j.get("cellId") == mi_celda: mi_campeon = champ
                 
+            enemigo_lane = None
             for j in draft.get("theirTeam", []):
                 champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
                 if champ:
                     picks_en.append(champ)
                     pos_en.append(j.get("assignedPosition", "MIDDLE"))
+                    # Detectar el rival de linea (misma posicion asignada)
+                    if j.get("assignedPosition", "").upper() == rol_api.upper():
+                        enemigo_lane = champ
                 
             if picks_al != self.last_aliados or picks_en != self.last_enemigos:
                 self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
@@ -1206,7 +1215,9 @@ class LoLRecommenderApp(QMainWindow):
                 
                 clear_layout(self.fr_bans_icons_vivo)
                 if mi_campeon: 
-                    self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS (VS {mi_campeon.upper()})")
+                    self.panel_bans_vivo.label_title.setText(
+                        f"BANS SI PICKEO {self._nombre_display(mi_campeon).upper()}"
+                    )
                     bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=20)
                 else: 
                     self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
@@ -1215,11 +1226,31 @@ class LoLRecommenderApp(QMainWindow):
                 bans_filtrados = [b for b, wr, p in bans_sugeridos if b not in self.last_aliados and b not in self.last_enemigos][:4]
                 if bans_filtrados:
                     for i, ban in enumerate(bans_filtrados): 
-                        self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i, f"Prioridad Ban: {ban}", size=35)
+                        self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i,
+                            f"Ban: {self._nombre_display(ban)}\nWR enemigo: consultar DB", size=35)
                 else: 
                     lbl_noban = QLabel("Sin recomendaciones")
                     lbl_noban.setStyleSheet("color: gray;")
                     self.fr_bans_icons_vivo.addWidget(lbl_noban)
+
+                # ── COUNTER PICKS contra el rival de linea ──
+                clear_layout(self.fr_counters_vivo)
+                if enemigo_lane:
+                    self.panel_counters_vivo.label_title.setText(
+                        f"COUNTERS vs {self._nombre_display(enemigo_lane).upper()}"
+                    )
+                    counters = obtener_counters(rol_api, enemigo_lane, min_partidas=10)
+                    counters_filtrados = [(c, wr, p) for c, wr, p in counters 
+                                         if c not in self.last_aliados and c not in self.last_enemigos][:6]
+                    for i, (c, wr, p) in enumerate(counters_filtrados):
+                        self.renderizar_icono(c, "champ", self.fr_counters_vivo, 0, i,
+                            f"{self._nombre_display(c)}\nWR: {wr}% ({p} partidas)", size=35)
+                    if not counters_filtrados:
+                        lbl = QLabel("Sin datos suficientes")
+                        lbl.setStyleSheet("color: gray;")
+                        self.fr_counters_vivo.addWidget(lbl)
+                else:
+                    self.panel_counters_vivo.label_title.setText("COUNTERS (esperando rival...)")
 
                 if mi_campeon:
                     ids_runas = obtener_top_runas(mi_campeon, rol_api)

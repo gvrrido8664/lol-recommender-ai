@@ -48,6 +48,58 @@ class LCUConnector:
                 return {'UTILITY': 'UTILITY', 'BOTTOM': 'BOTTOM', 'JUNGLE': 'JUNGLE', 'TOP': 'TOP'}.get(rol_lcu, 'MIDDLE')
         return "MIDDLE"
 
+    # ================= JUEGO EN VIVO =================
+
+    def obtener_fase_juego(self):
+        """Devuelve la fase actual: None, Lobby, Matchmaking, ReadyCheck, ChampSelect, GameStart, InProgress, WaitingForStats, PreEndOfGame, EndOfGame"""
+        if not self.port: return None
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("phase")
+        except: pass
+        return None
+
+    def obtener_partida_activa(self):
+        """Obtiene datos de la partida en curso (gameflow session cuando phase=InProgress)."""
+        if not self.port: return None
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("phase") == "InProgress":
+                    return data.get("gameData", {})
+        except: pass
+        return None
+
+    def obtener_summoners_partida(self):
+        """Obtiene la lista de summoners en la partida activa con sus championId y spellIds."""
+        if not self.port: return []
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                game_data = data.get("gameData", {})
+                # gameData tiene playerChampionSelections y teamOne/teamTwo
+                players = []
+                selections = game_data.get("playerChampionSelections", [])
+                for sel in selections:
+                    players.append({
+                        "summonerId": sel.get("summonerInternalName", ""),
+                        "championId": sel.get("championId", 0),
+                        "spell1Id": sel.get("spell1Id", 0),
+                        "spell2Id": sel.get("spell2Id", 0),
+                        "team": sel.get("team", ""),
+                        "skinIndex": sel.get("skinIndex", 0),
+                    })
+                return players
+        except: pass
+        return []
+
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
     
     def obtener_perfil(self):

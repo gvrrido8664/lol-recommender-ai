@@ -18,7 +18,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
 from src.db_manager import DATA_DIR, obtener_conexion
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
-from src.tags_champions import obtener_tag
+from src.tags_champions import obtener_tag, obtener_nivel_cc, es_soporte, obtener_dano, es_tanque
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
                               obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups, 
                               recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
@@ -101,6 +101,7 @@ DEFAULT_SETTINGS = {
     "frecuencia_ingame": 5000,
     "sonidos": False,
     "modo_principiante": False,
+    "modo_profesional": False,
     "recordatorios_partida": True,
     "mostrar_dificultad": True,
     "tooltips_grandes": False,
@@ -167,6 +168,8 @@ class SettingsDialog(QDialog):
         sec3 = QLabel("⚡ AVANZADO")
         sec3.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
         layout.addWidget(sec3)
+        self.cb_pro = QCheckBox("🏆 Modo Profesional (análisis macro, win conditions, objetivos)")
+        self.cb_pro.setChecked(self.settings.get("modo_profesional", False)); layout.addWidget(self.cb_pro)
         self.cb_spikes = QCheckBox("Mostrar Power Spikes en In-Game"); self.cb_spikes.setChecked(self.settings.get("mostrar_power_spikes", True)); layout.addWidget(self.cb_spikes)
         self.cb_explica = QCheckBox("Mostrar explicaciones educativas en builds"); self.cb_explica.setChecked(self.settings.get("mostrar_explicaciones", True)); layout.addWidget(self.cb_explica)
         self.cb_sonido = QCheckBox("Activar sonidos/alertas"); self.cb_sonido.setChecked(self.settings.get("sonidos", False)); layout.addWidget(self.cb_sonido)
@@ -177,7 +180,8 @@ class SettingsDialog(QDialog):
         return {"auto_deteccion": self.cb_auto.isChecked(), "mostrar_power_spikes": self.cb_spikes.isChecked(),
                 "mostrar_explicaciones": self.cb_explica.isChecked(), "sonidos": self.cb_sonido.isChecked(),
                 "frecuencia_radar": self.spin_radar.value(), "frecuencia_ingame": self.spin_ingame.value(),
-                "modo_principiante": self.cb_principiante.isChecked(), "recordatorios_partida": self.cb_recordatorios.isChecked(),
+                "modo_principiante": self.cb_principiante.isChecked(), "modo_profesional": self.cb_pro.isChecked(),
+                "recordatorios_partida": self.cb_recordatorios.isChecked(),
                 "mostrar_dificultad": self.cb_dificultad.isChecked(), "tooltips_grandes": self.cb_tooltips.isChecked()}
 
 class LoLRecommenderApp(QMainWindow):
@@ -1511,6 +1515,15 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_ingame_comp.setStyleSheet("color: #8fa3b8; font-size: 12px; margin-top: 8px;")
         layout.addWidget(self.lbl_ingame_comp)
 
+        # Panel de analisis profesional
+        self.pnl_pro, self.l_pro = self.crear_panel("🏆 ANÁLISIS PRO (MACRO)")
+        self.lbl_pro = QLabel("Activa el Modo Profesional en ⚙️ para ver análisis macro avanzado")
+        self.lbl_pro.setStyleSheet("color: #8fa3b8; font-size: 12px; padding: 8px;")
+        self.lbl_pro.setWordWrap(True)
+        self.l_pro.addWidget(self.lbl_pro)
+        self.pnl_pro.setVisible(False)
+        layout.addWidget(self.pnl_pro)
+
     def actualizar_ingame(self):
         """Detecta si hay partida en vivo y actualiza la tabla de jugadores con KDA, rachas y power spikes."""
         if not self.lcu or not self.lcu.port:
@@ -1618,6 +1631,12 @@ class LoLRecommenderApp(QMainWindow):
 
         # Recordatorios de partida para principiantes
         self._actualizar_recordatorios()
+        
+        # Analisis profesional (macro)
+        if self.user_settings.get("modo_profesional", False) and len(aliados_nombres) == 5 and len(enemigos_nombres) == 5:
+            self._actualizar_analisis_pro(aliados_nombres, enemigos_nombres)
+        else:
+            self.pnl_pro.setVisible(False)
 
         # Composicion
         aliados_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in aliados_raw if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
@@ -1744,6 +1763,88 @@ class LoLRecommenderApp(QMainWindow):
             lbl = QLabel(r)
             lbl.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 8px;")
             self.fr_recordatorios.addWidget(lbl)
+
+    def _actualizar_analisis_pro(self, aliados, enemigos):
+        """Genera analisis macro avanzado: win conditions, objetivos, sinergias, itemizacion."""
+        self.pnl_pro.setVisible(True)
+        lines = []
+
+        ad_al, ap_al, tanks_al = analizar_composicion(aliados)
+        ad_en, ap_en, tanks_en = analizar_composicion(enemigos)
+
+        poke_al = sum(1 for a in aliados if obtener_tag(a).get("damage_profile") == "poke")
+        engage_al = sum(1 for a in aliados if obtener_tag(a).get("sub_class") in ("Vanguard","Catcher"))
+        split_al = sum(1 for a in aliados if obtener_tag(a).get("sub_class")=="Skirmisher" and obtener_tag(a).get("scaling") in ("late","hyper"))
+        engage_en = sum(1 for e in enemigos if obtener_tag(e).get("sub_class") in ("Vanguard","Catcher"))
+        poke_en = sum(1 for e in enemigos if obtener_tag(e).get("damage_profile")=="poke")
+        split_en = sum(1 for e in enemigos if obtener_tag(e).get("sub_class")=="Skirmisher" and obtener_tag(e).get("scaling") in ("late","hyper"))
+
+        # Tipo de composicion
+        if poke_al >= 2 and engage_al <= 1: comp_al = "Poke/Siege"
+        elif engage_al >= 2 and tanks_al >= 2: comp_al = "Engage/Wombo"
+        elif split_al >= 1: comp_al = "Split Push"
+        elif tanks_al >= 3: comp_al = "Front-to-Back"
+        else: comp_al = "Pick/Skirmish"
+
+        if poke_en >= 2 and engage_en <= 1: comp_en = "Poke/Siege"
+        elif engage_en >= 2 and tanks_en >= 2: comp_en = "Engage/Wombo"
+        elif split_en >= 1: comp_en = "Split Push"
+        elif tanks_en >= 3: comp_en = "Front-to-Back"
+        else: comp_en = "Pick/Skirmish"
+
+        lines.append("🎯 TU COMP: {}  |  ENEMIGO: {}".format(comp_al, comp_en))
+
+        # Win condition
+        if comp_al == "Poke/Siege" and comp_en in ("Engage/Wombo","Front-to-Back"):
+            lines.append("🏆 WIN COND: Pokea antes de la pelea. No dejes que engageen. Asedia torres con rango.")
+        elif comp_al == "Engage/Wombo" and comp_en in ("Poke/Siege","Pick/Skirmish"):
+            lines.append("🏆 WIN COND: Busca el engage 5v5. Ellos colapsan contra all-in coordinado.")
+        elif comp_al == "Split Push" and comp_en in ("Engage/Wombo","Front-to-Back"):
+            lines.append("🏆 WIN COND: Evita 5v5. Presion lateral con el split pusher. Rotaciones rapidas.")
+        elif comp_al == "Front-to-Back" and comp_en == "Pick/Skirmish":
+            lines.append("🏆 WIN COND: Agrupaos y proteged al carry. No os separeis, os cazan.")
+        else:
+            esc_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
+            esc_en = sum(1 for e in enemigos if obtener_tag(e).get("scaling") in ("late","hyper"))
+            if esc_al > esc_en: lines.append("🏆 WIN COND: Escalais mejor. Juega seguro early, ganas a partir de 25 min.")
+            elif esc_en > esc_al: lines.append("🏆 WIN COND: Acaba rapido. Ellos escalan mejor. Ventaja temprana y cierra.")
+            elif tanks_al > tanks_en: lines.append("🏆 WIN COND: Vuestro frontlane gana. Forza objectives, ellos no pueden contestar.")
+            else: lines.append("🏆 WIN COND: Vision + picks. Controla la jungla enemiga y caza rotaciones.")
+
+        # Prioridad de objetivos
+        lines.append("\n📋 PRIORIDAD DE OBJETIVOS:")
+        if tanks_al >= 3 or engage_al >= 2: lines.append("   🐉 Dragones - vuestro frontlane domina el rio")
+        if split_al >= 1: lines.append("   🦀 Heraldo > Primeras 2 torres - libera al split pusher")
+        if poke_al >= 2: lines.append("   🏰 Torres > Dragones - vuestro rango asedia mejor")
+        escalado_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
+        if escalado_al >= 3: lines.append("   🛡️ Farm + Escalar > Objetivos tempranos")
+
+        # Itemizacion counter
+        lines.append("\n🛒 ITEMIZACION CLAVE:")
+        ap_en_val = sum(1 for e in enemigos if obtener_dano(e) in ("AP","HYBRID"))
+        ad_en_val = sum(1 for e in enemigos if obtener_dano(e) == "AD")
+        cc_en = sum(obtener_nivel_cc(e) for e in enemigos)
+        tanks_en_val = sum(1 for e in enemigos if es_tanque(e))
+        cur = sum(1 for e in enemigos if e in {"Aatrox","Vladimir","Soraka","Swain","Sylas","Warwick","Briar","Fiora","Darius","Illaoi","DrMundo","Olaf"})
+        if ap_en_val >= 3: lines.append("   🧪 Fuerza Naturaleza / Rostro Espiritual (mucha AP enemiga)")
+        if ad_en_val >= 3: lines.append("   🛡️ Coraza de Espinas / Randuin (mucho AD)")
+        if tanks_en_val >= 3: lines.append("   🗡️ Hoja del Rey / Lord Dominik (penetracion vs tanques)")
+        if cc_en >= 12: lines.append("   ⛓️ Botas de Mercurio / Fajin (CC masivo)")
+        if cur >= 2: lines.append("   🔥 Morellonomicón / Ejecutor (curaciones enemigas)")
+
+        # Sinergias
+        lines.append("\n⚡ SINERGIAS CLAVE:")
+        if "Yasuo" in aliados:
+            kn = [a for a in aliados if obtener_nivel_cc(a) >= 3 and obtener_tag(a).get("sub_class") in ("Vanguard","Catcher")]
+            if kn: lines.append("   🌪️ Yasuo + {} = combo R garantizada".format(kn[0]))
+        if "Orianna" in aliados:
+            eng = [a for a in aliados if obtener_tag(a).get("sub_class") == "Vanguard"]
+            if eng: lines.append("   ⚽ Orianna + {} = wombo combo R".format(eng[0]))
+        if "Kalista" in aliados:
+            supp = [a for a in aliados if es_soporte(a)]
+            if supp: lines.append("   🤝 Kalista + {} = engage/doble knockup".format(supp[0]))
+
+        self.lbl_pro.setText("\n".join(lines))
 
     # ================= META & BUILDS =================
     def armar_tab_counters(self):

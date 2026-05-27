@@ -176,7 +176,7 @@ class SettingsDialog(QDialog):
         # ── MI PERFIL ──
         _seccion("👤 MI PERFIL (afecta: pestaña MI PERFIL)")
         self.cb_dificultad = _check("Estrellas de dificultad en campeones ⭐ ⭐⭐ ⭐⭐⭐", "mostrar_dificultad",
-            "Garen ⭐ (facil), Zed ⭐⭐⭐ (dificil). Te ayuda a elegir que aprender.")
+            "Garen ⭐ (fácil), Zed ⭐⭐⭐ (difícil). Te ayuda a elegir qué aprender.")
 
         # ── RADAR ──
         _seccion("📡 RADAR EN VIVO (afecta: pestaña RADAR, fase de seleccion de campeon)")
@@ -188,7 +188,7 @@ class SettingsDialog(QDialog):
         self.cb_spikes = _check("Power Spikes: nivel clave de cada campeon", "mostrar_power_spikes",
             "Ej: 'Nv.6 All-in'. Te avisa cuando un campeon enemigo se vuelve peligroso.")
         self.cb_recordatorios = _check("Consejos visibles durante la partida", "recordatorios_partida",
-            "Ej: 'Wardea el rio a los 2:30'. Aparecen abajo en la pantalla IN-GAME.")
+            "Ej: 'Wardea el río a los 2:30'. Aparecen abajo en la pantalla IN-GAME.")
 
         # ── ASISTENCIA ──
         _seccion("🎓 ASISTENCIA (afecta: varias pestañas)")
@@ -1799,7 +1799,7 @@ class LoLRecommenderApp(QMainWindow):
         self._renderizar_ingame_lcu(jugadores)
 
     def _renderizar_ingame_liveclient(self, jugadores, game_info):
-        """Renderiza datos del Live Client Data API (KDA, CS, items en tiempo real)."""
+        """Renderiza datos del Live Client Data API (KDA vivo) + WR/Racha de BD."""
         self.lbl_ingame_status.setVisible(False)
         self.tb_ingame.setVisible(True)
         aliados_raw = [j for j in jugadores if j.get("team") == "ORDER"]
@@ -1817,19 +1817,53 @@ class LoLRecommenderApp(QMainWindow):
                 sname = j.get("summonerName", "???")
                 lvl = j.get("level", 1); k = j.get("kills", 0); d = j.get("deaths", 0); a = j.get("assists", 0)
                 cs = j.get("creepScore", 0)
+                is_dead = j.get("isDead", False)
+                
+                # Stats desde BD local (WR, racha)
+                wr, kda_hist, streak, total_g = self._stats_jugador_champ(cname)
+                
                 stars = self._dificultad_stars(cname) if self.user_settings.get("mostrar_dificultad", True) else ""
                 spike = self._power_spike_champ(cname) if self.user_settings.get("mostrar_power_spikes", True) else ""
                 tips = self._tips_principiante(cname) if self.user_settings.get("modo_principiante", False) else ""
+                
                 row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
+                
+                # Col 0: Campeon + dificultad
                 item_c = QTableWidgetItem(f"  {self._nombre_display(cname)} {stars}")
                 icon_p = self.descargar_imagen(cname, "champ")
                 if icon_p: item_c.setIcon(QIcon(icon_p))
                 self.tb_ingame.setItem(row, 0, item_c)
-                self.tb_ingame.setItem(row, 1, QTableWidgetItem(f"{sname} (Nv.{lvl})"))
-                self.tb_ingame.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
-                self.tb_ingame.setItem(row, 3, QTableWidgetItem(str(cs)))
-                self.tb_ingame.setItem(row, 4, QTableWidgetItem(j.get("isDead", False) and "💀 Muerto" or "✅ Vivo"))
+                
+                # Col 1: Invocador (Nv.X) + estado + CS
+                vivo_txt = "💀" if is_dead else "✅"
+                self.tb_ingame.setItem(row, 1, QTableWidgetItem(f"{sname} {vivo_txt} Nv.{lvl} | CS:{cs}"))
+                
+                # Col 2: WR desde BD
+                item_wr = QTableWidgetItem(wr)
+                if wr != "--":
+                    try:
+                        wr_val = int(wr.replace("%",""))
+                        item_wr.setForeground(QColor(GREEN_WR if wr_val >= 50 else RED_WR))
+                    except: pass
+                self.tb_ingame.setItem(row, 2, item_wr)
+                
+                # Col 3: KDA en vivo
+                item_kda = QTableWidgetItem(f"{k}/{d}/{a}")
+                if k + d + a > 0:
+                    kda_val = (k + a) / max(1, d)
+                    item_kda.setForeground(QColor(GREEN_WR if kda_val >= 2.0 else YELLOW_WR if kda_val >= 1.0 else RED_WR))
+                self.tb_ingame.setItem(row, 3, item_kda)
+                
+                # Col 4: Racha desde BD
+                item_streak = QTableWidgetItem(streak)
+                if "🔥" in streak: item_streak.setForeground(QColor(GREEN_WR))
+                elif "❄️" in streak: item_streak.setForeground(QColor(RED_WR))
+                self.tb_ingame.setItem(row, 4, item_streak)
+                
+                # Col 5: Power Spike
                 self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
+                
+                # Col 6: Tips
                 item_tips = QTableWidgetItem(tips); item_tips.setForeground(QColor("#8fa3b8"))
                 self.tb_ingame.setItem(row, 6, item_tips)
         self._actualizar_recordatorios()
@@ -2051,7 +2085,7 @@ class LoLRecommenderApp(QMainWindow):
             "Teemo": "Compra lentes de visión (oráculo) para sus hongos.",
             "Shaco": "Cuidado con sus cajas en arbustos. El original ataca mas fuerte.",
             "Evelynn": "Invisible nivel 6. Wardi su jungla, no tu linea.",
-            "Leona": "Mucho CC. Si te engancha, estas muerto. Manten distancia.",
+            "Leona": "Mucho CC. Si te engancha, estás muerto. Mantén distancia.",
             "Morgana": "Su E bloquea CC. Rompe el escudo antes de enganchar.",
         }
         return tips.get(champion, "")
@@ -2118,16 +2152,16 @@ class LoLRecommenderApp(QMainWindow):
         else:
             esc_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
             esc_en = sum(1 for e in enemigos if obtener_tag(e).get("scaling") in ("late","hyper"))
-            if esc_al > esc_en: lines.append("🏆 WIN COND: Escalais mejor. Juega seguro early, ganas a partir de 25 min.")
-            elif esc_en > esc_al: lines.append("🏆 WIN COND: Acaba rapido. Ellos escalan mejor. Ventaja temprana y cierra.")
-            elif tanks_al > tanks_en: lines.append("🏆 WIN COND: Vuestro frontlane gana. Forza objectives, ellos no pueden contestar.")
+            if esc_al > esc_en: lines.append("🏆 WIN COND: Escalan mejor. Juega seguro early, ganas a partir de 25 min.")
+            elif esc_en > esc_al: lines.append("🏆 WIN COND: Acaba rápido. Ellos escalan mejor. Ventaja temprana y cierra.")
+            elif tanks_al > tanks_en: lines.append("🏆 WIN COND: Su frontlane gana. Force objetivos, ellos no pueden contestar.")
             else: lines.append("🏆 WIN COND: Vision + picks. Controla la jungla enemiga y caza rotaciones.")
 
         # Prioridad de objetivos
         lines.append("\n📋 PRIORIDAD DE OBJETIVOS:")
-        if tanks_al >= 3 or engage_al >= 2: lines.append("   🐉 Dragones - vuestro frontlane domina el rio")
+        if tanks_al >= 3 or engage_al >= 2: lines.append("   🐉 Dragones - su frontlane domina el río")
         if split_al >= 1: lines.append("   🦀 Heraldo > Primeras 2 torres - libera al split pusher")
-        if poke_al >= 2: lines.append("   🏰 Torres > Dragones - vuestro rango asedia mejor")
+        if poke_al >= 2: lines.append("   🏰 Torres > Dragones - su rango asedia mejor")
         escalado_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
         if escalado_al >= 3: lines.append("   🛡️ Farm + Escalar > Objetivos tempranos")
 

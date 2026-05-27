@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
 from src.db_manager import DATA_DIR, obtener_conexion
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
+from src.tags_champions import obtener_tag
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
                               obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups, 
                               recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
@@ -99,6 +100,10 @@ DEFAULT_SETTINGS = {
     "frecuencia_radar": 1500,
     "frecuencia_ingame": 5000,
     "sonidos": False,
+    "modo_principiante": False,
+    "recordatorios_partida": True,
+    "mostrar_dificultad": True,
+    "tooltips_grandes": False,
 }
 
 def cargar_settings():
@@ -125,7 +130,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings.copy()
         self.setWindowTitle("⚙️ Configuración")
-        self.resize(420, 380)
+        self.resize(460, 520)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {BG_DARK}; }}
             QLabel {{ color: {TEXT_WHITE}; font-size: 12px; background: transparent; }}
@@ -133,19 +138,47 @@ class SettingsDialog(QDialog):
             QCheckBox::indicator {{ width: 20px; height: 20px; }}
             QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 4px; }}
         """)
-        layout = QVBoxLayout(self); layout.setSpacing(14)
+        layout = QVBoxLayout(self); layout.setSpacing(10)
         title = QLabel("⚙️ CONFIGURACIÓN"); title.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 16px;")
         layout.addWidget(title)
-        self.cb_auto = QCheckBox("Auto-detección LCU (Radar en vivo)"); self.cb_auto.setChecked(self.settings.get("auto_deteccion", True)); layout.addWidget(self.cb_auto)
-        self.cb_spikes = QCheckBox("Mostrar Power Spikes en In-Game"); self.cb_spikes.setChecked(self.settings.get("mostrar_power_spikes", True)); layout.addWidget(self.cb_spikes)
-        self.cb_explica = QCheckBox("Mostrar explicaciones educativas"); self.cb_explica.setChecked(self.settings.get("mostrar_explicaciones", True)); layout.addWidget(self.cb_explica)
-        self.cb_sonido = QCheckBox("Activar sonidos/alertas"); self.cb_sonido.setChecked(self.settings.get("sonidos", False)); layout.addWidget(self.cb_sonido)
+
+        # Seccion General
+        sec1 = QLabel("🔌 CONEXIÓN Y ACTUALIZACIÓN")
+        sec1.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
+        layout.addWidget(sec1)
+        self.cb_auto = QCheckBox("Auto-detección del cliente de LoL"); self.cb_auto.setChecked(self.settings.get("auto_deteccion", True)); layout.addWidget(self.cb_auto)
         layout.addWidget(QLabel("Frecuencia Radar (ms):")); self.spin_radar = QSpinBox(); self.spin_radar.setRange(500, 5000); self.spin_radar.setSingleStep(500); self.spin_radar.setValue(self.settings.get("frecuencia_radar", 1500)); layout.addWidget(self.spin_radar)
         layout.addWidget(QLabel("Frecuencia In-Game (ms):")); self.spin_ingame = QSpinBox(); self.spin_ingame.setRange(1000, 15000); self.spin_ingame.setSingleStep(1000); self.spin_ingame.setValue(self.settings.get("frecuencia_ingame", 5000)); layout.addWidget(self.spin_ingame)
+
+        # Seccion Asistencia
+        sec2 = QLabel("🎓 ASISTENCIA PARA PRINCIPIANTES")
+        sec2.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
+        layout.addWidget(sec2)
+        self.cb_principiante = QCheckBox("🧑‍🎓 Modo Principiante (explicaciones mas detalladas, lenguaje simple)")
+        self.cb_principiante.setChecked(self.settings.get("modo_principiante", False)); layout.addWidget(self.cb_principiante)
+        self.cb_recordatorios = QCheckBox("⏰ Recordatorios en partida (wards, botas, dragones)")
+        self.cb_recordatorios.setChecked(self.settings.get("recordatorios_partida", True)); layout.addWidget(self.cb_recordatorios)
+        self.cb_dificultad = QCheckBox("⭐ Mostrar dificultad de campeones (1-3 estrellas)")
+        self.cb_dificultad.setChecked(self.settings.get("mostrar_dificultad", True)); layout.addWidget(self.cb_dificultad)
+        self.cb_tooltips = QCheckBox("💬 Tooltips grandes con explicaciones")
+        self.cb_tooltips.setChecked(self.settings.get("tooltips_grandes", False)); layout.addWidget(self.cb_tooltips)
+
+        # Seccion Avanzado
+        sec3 = QLabel("⚡ AVANZADO")
+        sec3.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
+        layout.addWidget(sec3)
+        self.cb_spikes = QCheckBox("Mostrar Power Spikes en In-Game"); self.cb_spikes.setChecked(self.settings.get("mostrar_power_spikes", True)); layout.addWidget(self.cb_spikes)
+        self.cb_explica = QCheckBox("Mostrar explicaciones educativas en builds"); self.cb_explica.setChecked(self.settings.get("mostrar_explicaciones", True)); layout.addWidget(self.cb_explica)
+        self.cb_sonido = QCheckBox("Activar sonidos/alertas"); self.cb_sonido.setChecked(self.settings.get("sonidos", False)); layout.addWidget(self.cb_sonido)
+
         layout.addStretch()
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); btns.accepted.connect(self.accept); btns.rejected.connect(self.reject); layout.addWidget(btns)
     def get_settings(self):
-        return {"auto_deteccion": self.cb_auto.isChecked(), "mostrar_power_spikes": self.cb_spikes.isChecked(), "mostrar_explicaciones": self.cb_explica.isChecked(), "sonidos": self.cb_sonido.isChecked(), "frecuencia_radar": self.spin_radar.value(), "frecuencia_ingame": self.spin_ingame.value()}
+        return {"auto_deteccion": self.cb_auto.isChecked(), "mostrar_power_spikes": self.cb_spikes.isChecked(),
+                "mostrar_explicaciones": self.cb_explica.isChecked(), "sonidos": self.cb_sonido.isChecked(),
+                "frecuencia_radar": self.spin_radar.value(), "frecuencia_ingame": self.spin_ingame.value(),
+                "modo_principiante": self.cb_principiante.isChecked(), "recordatorios_partida": self.cb_recordatorios.isChecked(),
+                "mostrar_dificultad": self.cb_dificultad.isChecked(), "tooltips_grandes": self.cb_tooltips.isChecked()}
 
 class LoLRecommenderApp(QMainWindow):
     lcu_task_finished = Signal(object, object, str, str)
@@ -1449,10 +1482,22 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_ingame_status.setStyleSheet("color: gray; font-size: 16px; padding: 40px;")
         layout.addWidget(self.lbl_ingame_status)
 
+        # Panel de recordatorios (visible solo si esta activado)
+        self.pnl_recordatorios = QFrame()
+        self.pnl_recordatorios.setObjectName("Panel")
+        rlayout = QVBoxLayout(self.pnl_recordatorios)
+        self.lbl_recordatorios = QLabel("⏰ CONSEJOS DE PARTIDA")
+        self.lbl_recordatorios.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px;")
+        rlayout.addWidget(self.lbl_recordatorios)
+        self.fr_recordatorios = QHBoxLayout()
+        rlayout.addLayout(self.fr_recordatorios)
+        self.pnl_recordatorios.setVisible(False)
+        layout.addWidget(self.pnl_recordatorios)
+
         # Tabla de jugadores
         self.tb_ingame = QTableWidget()
-        self.tb_ingame.setColumnCount(6)
-        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "Invocador", "Rango", "WR Champ", "KDA", "Racha"])
+        self.tb_ingame.setColumnCount(7)
+        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "Invocador", "WR", "KDA", "Racha", "Power Spike", "Tips"])
         self.tb_ingame.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tb_ingame.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_ingame.setSelectionMode(QAbstractItemView.NoSelection)
@@ -1513,20 +1558,25 @@ class LoLRecommenderApp(QMainWindow):
                 # Stats desde BD local
                 wr, kda, streak, total_g = self._stats_jugador_champ(cname)
                 
-                # Maestria (solo para el jugador actual)
-                mastery = ""
-                if sname == mi_nombre or j.get("summonerId", "") == mi_nombre:
-                    ml = self.lcu.obtener_maestria_champ(cid)
-                    mastery = f" ⭐{ml}" if ml > 0 else ""
+                # Dificultad
+                stars = self._dificultad_stars(cname)
                 
                 # Power spike info
-                spike = self._power_spike_champ(cname)
+                spike = self._power_spike_champ(cname) if self.user_settings.get("mostrar_power_spikes", True) else ""
+                
+                # Tips para principiantes
+                tips = self._tips_principiante(cname) if self.user_settings.get("modo_principiante", False) else ""
 
                 row = self.tb_ingame.rowCount()
                 self.tb_ingame.insertRow(row)
 
-                # Campeon + maestria
-                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}{mastery}")
+                # Campeon + maestria + dificultad
+                mastery = ""
+                if sname == mi_nombre or j.get("summonerId", "") == mi_nombre:
+                    ml = self.lcu.obtener_maestria_champ(cid)
+                    mastery = f" ⭐{ml}" if ml > 0 else ""
+                diff_display = f" {stars}" if self.user_settings.get("mostrar_dificultad", True) else ""
+                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}{mastery}{diff_display}")
                 icon_p = self.descargar_imagen(cname, "champ")
                 if icon_p: item_c.setIcon(QIcon(icon_p))
                 self.tb_ingame.setItem(row, 0, item_c)
@@ -1560,6 +1610,14 @@ class LoLRecommenderApp(QMainWindow):
 
                 # Power Spike
                 self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
+
+                # Tips principiante
+                item_tips = QTableWidgetItem(tips)
+                item_tips.setForeground(QColor("#8fa3b8"))
+                self.tb_ingame.setItem(row, 6, item_tips)
+
+        # Recordatorios de partida para principiantes
+        self._actualizar_recordatorios()
 
         # Composicion
         aliados_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in aliados_raw if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
@@ -1638,6 +1696,54 @@ class LoLRecommenderApp(QMainWindow):
             "Soraka": "Nv.6 R global", "Janna": "Nv.6 R heal", "Nami": "Nv.6 R wave",
         }
         return spikes.get(champion, f"Nv.6 Spike")
+
+    def _dificultad_stars(self, champion):
+        """Devuelve estrellas de dificultad (1-3) basadas en tags del campeon."""
+        try:
+            tag = obtener_tag(champion)
+            d = tag.get("difficulty", 2)
+            return "⭐" * d
+        except: return "⭐⭐"
+
+    def _tips_principiante(self, champion):
+        """Devuelve consejos basicos para jugadores nuevos que no conocen al campeon."""
+        tips = {
+            "Garen": "Gira y cura. Facil, aguanta mucho.",
+            "Darius": "Cuidado con su pasiva de sangrado. No pelees cuerpo a cuerpo.",
+            "Malphite": "Su R aturde en area. Sepárate de tu equipo.",
+            "Yasuo": "Esquiva su Q (tornado). No pelees entre súbditos.",
+            "Zed": "Cuidado nivel 6. Su R ejecuta. Compra Zhonyas si eres AP.",
+            "Katarina": "No te pares sobre sus dagas. Cancela su R con CC.",
+            "Blitzcrank": "Escóndete detrás de súbditos. Su Q es un gancho.",
+            "Lux": "Esquiva su Q (raíz). Si te atrapa, usa su R.",
+            "MasterYi": "No puede ser ralentizado en R. Necesitas CC fuerte.",
+            "Teemo": "Compra lentes de visión (oráculo) para sus hongos.",
+            "Shaco": "Cuidado con sus cajas en arbustos. El original ataca mas fuerte.",
+            "Evelynn": "Invisible nivel 6. Wardi su jungla, no tu linea.",
+            "Leona": "Mucho CC. Si te engancha, estas muerto. Manten distancia.",
+            "Morgana": "Su E bloquea CC. Rompe el escudo antes de enganchar.",
+        }
+        return tips.get(champion, "")
+
+    def _actualizar_recordatorios(self):
+        """Muestra recordatorios utiles durante la partida basados en tiempo (no viola TOS)."""
+        if not self.user_settings.get("recordatorios_partida", True):
+            self.pnl_recordatorios.setVisible(False)
+            return
+        self.pnl_recordatorios.setVisible(True)
+        clear_layout(self.fr_recordatorios)
+        recordatorios = [
+            "🛡️ Wardea el río a los 2:30 (posible gank)",
+            "👢 No olvides comprar botas antes del minuto 8-10",
+            "🐉 Primer dragón ~5:00. Ayuda a tu jungla con visión",
+            "📊 Mira el mapa cada 5 segundos (minimapa)",
+            "⚠️ Si no ves al jungla enemigo, asume que viene a tu línea",
+            "💀 Si vas 0-2, juega seguro bajo torre y farmea",
+        ]
+        for r in recordatorios:
+            lbl = QLabel(r)
+            lbl.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 8px;")
+            self.fr_recordatorios.addWidget(lbl)
 
     # ================= META & BUILDS =================
     def armar_tab_counters(self):

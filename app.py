@@ -1146,9 +1146,9 @@ class LoLRecommenderApp(QMainWindow):
                 self.mostrar_equipo_vivo(self.fr_aliados_picks, picks_al, is_ally=True)
                 self.mostrar_equipo_vivo(self.fr_enemigos_picks, picks_en, is_ally=False)
                 
-                ad_al, ap_al, tanks_al, _ = analizar_composicion(picks_al)
+                ad_al, ap_al, tanks_al = analizar_composicion(picks_al)
                 self.lbl_ally_stats.setText(f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
-                ad_en, ap_en, tanks_en, _ = analizar_composicion(picks_en)
+                ad_en, ap_en, tanks_en = analizar_composicion(picks_en)
                 self.lbl_enemy_stats.setText(f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
                 
                 self.mostrar_picks_vivo(rol_api, picks_al, picks_en)

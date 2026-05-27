@@ -99,5 +99,48 @@ def limpiar_base_de_datos():
     conn.close()
     print("🗑️ Base de datos limpiada.")
 
+def compactar_base_de_datos():
+    """Reduce el tamaño del archivo .db eliminando espacio vacío interno (VACUUM).
+       También limpia datos antiguos que ya no sirven para entrenar."""
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    
+    # 1. Eliminar partidas sin participantes (huérfanas)
+    cur.execute("""
+        DELETE FROM matches WHERE match_id NOT IN (
+            SELECT DISTINCT match_id FROM participantes
+        )
+    """)
+    huerfanas = cur.rowcount
+    
+    # 2. Eliminar partidas muy antiguas (>6 meses) si hay más de 5000
+    cur.execute("SELECT COUNT(*) FROM matches")
+    total = cur.fetchone()[0]
+    if total > 5000:
+        cur.execute("""
+            DELETE FROM matches WHERE match_id IN (
+                SELECT match_id FROM matches 
+                WHERE fecha_descarga < datetime('now', '-6 months')
+                ORDER BY fecha_descarga ASC
+                LIMIT ?
+            )
+        """, (total - 5000,))
+        antiguas = cur.rowcount
+    else:
+        antiguas = 0
+    
+    conn.commit()
+    
+    # 3. Compactar archivo (recupera espacio libre)
+    print(f"  🧹 Huérfanas eliminadas: {huerfanas}")
+    print(f"  🕒 Antiguas eliminadas: {antiguas}")
+    print(f"  📦 Compactando archivo...")
+    cur.execute("VACUUM")
+    conn.close()
+    
+    # Mostrar reducción
+    tamaño_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
+    print(f"✅ Base de datos compactada: {tamaño_mb:.2f} MB")
+
 if __name__ == "__main__":
     inicializar_db()

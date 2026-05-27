@@ -1,7 +1,7 @@
 import sqlite3
 import pandas as pd
 import numpy as np
-import pickle
+import joblib
 import os
 import sys
 from sklearn.ensemble import RandomForestClassifier
@@ -86,7 +86,14 @@ def entrenar_modelos():
         X = np.array([fila[0] for fila in dataset_filas])
         y = [fila[1] for fila in dataset_filas]
         
-        modelo = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+        # Modelo optimizado: menos árboles + profundidad limitada = archivo mucho más pequeño
+        modelo = RandomForestClassifier(
+            n_estimators=25,        # 100→25 (75% menos árboles)
+            max_depth=12,           # limita profundidad de cada árbol
+            min_samples_leaf=5,     # evita hojas con pocas muestras
+            random_state=42,
+            n_jobs=-1
+        )
         modelo.fit(X, y)
         
         modelos_guardados[rol] = {
@@ -97,8 +104,8 @@ def entrenar_modelos():
     conn.close()
     
     if modelos_guardados:
-        with open(MODELO_PATH, "wb") as f:
-            pickle.dump(modelos_guardados, f)
+        # joblib con compresión 3 (gzip máxima) → reduce 10-50x vs pickle
+        joblib.dump(modelos_guardados, MODELO_PATH, compress=3)
         print(f"🎉 Modelo IA de Draft guardado en {MODELO_PATH}")
     else:
         print("❌ No se pudo entrenar ningún modelo Draft.")
@@ -139,15 +146,20 @@ def entrenar_modelo_1v1():
             if row['enemigo'] in todos_campeones:
                 X[idx, n + todos_campeones.index(row['enemigo'])] = 1
 
-        modelo = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+        modelo = RandomForestClassifier(
+            n_estimators=25,        # 100→25
+            max_depth=12,
+            min_samples_leaf=5,
+            random_state=42,
+            n_jobs=-1
+        )
         modelo.fit(X, y)
         modelos_binarios[rol] = modelo
 
     conn.close()
     
     if modelos_binarios:
-        with open(MODELO_1V1_PATH, "wb") as f:
-            pickle.dump(modelos_binarios, f)
+        joblib.dump(modelos_binarios, MODELO_1V1_PATH, compress=3)
         print(f"🎉 Modelo IA 1v1 guardado en {MODELO_1V1_PATH}\n")
     else:
         print("❌ No se pudo entrenar el modelo 1v1.\n")

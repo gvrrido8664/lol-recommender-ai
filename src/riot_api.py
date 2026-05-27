@@ -47,7 +47,7 @@ def actualizar_datos_riot():
             diccionario_campeones[champ_id] = {"nombre": nombre_real, "tags": details.get("tags", [])}
             if nombre_real and nombre_real != champ_id:
                 diccionario_campeones[nombre_real] = {"nombre": nombre_real, "tags": details.get("tags", [])}
-            diccionario_ids[key_num] = nombre_real
+            diccionario_ids[key_num] = champ_id  # nombre interno en ingles para queries SQL
         with open(CACHE_CHAMPS, "w", encoding="utf-8") as f: json.dump(diccionario_campeones, f, ensure_ascii=False, indent=2)
         with open(CACHE_IDS, "w", encoding="utf-8") as f: json.dump(diccionario_ids, f, ensure_ascii=False, indent=2)
     except Exception as e: print(f"❌ Error descargando campeones: {e}")

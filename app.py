@@ -105,10 +105,29 @@ class LoLRecommenderApp(QMainWindow):
 
         self.champs_dict = cargar_campeones()
         self.nombres_campeones_global = sorted(list(set([data["nombre"] for data in self.champs_dict.values()])))
-        self.nombre_a_id_img = {v.get("nombre"): k for k, v in self.champs_dict.items()}
+        # Construir mapeos bidireccionales Spanish <-> English para DB queries e iconos
+        # nombre_a_id_img: display (ES) -> ID interno (EN) para URLs de Data Dragon
+        # nombre_display:   ID interno (EN) -> display (ES) para mostrar en UI
+        self.nombre_a_id_img = {}
+        self.nombre_display = {}
+        self.nombre_interno = {}  # display (ES) -> interno (EN) para queries SQL
+        for k, v in self.champs_dict.items():
+            nombre = v.get("nombre")
+            if nombre and nombre not in self.nombre_a_id_img:
+                self.nombre_a_id_img[nombre] = k  # "Bardo" -> "Bard"
+                if nombre != k:
+                    self.nombre_display[k] = nombre   # "Bard" -> "Bardo"
+                    self.nombre_interno[nombre] = k   # "Bardo" -> "Bard"
+        # Overrides manuales
         self.nombre_a_id_img["Wukong"] = "MonkeyKing"
         self.nombre_a_id_img["MaestroYi"] = "MasterYi"
         self.nombre_a_id_img["KhaZix"] = "Khazix"
+        self.nombre_display["MonkeyKing"] = "Wukong"
+        self.nombre_interno["Wukong"] = "MonkeyKing"
+        self.nombre_display["MasterYi"] = "MaestroYi"
+        self.nombre_interno["MaestroYi"] = "MasterYi"
+        self.nombre_display["Khazix"] = "KhaZix"
+        self.nombre_interno["KhaZix"] = "Khazix"
 
         self.version_juego = obtener_version_actual()
         self.builds_actuales = {}
@@ -1096,6 +1115,21 @@ class LoLRecommenderApp(QMainWindow):
         if final_id != "0": return "Wukong" if MAPEO_IDS_CAMPEONES.get(final_id) == "MonkeyKing" else MAPEO_IDS_CAMPEONES.get(final_id, "Desconocido")
         return None
 
+    def _nombre_db(self, nombre):
+        """Normaliza un nombre de campeon (posiblemente en espanol) al nombre interno
+        en ingles que usa la base de datos y el sistema de tags."""
+        if not nombre: return nombre
+        return self.nombre_interno.get(nombre, nombre)
+
+    def _nombres_db(self, nombres):
+        """Normaliza una lista de nombres para queries SQL."""
+        return [self._nombre_db(n) for n in nombres] if nombres else nombres
+
+    def _nombre_display(self, nombre):
+        """Traduce nombre interno (EN) a nombre para mostrar en UI (ES)."""
+        if not nombre: return nombre
+        return self.nombre_display.get(nombre, nombre)
+
     # ================= RADAR / DRAFT (HILO SEGUNDARIO) =================
     def _fetch_radar(self):
         """Se ejecuta en hilo secundario. Solo obtiene el draft de LCU."""
@@ -1146,15 +1180,19 @@ class LoLRecommenderApp(QMainWindow):
                 self.mostrar_equipo_vivo(self.fr_aliados_picks, picks_al, is_ally=True)
                 self.mostrar_equipo_vivo(self.fr_enemigos_picks, picks_en, is_ally=False)
                 
-                ad_al, ap_al, tanks_al = analizar_composicion(picks_al)
+                # Normalizar nombres a ingles para queries SQL y tags
+                picks_al_db = self._nombres_db(picks_al)
+                picks_en_db = self._nombres_db(picks_en)
+                
+                ad_al, ap_al, tanks_al = analizar_composicion(picks_al_db)
                 self.lbl_ally_stats.setText(f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
-                ad_en, ap_en, tanks_en = analizar_composicion(picks_en)
+                ad_en, ap_en, tanks_en = analizar_composicion(picks_en_db)
                 self.lbl_enemy_stats.setText(f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
                 
-                self.mostrar_picks_vivo(rol_api, picks_al, picks_en)
+                self.mostrar_picks_vivo(rol_api, picks_al_db, picks_en_db)
 
-                if len(picks_al) == 5 and len(picks_en) == 5:
-                    wr = calcular_winrate_5v5(picks_al, picks_en, pos_al, pos_en)
+                if len(picks_al_db) == 5 and len(picks_en_db) == 5:
+                    wr = calcular_winrate_5v5(picks_al_db, picks_en_db, pos_al, pos_en)
                     color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
                     tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
                     self.lbl_wr_numero.setText(f"{wr}%")
@@ -1212,7 +1250,8 @@ class LoLRecommenderApp(QMainWindow):
             self.renderizar_icono(champ, "champ", icon_layout, 0, 0, size=35)
             card_layout.addLayout(icon_layout)
             
-            lbl_name = QLabel(champ)
+            # Mostrar nombre en espanol para la UI
+            lbl_name = QLabel(self._nombre_display(champ))
             lbl_name.setStyleSheet("font-weight: bold; font-size: 14px;")
             card_layout.addWidget(lbl_name)
             card_layout.addStretch()
@@ -1236,7 +1275,8 @@ class LoLRecommenderApp(QMainWindow):
             grid_icons = QGridLayout()
             grid_icons.setAlignment(Qt.AlignCenter)
             for i, (champ, wr, razon) in enumerate(champs[:4]): 
-                self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2, f"{champ}\nWR Esperado: {wr}%\nPor qué: {razon}", size=35)
+                self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2,
+                    f"{self._nombre_display(champ)}\nWR Esperado: {wr}%\nPor qué: {razon}", size=35)
                 
             cat_layout.addLayout(grid_icons)
             self.fr_picks_icons.addLayout(cat_layout, 0, col_idx)

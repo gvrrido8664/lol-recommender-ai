@@ -62,21 +62,8 @@ class LCUConnector:
         except: pass
         return None
 
-    def obtener_partida_activa(self):
-        """Obtiene datos de la partida en curso (gameflow session cuando phase=InProgress)."""
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                if data.get("phase") == "InProgress":
-                    return data.get("gameData", {})
-        except: pass
-        return None
-
     def obtener_summoners_partida(self):
-        """Obtiene la lista de summoners en la partida activa con sus championId y spellIds."""
+        """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName."""
         if not self.port: return []
         try:
             url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
@@ -84,9 +71,9 @@ class LCUConnector:
             if res.status_code == 200:
                 data = res.json()
                 game_data = data.get("gameData", {})
-                # gameData tiene playerChampionSelections y teamOne/teamTwo
                 players = []
                 selections = game_data.get("playerChampionSelections", [])
+                queue_info = game_data.get("queue", {})
                 for sel in selections:
                     players.append({
                         "summonerId": sel.get("summonerInternalName", ""),
@@ -95,9 +82,36 @@ class LCUConnector:
                         "spell2Id": sel.get("spell2Id", 0),
                         "team": sel.get("team", ""),
                         "skinIndex": sel.get("skinIndex", 0),
+                        "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
                     })
                 return players
         except: pass
+        return []
+
+    def obtener_maestria_champ(self, champion_id):
+        """Obtiene la maestria del jugador actual con un campeon especifico."""
+        if not self.port: return 0
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champions/v1/inventories/CHAMPION/champions-minimal"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+            if res.status_code == 200:
+                for champ in res.json():
+                    if champ.get("id") == champion_id:
+                        return champ.get("masteryLevel", 0)
+        except: pass
+        return 0
+
+    def obtener_nombre_invocador(self):
+        """Obtiene el nombre del invocador actual."""
+        if not self.port: return ""
+        try:
+            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-summoner/v1/current-summoner"
+            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("displayName", data.get("gameName", ""))
+        except: pass
+        return ""
         return []
 
     # ================= FUNCIONES DE PERFIL Y LIGAS =================

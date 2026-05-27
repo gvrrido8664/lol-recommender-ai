@@ -131,51 +131,82 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings.copy()
         self.setWindowTitle("⚙️ Configuración")
-        self.resize(460, 520)
+        self.resize(520, 620)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {BG_DARK}; }}
             QLabel {{ color: {TEXT_WHITE}; font-size: 12px; background: transparent; }}
-            QCheckBox {{ color: {TEXT_WHITE}; font-size: 13px; spacing: 10px; }}
-            QCheckBox::indicator {{ width: 20px; height: 20px; }}
-            QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 4px; }}
+            QCheckBox {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 8px; padding: 1px 0; }}
+            QCheckBox::indicator {{ width: 16px; height: 16px; }}
+            QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 3px; max-width: 80px; }}
         """)
-        layout = QVBoxLayout(self); layout.setSpacing(10)
-        title = QLabel("⚙️ CONFIGURACIÓN"); title.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 16px;")
+        layout = QVBoxLayout(self); layout.setSpacing(6)
+
+        title = QLabel("⚙️ CONFIGURACIÓN DE LA APP")
+        title.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 16px;")
         layout.addWidget(title)
 
-        # Seccion General
-        sec1 = QLabel("🔌 CONEXIÓN Y ACTUALIZACIÓN")
-        sec1.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
-        layout.addWidget(sec1)
-        self.cb_auto = QCheckBox("Auto-detección del cliente de LoL"); self.cb_auto.setChecked(self.settings.get("auto_deteccion", True)); layout.addWidget(self.cb_auto)
-        layout.addWidget(QLabel("Frecuencia Radar (ms):")); self.spin_radar = QSpinBox(); self.spin_radar.setRange(500, 5000); self.spin_radar.setSingleStep(500); self.spin_radar.setValue(self.settings.get("frecuencia_radar", 1500)); layout.addWidget(self.spin_radar)
-        layout.addWidget(QLabel("Frecuencia In-Game (ms):")); self.spin_ingame = QSpinBox(); self.spin_ingame.setRange(1000, 15000); self.spin_ingame.setSingleStep(1000); self.spin_ingame.setValue(self.settings.get("frecuencia_ingame", 5000)); layout.addWidget(self.spin_ingame)
+        def _seccion(texto):
+            lbl = QLabel(texto)
+            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px; margin-top: 6px; padding: 3px 0; border-bottom: 1px solid #1e3050;")
+            layout.addWidget(lbl)
 
-        # Seccion Asistencia
-        sec2 = QLabel("🎓 ASISTENCIA PARA PRINCIPIANTES")
-        sec2.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
-        layout.addWidget(sec2)
-        self.cb_principiante = QCheckBox("🧑‍🎓 Modo Principiante (explicaciones mas detalladas, lenguaje simple)")
-        self.cb_principiante.setChecked(self.settings.get("modo_principiante", False)); layout.addWidget(self.cb_principiante)
-        self.cb_recordatorios = QCheckBox("⏰ Recordatorios en partida (wards, botas, dragones)")
-        self.cb_recordatorios.setChecked(self.settings.get("recordatorios_partida", True)); layout.addWidget(self.cb_recordatorios)
-        self.cb_dificultad = QCheckBox("⭐ Mostrar dificultad de campeones (1-3 estrellas)")
-        self.cb_dificultad.setChecked(self.settings.get("mostrar_dificultad", True)); layout.addWidget(self.cb_dificultad)
-        self.cb_tooltips = QCheckBox("💬 Tooltips grandes con explicaciones")
-        self.cb_tooltips.setChecked(self.settings.get("tooltips_grandes", False)); layout.addWidget(self.cb_tooltips)
+        def _check(texto, key, desc=""):
+            cb = QCheckBox(texto)
+            cb.setChecked(self.settings.get(key, True))
+            layout.addWidget(cb)
+            if desc:
+                lbl_desc = QLabel(f"      {desc}")
+                lbl_desc.setStyleSheet("color: #4a6080; font-size: 10px; margin-left: 8px;")
+                layout.addWidget(lbl_desc)
+            return cb
 
-        # Seccion Avanzado
-        sec3 = QLabel("⚡ AVANZADO")
-        sec3.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; margin-top: 8px;")
-        layout.addWidget(sec3)
-        self.cb_pro = QCheckBox("🏆 Modo Profesional (análisis macro, win conditions, objetivos)")
-        self.cb_pro.setChecked(self.settings.get("modo_profesional", False)); layout.addWidget(self.cb_pro)
-        self.cb_spikes = QCheckBox("Mostrar Power Spikes en In-Game"); self.cb_spikes.setChecked(self.settings.get("mostrar_power_spikes", True)); layout.addWidget(self.cb_spikes)
-        self.cb_explica = QCheckBox("Mostrar explicaciones educativas en builds"); self.cb_explica.setChecked(self.settings.get("mostrar_explicaciones", True)); layout.addWidget(self.cb_explica)
-        self.cb_sonido = QCheckBox("Activar sonidos/alertas"); self.cb_sonido.setChecked(self.settings.get("sonidos", False)); layout.addWidget(self.cb_sonido)
+        # ── CONEXIÓN ──
+        _seccion("🔌 CONEXIÓN (afecta: MI PERFIL, RADAR, IN-GAME)")
+        self.cb_auto = _check("Auto-detectar League of Legends al abrir", "auto_deteccion",
+            "Busca el cliente de LoL solo. Si lo apagas, no se conecta automaticamente.")
+        layout.addWidget(QLabel("   Cada cuantos ms actualiza el Radar:"))
+        self.spin_radar = QSpinBox(); self.spin_radar.setRange(500, 5000); self.spin_radar.setSingleStep(500)
+        self.spin_radar.setValue(self.settings.get("frecuencia_radar", 1500)); layout.addWidget(self.spin_radar)
+        layout.addWidget(QLabel("   Cada cuantos ms actualiza el In-Game:"))
+        self.spin_ingame = QSpinBox(); self.spin_ingame.setRange(1000, 15000); self.spin_ingame.setSingleStep(1000)
+        self.spin_ingame.setValue(self.settings.get("frecuencia_ingame", 5000)); layout.addWidget(self.spin_ingame)
+
+        # ── MI PERFIL ──
+        _seccion("👤 MI PERFIL (afecta: pestaña MI PERFIL)")
+        self.cb_dificultad = _check("Estrellas de dificultad en campeones ⭐ ⭐⭐ ⭐⭐⭐", "mostrar_dificultad",
+            "Garen ⭐ (facil), Zed ⭐⭐⭐ (dificil). Te ayuda a elegir que aprender.")
+
+        # ── RADAR ──
+        _seccion("📡 RADAR EN VIVO (afecta: pestaña RADAR, fase de seleccion de campeon)")
+        self.cb_explica = _check("Explicaciones de 'por que' en cada sugerencia", "mostrar_explicaciones",
+            "Ej: 'Flash porque da movilidad'. Si lo apagas, solo ves los datos sin texto.")
+
+        # ── IN-GAME ──
+        _seccion("🎮 IN-GAME (afecta: pestaña IN-GAME, durante la partida)")
+        self.cb_spikes = _check("Power Spikes: nivel clave de cada campeon", "mostrar_power_spikes",
+            "Ej: 'Nv.6 All-in'. Te avisa cuando un campeon enemigo se vuelve peligroso.")
+        self.cb_recordatorios = _check("Consejos visibles durante la partida", "recordatorios_partida",
+            "Ej: 'Wardea el rio a los 2:30'. Aparecen abajo en la pantalla IN-GAME.")
+
+        # ── ASISTENCIA ──
+        _seccion("🎓 ASISTENCIA (afecta: varias pestañas)")
+        self.cb_principiante = _check("🧑‍🎓 Modo Principiante", "modo_principiante",
+            "Tips extra en lenguaje simple. Si sos nuevo, activalo.")
+        self.cb_pro = _check("🏆 Modo Profesional", "modo_profesional",
+            "Analisis tactico: win conditions, sinergias, prioridad de objetivos.")
+        self.cb_tooltips = _check("Tooltips grandes con explicaciones extra", "tooltips_grandes",
+            "Al pasar el mouse sobre iconos muestra descripciones mas detalladas.")
+
+        # ── EXTRA ──
+        _seccion("⚡ EXTRA (general)")
+        self.cb_sonido = _check("Sonidos de alerta", "sonidos",
+            "Suena al detectar partida o cambios en el draft (proximamente).")
 
         layout.addStretch()
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); btns.accepted.connect(self.accept); btns.rejected.connect(self.reject); layout.addWidget(btns)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
     def get_settings(self):
         return {"auto_deteccion": self.cb_auto.isChecked(), "mostrar_power_spikes": self.cb_spikes.isChecked(),
                 "mostrar_explicaciones": self.cb_explica.isChecked(), "sonidos": self.cb_sonido.isChecked(),
@@ -307,22 +338,37 @@ class LoLRecommenderApp(QMainWindow):
 
         # Header con titulo y boton de configuracion
         header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
         header_lbl = QLabel("LOL ESPORTS ANALYTICS")
-        header_lbl.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 32px;")
+        header_lbl.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 28px;")
         header_lbl.setAlignment(Qt.AlignCenter)
         header_row.addStretch()
         header_row.addWidget(header_lbl)
         header_row.addStretch()
         
-        btn_settings = QPushButton("⚙️")
-        btn_settings.setFixedSize(40, 40)
-        btn_settings.setToolTip("Configuración")
-        btn_settings.setStyleSheet(f"background: transparent; border: 1px solid {BORDER_GOLD}; border-radius: 8px; font-size: 20px; color: {BORDER_GOLD};")
+        btn_settings = QPushButton(" ⚙ ")
+        btn_settings.setFixedSize(34, 34)
+        btn_settings.setCursor(Qt.PointingHandCursor)
+        btn_settings.setToolTip("Configuración de la app")
+        btn_settings.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: 1px solid #2a3050; border-radius: 17px;
+                           font-size: 15px; color: #4a5070; }}
+            QPushButton:hover {{ border: 1px solid {BORDER_GOLD}; color: {BORDER_GOLD}; }}
+        """)
         btn_settings.clicked.connect(self.abrir_settings)
         header_row.addWidget(btn_settings)
         main_layout.addLayout(header_row)
 
         self.tabview = QTabWidget()
+        self.tabview.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 1px solid {BORDER_GOLD}; background-color: {BG_PANEL}; border-radius: 6px; }}
+            QTabBar::tab {{ background: #111a2e; color: #6a7a90; padding: 8px 16px; border: 1px solid #1a2540;
+                           border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px;
+                           margin-right: 1px; font-size: 11px; min-width: 90px; }}
+            QTabBar::tab:selected {{ background: {BG_PANEL}; color: {ACCENT_BLUE}; border-bottom: 2px solid {BG_PANEL};
+                                    font-weight: bold; }}
+            QTabBar::tab:hover:!selected {{ background: #1a2844; color: #8a9ab0; }}
+        """)
         main_layout.addWidget(self.tabview)
 
         self.tab_perfil = QWidget()
@@ -732,11 +778,20 @@ class LoLRecommenderApp(QMainWindow):
         self.l_wr_rol.addLayout(self.fr_wr_rol)
         self.col_hist.addWidget(self.pnl_wr_rol)
 
-        # ===== ESTADÍSTICAS DE LA SEASON (BD LOCAL) =====
-        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA (BD Local)")
-        self.lbl_season_stats = QLabel("Cargando datos de la season...")
-        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 6px;")
+        # ===== ESTADÍSTICAS DE LA SEASON (LCU) =====
+        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA")
+        self.lbl_season_stats = QLabel("Conecta al cliente de LoL para ver tus estadísticas de la season")
+        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
+        self.lbl_season_stats.setWordWrap(True)
         self.l_season.addWidget(self.lbl_season_stats)
+        self.tb_season_champs = QTableWidget()
+        self.tb_season_champs.setColumnCount(4)
+        self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tb_season_champs.setMaximumHeight(180)
+        self.tb_season_champs.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
+        self.l_season.addWidget(self.tb_season_champs)
         self.col_hist.addWidget(self.pnl_season)
         
         # Filtro por campeón y modo de juego
@@ -1430,25 +1485,62 @@ class LoLRecommenderApp(QMainWindow):
             layout.addWidget(card)
 
     def _cargar_stats_season(self):
-        """Carga estadisticas de la season desde la BD local (21K+ partidas)."""
+        """Carga estadisticas de la season del USUARIO desde LCU (ranked + historial extendido)."""
+        if not self.lcu or not self.lcu.port:
+            self.lbl_season_stats.setText("Abre el cliente de LoL para ver tus estadísticas de la season")
+            return
         try:
-            conn = obtener_conexion()
-            cur = conn.cursor()
-            # Total de partidas en la BD
-            cur.execute("SELECT COUNT(*) FROM matches")
-            total_matches = cur.fetchone()[0]
-            # Distribucion de parches
-            cur.execute("SELECT patch, COUNT(*) FROM matches WHERE patch IS NOT NULL GROUP BY patch ORDER BY COUNT(*) DESC LIMIT 3")
-            patches = cur.fetchall()
-            conn.close()
-            patches_str = " | ".join([f"{p['patch']}: {p[1]} partidas" for p in patches]) if patches else "sin datos de parches"
-            self.lbl_season_stats.setText(
-                f"📦 {total_matches:,} partidas analizadas en la BD local\n"
-                f"📅 Parches: {patches_str}\n"
-                f"💡 Datos usados para entrenar modelos IA y calcular estadísticas"
-            )
+            # Obtener stats de ranked (wins/losses por queue)
+            ranked = self.lcu.obtener_ranked_stats()
+            if ranked and ranked.get("queues"):
+                soloq = ranked["queues"].get("RANKED_SOLO_5x5", {})
+                if soloq:
+                    wins = soloq.get("wins", soloq.get("winCount", 0))
+                    losses = soloq.get("losses", soloq.get("lossCount", 0))
+                    total = wins + losses
+                    wr = round(wins * 100 / total, 1) if total > 0 else 0
+                    tier = soloq.get("tier", "?"); div = soloq.get("division", soloq.get("rank", ""))
+                    self.lbl_season_stats.setText(
+                        f"🏆 SoloQ: {tier} {div} — {total} partidas ({wins}V/{losses}D) — {wr}% WR\n"
+                        f"📊 Datos de la season actual desde el cliente de LoL"
+                    )
+                else:
+                    self.lbl_season_stats.setText("🎮 Juega partidas ranked para ver tus estadísticas")
+
+            # Top campeones desde historial extendido (100 partidas)
+            historial = self.lcu.obtener_historial_extendido(cantidad=100)
+            self.tb_season_champs.setRowCount(0)
+            if historial:
+                champ_stats = {}
+                for g in historial:
+                    part = g.get("participants", [{}])[0]
+                    stats = part.get("stats", {})
+                    cid = str(part.get("championId", "0"))
+                    cname = self.procesar_nombre_champ(cid, "0") or "?"
+                    if cname not in champ_stats:
+                        champ_stats[cname] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
+                    cs = champ_stats[cname]; cs["games"] += 1
+                    if stats.get("win", False): cs["wins"] += 1
+                    cs["kills"] += stats.get("kills", 0)
+                    cs["deaths"] += stats.get("deaths", 0)
+                    cs["assists"] += stats.get("assists", 0)
+                
+                top = sorted(champ_stats.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
+                for cname, cs in top:
+                    row = self.tb_season_champs.rowCount(); self.tb_season_champs.insertRow(row)
+                    wr_c = round(cs["wins"] * 100 / cs["games"], 1) if cs["games"] > 0 else 0
+                    kda = round((cs["kills"] + cs["assists"]) / max(1, cs["deaths"]), 1)
+                    item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}")
+                    icon = self.descargar_imagen(cname, "champ")
+                    if icon: item_c.setIcon(QIcon(icon))
+                    self.tb_season_champs.setItem(row, 0, item_c)
+                    self.tb_season_champs.setItem(row, 1, QTableWidgetItem(str(cs["games"])))
+                    item_w = QTableWidgetItem(f"{wr_c}%")
+                    item_w.setForeground(QColor(GREEN_WR if wr_c >= 50 else RED_WR))
+                    self.tb_season_champs.setItem(row, 2, item_w)
+                    self.tb_season_champs.setItem(row, 3, QTableWidgetItem(str(kda)))
         except Exception as e:
-            self.lbl_season_stats.setText("Error al cargar datos de la season")
+            self.lbl_season_stats.setText(f"Error: {e}")
 
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
         clear_layout(self.fr_picks_icons)

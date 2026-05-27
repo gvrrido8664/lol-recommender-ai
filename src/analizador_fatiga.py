@@ -31,26 +31,41 @@ def analizar_fatiga(historial_games):
                  estado (fresh/tired/tilted), recomendacion
     """
     if not historial_games:
-        return {"estado": "sin_datos", "mensaje": "Sin datos de partidas recientes"}
+        return {"estado": "sin_datos", "mensaje": "Sin datos de partidas recientes", "recomendacion": "Jugá una partida para que el sistema aprenda tus patrones."}
 
     # Ordenar partidas por fecha (más reciente primero)
     partidas = []
     for g in historial_games:
         try:
-            ts = g.get("gameCreation", 0)
-            if ts < 1000000000:  # timestamp en milisegundos
-                ts = ts / 1000
-            dt = datetime.fromtimestamp(ts)
-            dur = g.get("gameDuration", 0)  # segundos
+            # LCU usa gameCreationDate (string) no gameCreation (timestamp)
+            fecha_str = g.get("gameCreationDate", "")
+            if fecha_str:
+                # Formato LCU: "May 27, 2026 12:34:56 PM" o ISO
+                try:
+                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
+                except ValueError:
+                    try:
+                        dt = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+                    except:
+                        continue
+            else:
+                # Fallback: probar gameCreation como timestamp
+                ts = g.get("gameCreation", 0)
+                if ts < 1000000000:
+                    ts = ts / 1000
+                if ts == 0:
+                    continue
+                dt = datetime.fromtimestamp(ts)
+            dur = g.get("gameDuration", 0)
             win = g.get("participants", [{}])[0].get("stats", {}).get("win", False)
             partidas.append({"fecha": dt, "duracion": dur, "win": win})
-        except:
+        except Exception as e:
             continue
 
     partidas.sort(key=lambda p: p["fecha"], reverse=True)
 
     if not partidas:
-        return {"estado": "sin_datos", "mensaje": "No se pudieron procesar las partidas"}
+        return {"estado": "sin_datos", "mensaje": "No se pudieron procesar las partidas", "recomendacion": "Verificá que el cliente de LoL esté funcionando correctamente."}
 
     # ── Detectar sesiones (grupos de partidas sin descanso >30 min) ──
     sesiones = []

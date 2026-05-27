@@ -3,6 +3,7 @@ import os
 import requests
 import threading
 import time
+from datetime import datetime
 from io import BytesIO
 from PIL import Image
 import numpy as np
@@ -734,11 +735,21 @@ class LoLRecommenderApp(QMainWindow):
         
         self.col_id.addWidget(self.pnl_ranks)
         
-        # ===== PANEL DE MAESTRÍAS =====
-        self.pnl_mastery, self.l_mastery = self.crear_panel("MEJORES CAMPEONES")
-        self.fr_mastery = QHBoxLayout()
-        self.l_mastery.addLayout(self.fr_mastery)
-        self.col_id.addWidget(self.pnl_mastery)
+        # ===== ESTADÍSTICAS DE LA TEMPORADA (columna izquierda) =====
+        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA")
+        self.lbl_season_stats = QLabel("Conecta al cliente de LoL para ver tus estadísticas de la season")
+        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
+        self.lbl_season_stats.setWordWrap(True)
+        self.l_season.addWidget(self.lbl_season_stats)
+        self.tb_season_champs = QTableWidget()
+        self.tb_season_champs.setColumnCount(4)
+        self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # sin limite de altura: usa el espacio disponible
+        self.tb_season_champs.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
+        self.l_season.addWidget(self.tb_season_champs)
+        self.col_id.addWidget(self.pnl_season)
 
         # ===== PANEL DE FATIGA (columna izquierda, abajo) =====
         self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL")
@@ -786,22 +797,6 @@ class LoLRecommenderApp(QMainWindow):
             self.labels_wr_rol[rol] = lbl
         self.l_wr_rol.addLayout(self.fr_wr_rol)
         self.col_hist.addWidget(self.pnl_wr_rol)
-
-        # ===== ESTADÍSTICAS DE LA SEASON (LCU) =====
-        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA")
-        self.lbl_season_stats = QLabel("Conecta al cliente de LoL para ver tus estadísticas de la season")
-        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
-        self.lbl_season_stats.setWordWrap(True)
-        self.l_season.addWidget(self.lbl_season_stats)
-        self.tb_season_champs = QTableWidget()
-        self.tb_season_champs.setColumnCount(4)
-        self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
-        self.tb_season_champs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tb_season_champs.setMaximumHeight(180)
-        self.tb_season_champs.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
-        self.l_season.addWidget(self.tb_season_champs)
-        self.col_hist.addWidget(self.pnl_season)
         
         # Filtro por campeón y modo de juego
         self.fr_filtro = QHBoxLayout()
@@ -822,13 +817,13 @@ class LoLRecommenderApp(QMainWindow):
         self.col_hist.addLayout(self.fr_filtro)
         
         # Historial
-        lbl_h = QLabel("HISTORIAL RECIENTE (20 PARTIDAS)")
+        lbl_h = QLabel("HISTORIAL DE PARTIDAS")
         lbl_h.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
         
         self.tb_historial = QTableWidget()
-        self.tb_historial.setColumnCount(6)
-        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo"])
+        self.tb_historial.setColumnCount(8)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "LP", "Modo", "Fecha"])
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
@@ -960,26 +955,6 @@ class LoLRecommenderApp(QMainWindow):
         _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats)
         _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats)
 
-        # --- Maestrías ---
-        maestrias = data.get("maestrias", [])
-        clear_layout(self.fr_mastery)
-        if maestrias:
-            for m in maestrias:
-                cid = str(m.get("championId"))
-                c_name = self.procesar_nombre_champ(cid, 0)
-                lvl = m.get("championLevel")
-                puntos = f"{m.get('championPoints', 0):,}"
-                card_m = QWidget()
-                card_m_ly = QVBoxLayout(card_m)
-                card_m_ly.setContentsMargins(4, 4, 4, 4)
-                card_m_ly.setAlignment(Qt.AlignCenter)
-                self.renderizar_icono(c_name, "champ", card_m_ly, size=42)
-                lbl = QLabel(f"Nv.{lvl}\n{puntos} pts")
-                lbl.setStyleSheet("font-size: 9px; color: #8fa3b8;")
-                lbl.setAlignment(Qt.AlignCenter)
-                card_m_ly.addWidget(lbl)
-                self.fr_mastery.addWidget(card_m)
-
         # --- Historial ---
         historial = data.get("historial")
         if not historial:
@@ -989,6 +964,7 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_card_best_val.setText("--")
             self.cb_filtro_champ.clear()
             self.cb_filtro_champ.addItem("Todos los campeones")
+            self._analizar_fatiga()
             return
         
         games = historial.get("games", {}).get("games", [])
@@ -1016,6 +992,24 @@ class LoLRecommenderApp(QMainWindow):
             duration_sec = g.get("gameDuration", 0)
             duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}"
             
+            # LP delta (intentar varios campos de la API de LCU)
+            lp_delta = g.get("eloChange") or g.get("playerScoreChange") or stats.get("eloChange")
+            if lp_delta is not None:
+                lp_str = f"{'+' if lp_delta > 0 else ''}{lp_delta}"
+            else:
+                lp_str = "--"
+            
+            # Fecha (LCU usa gameCreationDate como string)
+            fecha_str = g.get("gameCreationDate", "")
+            if fecha_str:
+                try:
+                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
+                    fecha = dt.strftime("%d/%m")
+                except:
+                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
+            else:
+                fecha = "?"
+            
             total_k += k; total_d += d; total_a += a; total_games += 1
             if win: victorias += 1
             
@@ -1037,12 +1031,20 @@ class LoLRecommenderApp(QMainWindow):
             item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
             modo_juego = g.get("gameMode", "Draft")
             if modo_juego == "CLASSIC": modo_juego = "Ranked"
+            
+            # LP con color (verde positivo, rojo negativo)
+            item_lp = QTableWidgetItem(lp_str)
+            if lp_delta is not None:
+                item_lp.setForeground(QColor(GREEN_WR if lp_delta > 0 else RED_WR))
+            
             self.tb_historial.setItem(row, 0, item_c)
             self.tb_historial.setItem(row, 1, item_w)
             self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
             self.tb_historial.setItem(row, 3, QTableWidgetItem(str(cs)))
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
-            self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 5, item_lp)
+            self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
 
         # --- Tarjetas de estadísticas ---
         if total_games > 0:
@@ -1160,18 +1162,25 @@ class LoLRecommenderApp(QMainWindow):
     def _analizar_fatiga(self):
         """Analiza fatiga/tilt desde el historial de la LCU."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
+            self.lbl_fatiga.setText("Esperando datos del cliente...")
+            self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
             return
         try:
             fatiga = analizar_fatiga(self.historial_games)
             estado = fatiga.get("estado", "neutral")
-            colores = {"fresh": GREEN_WR, "neutral": ACCENT_BLUE, "tired": YELLOW_WR, "tilted": RED_WR}
+            colores = {"fresh": GREEN_WR, "neutral": ACCENT_BLUE, "tired": YELLOW_WR, "tilted": RED_WR, "sin_datos": TEXT_WHITE}
             color = colores.get(estado, TEXT_WHITE)
-            self.lbl_fatiga.setText(
-                f"{fatiga['mensaje']}\n💡 {fatiga['recomendacion']}"
-            )
-            self.lbl_fatiga.setStyleSheet(f"color: {color}; font-size: 12px; padding: 4px; font-weight: bold;")
-        except:
-            pass
+            msg = fatiga.get("mensaje", "Sin datos")
+            rec = fatiga.get("recomendacion", "")
+            texto = f"{msg}"
+            if rec:
+                texto += f"\n💡 {rec}"
+            self.lbl_fatiga.setText(texto)
+            self.lbl_fatiga.setStyleSheet(f"color: {color}; font-size: 10px; padding: 4px; font-weight: bold;")
+        except Exception as e:
+            print(f"[_analizar_fatiga] Error: {e}")
+            self.lbl_fatiga.setText("No se pudo analizar")
+            self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
 
     def _on_scroll_historial(self, value):
         """Scroll infinito: carga mas partidas cuando el usuario llega al final."""
@@ -1232,6 +1241,24 @@ class LoLRecommenderApp(QMainWindow):
             cs = stats.get("totalMinionsKilled", 0) + stats.get("neutralMinionsKilled", 0)
             duration_sec = g.get("gameDuration", 0)
             duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}"
+            
+            # LP delta
+            lp_delta = g.get("eloChange") or g.get("playerScoreChange") or stats.get("eloChange")
+            if lp_delta is not None:
+                lp_str = f"{'+' if lp_delta > 0 else ''}{lp_delta}"
+            else:
+                lp_str = "--"
+            
+            # Fecha
+            fecha_str = g.get("gameCreationDate", "")
+            if fecha_str:
+                try:
+                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
+                    fecha = dt.strftime("%d/%m")
+                except:
+                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
+            else:
+                fecha = "?"
 
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
@@ -1240,12 +1267,19 @@ class LoLRecommenderApp(QMainWindow):
             if icon_p: item_c.setIcon(QIcon(icon_p))
             item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
             item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
+            
+            item_lp = QTableWidgetItem(lp_str)
+            if lp_delta is not None:
+                item_lp.setForeground(QColor(GREEN_WR if lp_delta > 0 else RED_WR))
+            
             self.tb_historial.setItem(row, 0, item_c)
             self.tb_historial.setItem(row, 1, item_w)
             self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
             self.tb_historial.setItem(row, 3, QTableWidgetItem(str(cs)))
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
-            self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 5, item_lp)
+            self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
 
     # ================= RADAR EN VIVO =================
     def armar_tab_vivo(self):

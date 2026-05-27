@@ -294,7 +294,36 @@ class LCUConnector:
         except: pass
         return None
 
-    def obtener_ranked_stats(self):
+    def obtener_liveclient_data(self):
+        """Obtiene datos en vivo de la partida via Live Client Data API (puerto 2999).
+        Solo disponible cuando la partida esta corriendo (InProgress)."""
+        try:
+            url = "https://127.0.0.1:2999/liveclientdata/allgamedata"
+            res = requests.get(url, verify=False, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                players = []
+                for p in data.get("allPlayers", []):
+                    players.append({
+                        "summonerName": p.get("summonerName", ""),
+                        "championName": p.get("championName", ""),
+                        "team": "ORDER" if p.get("team") == "ORDER" else "CHAOS",
+                        "level": p.get("level", 1),
+                        "kills": p.get("scores", {}).get("kills", 0),
+                        "deaths": p.get("scores", {}).get("deaths", 0),
+                        "assists": p.get("scores", {}).get("assists", 0),
+                        "creepScore": p.get("scores", {}).get("creepScore", 0),
+                        "items": [p.get(f"items", [{}])[i] for i in range(7)] if p.get("items") else [],
+                        "summonerSpells": [p.get("summonerSpells", {}).get("summonerSpellOne", {}).get("rawDisplayName", ""),
+                                          p.get("summonerSpells", {}).get("summonerSpellTwo", {}).get("rawDisplayName", "")],
+                        "runes": p.get("runes", {}),
+                        "isDead": p.get("isDead", False),
+                        "championId": 0,  # Live Client API no da championId, usamos el nombre
+                    })
+                return players, data.get("gameData", {})
+        except:
+            pass
+        return [], {}
         """Obtiene estadisticas completas de ranked (season actual) desde LCU."""
         if not self.port: return None
         try:

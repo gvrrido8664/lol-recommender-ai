@@ -12,7 +12,7 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QGridLayout, QLabel, QPushButton, 
                                QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar)
+                               QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar, QCheckBox, QDialog, QDialogButtonBox, QSlider, QSpinBox)
 from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
 from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
@@ -91,6 +91,62 @@ def clear_layout(layout):
             if widget is not None: widget.deleteLater()
             else: clear_layout(item.layout())
 
+# ─── CONFIGURACION DE USUARIO ──────────────────────────────────────
+DEFAULT_SETTINGS = {
+    "auto_deteccion": True,
+    "mostrar_power_spikes": True,
+    "mostrar_explicaciones": True,
+    "frecuencia_radar": 1500,
+    "frecuencia_ingame": 5000,
+    "sonidos": False,
+}
+
+def cargar_settings():
+    try:
+        with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as f:
+            saved = json.load(f)
+            return {**DEFAULT_SETTINGS, **saved.get("user_settings", {})}
+    except: return dict(DEFAULT_SETTINGS)
+
+def guardar_settings(settings):
+    try:
+        config = {}
+        if os.path.exists(os.path.join(BASE_DIR, "config.json")):
+            with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as f:
+                config = json.load(f)
+        config["user_settings"] = settings
+        with open(os.path.join(BASE_DIR, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except: return False
+
+class SettingsDialog(QDialog):
+    def __init__(self, settings, parent=None):
+        super().__init__(parent)
+        self.settings = settings.copy()
+        self.setWindowTitle("⚙️ Configuración")
+        self.resize(420, 380)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {BG_DARK}; }}
+            QLabel {{ color: {TEXT_WHITE}; font-size: 12px; background: transparent; }}
+            QCheckBox {{ color: {TEXT_WHITE}; font-size: 13px; spacing: 10px; }}
+            QCheckBox::indicator {{ width: 20px; height: 20px; }}
+            QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 4px; }}
+        """)
+        layout = QVBoxLayout(self); layout.setSpacing(14)
+        title = QLabel("⚙️ CONFIGURACIÓN"); title.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 16px;")
+        layout.addWidget(title)
+        self.cb_auto = QCheckBox("Auto-detección LCU (Radar en vivo)"); self.cb_auto.setChecked(self.settings.get("auto_deteccion", True)); layout.addWidget(self.cb_auto)
+        self.cb_spikes = QCheckBox("Mostrar Power Spikes en In-Game"); self.cb_spikes.setChecked(self.settings.get("mostrar_power_spikes", True)); layout.addWidget(self.cb_spikes)
+        self.cb_explica = QCheckBox("Mostrar explicaciones educativas"); self.cb_explica.setChecked(self.settings.get("mostrar_explicaciones", True)); layout.addWidget(self.cb_explica)
+        self.cb_sonido = QCheckBox("Activar sonidos/alertas"); self.cb_sonido.setChecked(self.settings.get("sonidos", False)); layout.addWidget(self.cb_sonido)
+        layout.addWidget(QLabel("Frecuencia Radar (ms):")); self.spin_radar = QSpinBox(); self.spin_radar.setRange(500, 5000); self.spin_radar.setSingleStep(500); self.spin_radar.setValue(self.settings.get("frecuencia_radar", 1500)); layout.addWidget(self.spin_radar)
+        layout.addWidget(QLabel("Frecuencia In-Game (ms):")); self.spin_ingame = QSpinBox(); self.spin_ingame.setRange(1000, 15000); self.spin_ingame.setSingleStep(1000); self.spin_ingame.setValue(self.settings.get("frecuencia_ingame", 5000)); layout.addWidget(self.spin_ingame)
+        layout.addStretch()
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel); btns.accepted.connect(self.accept); btns.rejected.connect(self.reject); layout.addWidget(btns)
+    def get_settings(self):
+        return {"auto_deteccion": self.cb_auto.isChecked(), "mostrar_power_spikes": self.cb_spikes.isChecked(), "mostrar_explicaciones": self.cb_explica.isChecked(), "sonidos": self.cb_sonido.isChecked(), "frecuencia_radar": self.spin_radar.value(), "frecuencia_ingame": self.spin_ingame.value()}
+
 class LoLRecommenderApp(QMainWindow):
     lcu_task_finished = Signal(object, object, str, str)
     perfil_listo = Signal(dict)
@@ -103,6 +159,7 @@ class LoLRecommenderApp(QMainWindow):
         self.resize(1500, 950)
         self.aplicar_estilos()
 
+        self.user_settings = cargar_settings()
         self.champs_dict = cargar_campeones()
         self.nombres_campeones_global = sorted(list(set([data["nombre"] for data in self.champs_dict.values()])))
         # Construir mapeos bidireccionales Spanish <-> English para DB queries e iconos
@@ -211,10 +268,22 @@ class LoLRecommenderApp(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
+        # Header con titulo y boton de configuracion
+        header_row = QHBoxLayout()
         header_lbl = QLabel("LOL ESPORTS ANALYTICS")
         header_lbl.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 32px;")
         header_lbl.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(header_lbl)
+        header_row.addStretch()
+        header_row.addWidget(header_lbl)
+        header_row.addStretch()
+        
+        btn_settings = QPushButton("⚙️")
+        btn_settings.setFixedSize(40, 40)
+        btn_settings.setToolTip("Configuración")
+        btn_settings.setStyleSheet(f"background: transparent; border: 1px solid {BORDER_GOLD}; border-radius: 8px; font-size: 20px; color: {BORDER_GOLD};")
+        btn_settings.clicked.connect(self.abrir_settings)
+        header_row.addWidget(btn_settings)
+        main_layout.addLayout(header_row)
 
         self.tabview = QTabWidget()
         main_layout.addWidget(self.tabview)
@@ -1098,6 +1167,23 @@ class LoLRecommenderApp(QMainWindow):
         
         layout.addLayout(draft_layout)
 
+    def abrir_settings(self):
+        dlg = SettingsDialog(self.user_settings, self)
+        if dlg.exec() == QDialog.Accepted:
+            self.user_settings = dlg.get_settings()
+            guardar_settings(self.user_settings)
+            self._aplicar_settings()
+
+    def _aplicar_settings(self):
+        """Aplica los settings actuales a los timers y comportamientos."""
+        self.timer_lcu.setInterval(self.user_settings.get("frecuencia_radar", 1500))
+        self.timer_ingame.setInterval(self.user_settings.get("frecuencia_ingame", 5000))
+        if not self.user_settings.get("auto_deteccion", True):
+            self.timer_lcu.stop()
+        else:
+            if not self.timer_lcu.isActive():
+                self.timer_lcu.start()
+
     def auto_detectar_lcu(self):
         """Solo hace operaciones rápidas (leer lockfile). El trabajo pesado (HTTP)
         se lanza en hilos secundarios para no congelar la UI."""
@@ -1381,7 +1467,7 @@ class LoLRecommenderApp(QMainWindow):
         layout.addWidget(self.lbl_ingame_comp)
 
     def actualizar_ingame(self):
-        """Detecta si hay partida en vivo y actualiza la tabla de jugadores."""
+        """Detecta si hay partida en vivo y actualiza la tabla de jugadores con KDA, rachas y power spikes."""
         if not self.lcu or not self.lcu.port:
             return
         fase = self.lcu.obtener_fase_juego()
@@ -1392,7 +1478,6 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_ingame_comp.setText("")
             return
 
-        # Partida en vivo - obtener jugadores
         jugadores = self.lcu.obtener_summoners_partida()
         if not jugadores:
             self.lbl_ingame_status.setText("🎮 Partida detectada - cargando jugadores...")
@@ -1401,14 +1486,13 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_ingame_status.setVisible(False)
         self.tb_ingame.setVisible(True)
 
-        # Separar equipos
         aliados_raw = [j for j in jugadores if j.get("team") == "ORDER"]
         enemigos_raw = [j for j in jugadores if j.get("team") == "CHAOS"]
+        mi_nombre = self.lcu.obtener_nombre_invocador()
 
         self.tb_ingame.setRowCount(0)
 
         for team_name, team_players, bg in [("🔵 ALIADOS", aliados_raw, ALLY_BG), ("🔴 ENEMIGOS", enemigos_raw, ENEMY_BG)]:
-            # Fila de encabezado de equipo
             row = self.tb_ingame.rowCount()
             self.tb_ingame.insertRow(row)
             hdr = QTableWidgetItem(team_name)
@@ -1416,21 +1500,33 @@ class LoLRecommenderApp(QMainWindow):
             hdr.setForeground(QColor(BORDER_GOLD))
             font = hdr.font(); font.setBold(True); hdr.setFont(font)
             self.tb_ingame.setItem(row, 0, hdr)
-            for c in range(1, 6):
+            for c in range(1, self.tb_ingame.columnCount()):
                 empty = QTableWidgetItem("")
                 empty.setBackground(QColor(bg))
                 self.tb_ingame.setItem(row, c, empty)
 
             for j in team_players:
-                cid = str(j.get("championId", 0))
-                cname = self.procesar_nombre_champ(cid, 0) or "?"
-                sname = j.get("summonerId", "???")
+                cid = int(j.get("championId", 0))
+                cname = self.procesar_nombre_champ(str(cid), "0") or "?"
+                sname = j.get("summonerName", j.get("summonerId", "???"))
                 
+                # Stats desde BD local
+                wr, kda, streak, total_g = self._stats_jugador_champ(cname)
+                
+                # Maestria (solo para el jugador actual)
+                mastery = ""
+                if sname == mi_nombre or j.get("summonerId", "") == mi_nombre:
+                    ml = self.lcu.obtener_maestria_champ(cid)
+                    mastery = f" ⭐{ml}" if ml > 0 else ""
+                
+                # Power spike info
+                spike = self._power_spike_champ(cname)
+
                 row = self.tb_ingame.rowCount()
                 self.tb_ingame.insertRow(row)
 
-                # Campeon con icono
-                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}")
+                # Campeon + maestria
+                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}{mastery}")
                 icon_p = self.descargar_imagen(cname, "champ")
                 if icon_p: item_c.setIcon(QIcon(icon_p))
                 self.tb_ingame.setItem(row, 0, item_c)
@@ -1438,18 +1534,36 @@ class LoLRecommenderApp(QMainWindow):
                 # Invocador
                 self.tb_ingame.setItem(row, 1, QTableWidgetItem(sname))
 
-                # WR en el campeon (de DB local)
-                wr_champ = self._wr_champ_db(cname)
-                item_wr = QTableWidgetItem(wr_champ)
-                item_wr.setForeground(QColor(GREEN_WR if wr_champ != "--" and float(wr_champ.replace("%","")) >= 50 else RED_WR))
-                self.tb_ingame.setItem(row, 2, QTableWidgetItem("--"))  # Rango (requiere Riot API)
-                self.tb_ingame.setItem(row, 3, item_wr)
-                self.tb_ingame.setItem(row, 4, QTableWidgetItem("--"))  # KDA
-                self.tb_ingame.setItem(row, 5, QTableWidgetItem("--"))  # Racha
+                # WR del champ
+                item_wr = QTableWidgetItem(wr)
+                if wr != "--":
+                    try:
+                        wr_val = int(wr.replace("%",""))
+                        item_wr.setForeground(QColor(GREEN_WR if wr_val >= 50 else RED_WR))
+                    except: pass
+                self.tb_ingame.setItem(row, 2, item_wr)
+
+                # KDA
+                self.tb_ingame.setItem(row, 3, QTableWidgetItem(kda))
+                item_kda = self.tb_ingame.item(row, 3)
+                if kda != "--":
+                    try:
+                        kda_val = float(kda)
+                        item_kda.setForeground(QColor(GREEN_WR if kda_val >= 2.0 else YELLOW_WR if kda_val >= 1.0 else RED_WR))
+                    except: pass
+
+                # Racha
+                item_streak = QTableWidgetItem(streak)
+                if "🔥" in streak: item_streak.setForeground(QColor(GREEN_WR))
+                elif "❄️" in streak: item_streak.setForeground(QColor(RED_WR))
+                self.tb_ingame.setItem(row, 4, item_streak)
+
+                # Power Spike
+                self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
 
         # Composicion
-        aliados_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), 0) for j in aliados_raw if self.procesar_nombre_champ(str(j.get("championId",0)),0)]
-        enemigos_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), 0) for j in enemigos_raw if self.procesar_nombre_champ(str(j.get("championId",0)),0)]
+        aliados_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in aliados_raw if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
+        enemigos_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in enemigos_raw if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
         if len(aliados_nombres) == 5 and len(enemigos_nombres) == 5:
             ad, ap, tanks = analizar_composicion(aliados_nombres)
             ade, ape, tankse = analizar_composicion(enemigos_nombres)
@@ -1458,17 +1572,72 @@ class LoLRecommenderApp(QMainWindow):
                 f"ENEMIGOS: AD {ade}% / AP {ape}% ({tankse} front)"
             )
 
-    def _wr_champ_db(self, champion):
-        """Devuelve el WR de un campeon desde la DB local."""
+    def _stats_jugador_champ(self, champion):
+        """Devuelve (WR, KDA, racha, total_partidas) para un campeon desde la BD local."""
         try:
             conn = obtener_conexion()
             cur = conn.cursor()
-            cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=? AND win IS NOT NULL", (champion,))
+            # WR
+            cur.execute("SELECT COUNT(*), SUM(win) FROM participantes WHERE champion=? AND win IS NOT NULL", (champion,))
             row = cur.fetchone()
+            total = row[0] or 0
+            wins = row[1] or 0
+            wr = f"{round(wins*100/total, 1)}%" if total > 0 else "--"
+            # KDA
+            cur.execute("SELECT AVG(kills), AVG(deaths), AVG(assists) FROM participantes WHERE champion=? AND kills IS NOT NULL", (champion,))
+            row = cur.fetchone()
+            if row and row[0] is not None:
+                kda = round((row[0] + row[2]) / max(1, row[1]), 1) if row[1] else 0
+                kda_str = f"{kda:.1f}"
+            else:
+                kda_str = "--"
+            # Racha: ultimas 5 partidas ordenadas por fecha
+            cur.execute("""SELECT p.win FROM participantes p JOIN matches m ON p.match_id=m.match_id 
+                          WHERE p.champion=? ORDER BY m.fecha_descarga DESC LIMIT 5""", (champion,))
+            wins_list = [r[0] for r in cur.fetchall()]
+            if wins_list:
+                consec_w = 0; consec_l = 0
+                for w in wins_list:
+                    if w: consec_w += 1
+                    else: break
+                for w in wins_list:
+                    if not w: consec_l += 1
+                    else: break
+                if consec_w >= 3: streak = f"🔥 {consec_w}V"
+                elif consec_l >= 3: streak = f"❄️ {consec_l}D"
+                else: streak = f"{sum(wins_list)}V/{len(wins_list)-sum(wins_list)}D"
+            else:
+                streak = "--"
             conn.close()
-            if row and row[0]: return f"{row[0]}%"
-        except: pass
-        return "--"
+            return wr, kda_str, streak, total
+        except:
+            return "--", "--", "--", 0
+
+    def _power_spike_champ(self, champion):
+        """Devuelve info de power spike basada en niveles clave (conocimiento publico del juego, no viola TOS)."""
+        spikes = {
+            "Darius": "Nv.6 All-in", "Garen": "Nv.6 Ejecutar", "Riven": "Nv.3 Trade",
+            "Irelia": "Nv.2/Q full", "Fiora": "Nv.6 Duelo", "Jax": "Nv.6 Powerspike",
+            "Renekton": "Nv.3 Fury", "Sett": "Nv.3 W max", "Aatrox": "Nv.4 Q max",
+            "Camille": "Nv.6 R锁定", "Malphite": "Nv.6 R engage", "Ornn": "Nv.6 R team",
+            "Yasuo": "Nv.6 R combo", "Yone": "Nv.6 E+R", "Zed": "Nv.6 All-in",
+            "Akali": "Nv.6 R gap", "Katarina": "Nv.6 Reset", "Talon": "Nv.2 First blood",
+            "Fizz": "Nv.3 Trade", "Ekko": "Nv.6 R save", "Sylas": "Nv.6 R steal",
+            "Ahri": "Nv.6 R charm", "Lux": "Nv.6 R laser", "Syndra": "Nv.6 R burst",
+            "Kassadin": "Nv.16 Hyper", "Kayle": "Nv.16 Hyper", "Vladimir": "Nv.9 Teamfight",
+            "Jinx": "Nv.6 R global", "Draven": "Nv.2 Aggro", "Caitlyn": "Nv.6 R snipe",
+            "Vayne": "Nv.6 Invis", "KaiSa": "Nv.6/Evolve", "Ezreal": "Nv.6 R snipe",
+            "LeeSin": "Nv.6 R kick", "Elise": "Nv.3 Gank", "Nidalee": "Nv.3 Gank",
+            "Shaco": "Nv.3 Gank", "Evelynn": "Nv.6 Stealth", "Rengar": "Nv.6 R hunt",
+            "KhaZix": "Nv.6 Evolve", "Kayn": "Nv.6 Forma", "Nocturne": "Nv.6 R dive",
+            "Vi": "Nv.6 R lock", "JarvanIV": "Nv.6 R arena", "Sejuani": "Nv.6 R stun",
+            "Amumu": "Nv.6 R stun", "Zac": "Nv.6 R bounce", "Hecarim": "Nv.6 R fear",
+            "Leona": "Nv.2 Engage", "Nautilus": "Nv.2 Hook", "Thresh": "Nv.2 Hook",
+            "Blitzcrank": "Nv.2 Hook", "Pyke": "Nv.2 Hook", "Alistar": "Nv.2 W+Q",
+            "Rakan": "Nv.6 R charm", "Bard": "Nv.6 R save", "Lulu": "Nv.6 R save",
+            "Soraka": "Nv.6 R global", "Janna": "Nv.6 R heal", "Nami": "Nv.6 R wave",
+        }
+        return spikes.get(champion, f"Nv.6 Spike")
 
     # ================= META & BUILDS =================
     def armar_tab_counters(self):

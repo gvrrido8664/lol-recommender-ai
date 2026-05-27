@@ -3,6 +3,12 @@ import os
 import json
 from .db_manager import obtener_conexion, DATA_DIR
 from .riot_api import cargar_objetos, cargar_runas, cargar_campeones
+from .tags_champions import (
+    obtener_dano, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte,
+    obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica
+)
+from .itemizador_dinamico import recomendar_bota, recomendar_item_defensivo
+from .razonador import razonar_pick, razonar_hechizos, razonar_botas, razonar_runas, razonar_objeto
 
 ITEMS_DATA = cargar_objetos()
 RUNAS_DATA = cargar_runas()
@@ -97,90 +103,19 @@ def obtener_peores_matchups(campeon, carril, min_partidas=20):
     return resultados
 
 def _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril):
-    """Analiza el draft enemigo y recomienda las botas óptimas.
-    
-    Args:
-        botas_count: dict {id_bota: frecuencia} de las botas más usadas estadísticamente
-        enemigos: lista de nombres de campeones enemigos
-        campeon: nombre del campeón aliado
-        carril: posición (TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY)
-    
-    Returns:
-        id de la bota recomendada
-    """
-    if not enemigos or not botas_count:
-        return None
-    
-    # Cargar tags de campeones
-    ruta_tags = os.path.join(DATA_DIR, "champion_data.json")
-    tags_data = {}
-    if os.path.exists(ruta_tags):
-        with open(ruta_tags, "r", encoding="utf-8") as f:
-            tags_data = json.load(f)
-    
-    # Analizar amenazas enemigas
-    ad_count = 0
-    marksman_count = 0
-    cc_count = 0
-    
-    for enemigo in enemigos:
-        tags = tags_data.get(enemigo, {}).get("tags", [])
-        dano = _clasificar_dano(enemigo, tags)
-        
-        if dano == "AD":
-            ad_count += 1
-        if "Marksman" in tags:
-            marksman_count += 1
-            ad_count += 1  # Los tiradores son amenaza AD extra
-        if "Tank" in tags or "Support" in tags:
-            cc_count += 1  # Tanques y soportes suelen tener CC fuerte
-        if "Mage" in tags:
-            cc_count += 0.5  # Los magos suelen tener al menos 1 CC
-    
-    # Mapa de botas disponibles
-    BOTA_STEELCAPS = "3047"   # vs AD/autoataques
-    BOTA_MERCURY = "3111"     # vs CC/AP
-    BOTA_SORCERER = "3020"    # magic pen (AP)
-    BOTA_BERSERKER = "3006"   # attack speed (ADC)
-    BOTA_IONIAN = "3158"      # ability haste (general)
-    BOTA_SWIFTNESS = "3009"   # slow resist + MS
-    
-    # Elegir bota según amenazas
-    bota_recomendada = None
-    
-    if ad_count >= 4 or marksman_count >= 2:
-        # Mucho AD o varios tiradores → Steelcaps
-        bota_recomendada = BOTA_STEELCAPS
-    elif cc_count >= 3:
-        # Mucho CC → Mercury's Treads
-        bota_recomendada = BOTA_MERCURY
-    elif ad_count >= 3:
-        # AD significativo → Steelcaps
-        bota_recomendada = BOTA_STEELCAPS
-    elif cc_count >= 2:
-        # CC moderado → Mercury's
-        bota_recomendada = BOTA_MERCURY
-    
-    # Si no hay amenaza clara, usar la mejor bota estadística
-    if not bota_recomendada or bota_recomendada not in botas_count:
-        if botas_count:
-            return max(botas_count, key=botas_count.get)
-        return None
-    
-    # Verificar que la bota recomendada existe en los datos
-    if bota_recomendada in botas_count:
-        return bota_recomendada
-    
-    # Si no existe en datos, buscar alternativa similar
-    alternativas = {
-        BOTA_STEELCAPS: [BOTA_STEELCAPS, BOTA_MERCURY, BOTA_IONIAN],
-        BOTA_MERCURY: [BOTA_MERCURY, BOTA_STEELCAPS, BOTA_IONIAN],
-    }
-    for alt in alternativas.get(bota_recomendada, []):
-        if alt in botas_count:
-            return alt
-    
-    # Fallback: la más usada
+    """Decide la bota optima segun el draft enemigo usando el itemizador dinamico.
+    La recomendacion del sistema SIEMPRE tiene prioridad sobre la estadistica,
+    porque los datos historicos estan sesgados (la mayoria de partidas son AD vs AD)."""
+    if not enemigos:
+        return max(botas_count, key=botas_count.get) if botas_count else None
+
+    try:
+        bota_id, razon, es_estatica = recomendar_bota(campeon, enemigos, botas_count)
+        if bota_id:
+            return bota_id  # <-- El sistema decide, sin importar stats
+    except Exception:
+        pass
+
     return max(botas_count, key=botas_count.get) if botas_count else None
 
 
@@ -235,21 +170,20 @@ def obtener_top_items(campeon, carril, enemigos=None):
     for _ in range(max(0, (500 - costo_base) // 50)): combo_starters.append("2003")
 
     build_final = []
-    if campeon != "Cassiopeia":
-        if not botas_count:
-            cur.execute("SELECT items FROM participantes WHERE team_position = ? AND items != ''", (carril,))
-            for row in cur.fetchall():
-                ids = [x.strip() for x in row["items"].split(",") if x and x.strip() != "0"]
-                for iid in ids:
-                    tags = ITEMS_DATA.get(iid, {}).get("tags", [])
-                    if "Boots" in tags and "Consumable" not in tags and "Vision" not in tags and iid not in ("1001", "2422"):
-                        botas_count[iid] = botas_count.get(iid, 0) + 1
-        if botas_count:
-            if enemigos:
-                bota_inteligente = _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril)
-                build_final.append(bota_inteligente if bota_inteligente else max(botas_count, key=botas_count.get))
-            else:
-                build_final.append(max(botas_count, key=botas_count.get))
+    if not botas_count:
+        cur.execute("SELECT items FROM participantes WHERE team_position = ? AND items != ''", (carril,))
+        for row in cur.fetchall():
+            ids = [x.strip() for x in row["items"].split(",") if x and x.strip() != "0"]
+            for iid in ids:
+                tags = ITEMS_DATA.get(iid, {}).get("tags", [])
+                if "Boots" in tags and "Consumable" not in tags and "Vision" not in tags and iid not in ("1001", "2422"):
+                    botas_count[iid] = botas_count.get(iid, 0) + 1
+    if botas_count:
+        if enemigos:
+            bota_inteligente = _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril)
+            build_final.append(bota_inteligente if bota_inteligente else max(botas_count, key=botas_count.get))
+        else:
+            build_final.append(max(botas_count, key=botas_count.get))
 
     item_supp_mejorado = None
     if carril == "UTILITY":
@@ -329,44 +263,19 @@ def obtenermejoresbaneos(carril, min_partidas=20):
     conn.close()
     return resultados
 
-def _clasificar_dano(champ, tags):
-    """Devuelve 'AD', 'AP' o 'HYBRID' según el tipo de daño principal del campeón."""
-    if champ in AP_EXCEPTIONS:
-        return "AP"
-    if "Mage" in tags or "Support" in tags:
-        return "AP"
-    if champ in AP_TANKS:
-        return "AP"
-    if "Marksman" in tags:
-        return "AD"
-    if "Assassin" in tags:
-        return "AD"
-    if "Fighter" in tags:
-        return "AD"
-    if "Tank" in tags:
-        return "AD"
-    return "AD"
+def _clasificar_dano(champ, tags=None):
+    """Devuelve 'AD', 'AP' o 'HYBRID' usando el nuevo sistema de tags (Pilar 5)."""
+    return obtener_dano(champ)
 
-def _es_frontlane(champ, tags):
+def _es_frontlane(champ, tags=None):
     """Determina si un campeón puede hacer de frontlane (absorber daño/engagear)."""
-    if "Tank" in tags:
-        return True
-    if "Fighter" in tags and champ not in FRONTLANE_EXCLUDE:
-        return True
-    return False
+    return es_tanque(champ) or es_luchador(champ)
 
 def analizar_composicion(aliados):
-    ruta_tags = os.path.join(DATA_DIR, "champion_data.json")
-    tags_data = {}
-    if os.path.exists(ruta_tags):
-        with open(ruta_tags, "r", encoding="utf-8") as f: tags_data = json.load(f)
-
     ad_count, ap_count, tank_count = 0.0, 0.0, 0
 
     for aliado in aliados:
-        tags = tags_data.get(aliado, {}).get("tags", [])
-        
-        dano = _clasificar_dano(aliado, tags)
+        dano = obtener_dano(aliado)
         if dano == "AP":
             ap_count += 1.0
         elif dano == "AD":
@@ -374,8 +283,8 @@ def analizar_composicion(aliados):
         else:  # HYBRID
             ad_count += 0.5
             ap_count += 0.5
-        
-        if _es_frontlane(aliado, tags):
+
+        if es_tanque(aliado) or es_luchador(aliado):
             tank_count += 1
 
     total_dmg = ad_count + ap_count
@@ -385,7 +294,7 @@ def analizar_composicion(aliados):
     else:
         pct_ad, pct_ap = 50, 50
 
-    return pct_ad, pct_ap, tank_count, tags_data
+    return pct_ad, pct_ap, tank_count
 
 def recomendar_picks_vivo(rol, aliados, enemigos):
     conn = obtener_conexion()
@@ -393,19 +302,14 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
     campeones_rol = obtener_campeones_por_rol(rol, min_partidas=20)
     if not campeones_rol: return {}
 
-    pct_ad, pct_ap, tank_count, tags_data = analizar_composicion(aliados)
+    pct_ad, pct_ap, tank_count = analizar_composicion(aliados)
     candidatos = {"Sinergia/Balance": [], "Falta Daño Mágico (AP)": [], "Falta Daño Físico (AD)": [], "Falta Tanque/Engage": []}
     
     for c in campeones_rol:
-        tags = tags_data.get(c, {}).get("tags", [])
-        es_tank = "Tank" in tags or "Fighter" in tags 
-        
-        # Corrección de filtro para Excepciones AP
-        if c in AP_EXCEPTIONS:
-            es_ap, es_ad = True, False
-        else:
-            es_ap = "Mage" in tags or "Support" in tags
-            es_ad = "Marksman" in tags or "Assassin" in tags or "Fighter" in tags
+        dano = obtener_dano(c)
+        es_tank = es_tanque(c) or es_luchador(c)
+        es_ap = dano in ("AP", "HYBRID")
+        es_ad = dano in ("AD", "HYBRID")
 
         wr = 50.0
         if enemigos:

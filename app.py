@@ -23,6 +23,7 @@ from src.recomendador import (obtener_counters, obtener_top_items, obtener_campe
                               obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups, 
                               recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
 from src.lcu_api import LCUConnector
+from src.analizador_fatiga import analizar_fatiga
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -793,6 +794,14 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
         self.l_season.addWidget(self.tb_season_champs)
         self.col_hist.addWidget(self.pnl_season)
+
+        # ===== PANEL DE FATIGA / ESTADO MENTAL =====
+        self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL & FATIGA")
+        self.lbl_fatiga = QLabel("Conecta al cliente para analizar tu rendimiento")
+        self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
+        self.lbl_fatiga.setWordWrap(True)
+        self.l_fatiga.addWidget(self.lbl_fatiga)
+        self.col_hist.addWidget(self.pnl_fatiga)
         
         # Filtro por campeón y modo de juego
         self.fr_filtro = QHBoxLayout()
@@ -826,7 +835,13 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_historial.verticalHeader().setDefaultSectionSize(38)
         self.tb_historial.setIconSize(QSize(28, 28))
         self.tb_historial.verticalHeader().setVisible(False)
-        self.col_hist.addWidget(self.tb_historial, 1)  # Stretch factor 1 para que ocupe el espacio restante
+        self.col_hist.addWidget(self.tb_historial, 1)
+        
+        # Boton "Cargar mas partidas" (lazy loading)
+        self.btn_cargar_mas = QPushButton("📥 Cargar más partidas")
+        self.btn_cargar_mas.clicked.connect(self._cargar_mas_partidas)
+        self.btn_cargar_mas.setVisible(False)
+        self.col_hist.addWidget(self.btn_cargar_mas)  # Stretch factor 1 para que ocupe el espacio restante
         
         l_pnl.addLayout(self.col_hist, 2)
         layout.addWidget(self.pnl_perfil)
@@ -981,6 +996,13 @@ class LoLRecommenderApp(QMainWindow):
         
         games = historial.get("games", {}).get("games", [])
         self.historial_games = games
+        self._renderizar_historial(games)
+        
+        # Mostrar boton de cargar mas si hay mas partidas disponibles
+        self.btn_cargar_mas.setVisible(len(games) >= 20 and len(games) < 100)
+
+    def _renderizar_historial(self, games):
+        """Renderiza la tabla de historial (reusable para lazy loading)."""
         self.tb_historial.setRowCount(0)
         
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
@@ -1116,8 +1138,9 @@ class LoLRecommenderApp(QMainWindow):
                 lbl.setStyleSheet("font-size: 10px; color: #8fa3b8; padding: 4px;")
                 lbl.setToolTip("Sin datos en el historial reciente")
 
-        # --- ESTADÍSTICAS DE LA SEASON (BD LOCAL) ---
+        # --- ESTADÍSTICAS DE LA SEASON + FATIGA ---
         self._cargar_stats_season()
+        self._analizar_fatiga()
 
         # --- Filtro de campeones + modos de juego ---
         champs_usados = sorted(set(
@@ -1139,6 +1162,39 @@ class LoLRecommenderApp(QMainWindow):
         self.cb_filtro_modo.addItem("Todos los modos")
         self.cb_filtro_modo.addItems(modos_usados)
         self.cb_filtro_modo.blockSignals(False)
+
+    def _analizar_fatiga(self):
+        """Analiza fatiga/tilt desde el historial de la LCU."""
+        if not hasattr(self, 'historial_games') or not self.historial_games:
+            return
+        try:
+            fatiga = analizar_fatiga(self.historial_games)
+            estado = fatiga.get("estado", "neutral")
+            colores = {"fresh": GREEN_WR, "neutral": ACCENT_BLUE, "tired": YELLOW_WR, "tilted": RED_WR}
+            color = colores.get(estado, TEXT_WHITE)
+            self.lbl_fatiga.setText(
+                f"{fatiga['mensaje']}\n💡 {fatiga['recomendacion']}"
+            )
+            self.lbl_fatiga.setStyleSheet(f"color: {color}; font-size: 12px; padding: 4px; font-weight: bold;")
+        except:
+            pass
+
+    def _cargar_mas_partidas(self):
+        """Lazy loading: carga 20 partidas mas del historial."""
+        if not self.lcu or not self.lcu.port or not self.perfil_cargado:
+            return
+        offset = len(self.historial_games) if hasattr(self, 'historial_games') else 0
+        perfil = self.lcu.obtener_perfil()
+        if not perfil: return
+        puuid = perfil.get("puuid")
+        if not puuid: return
+        nuevas = self.lcu.obtener_historial(puuid, count=offset + 20)
+        if nuevas:
+            games = nuevas.get("games", {}).get("games", [])
+            if len(games) > len(self.historial_games):
+                self.historial_games = games
+                self._renderizar_historial(self.historial_games)
+                self.btn_cargar_mas.setVisible(len(self.historial_games) < 100)
 
     def filtrar_historial(self, _=None):
         """Filtra la tabla de historial por campeón Y modo de juego."""

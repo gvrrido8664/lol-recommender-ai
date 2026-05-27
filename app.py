@@ -157,6 +157,11 @@ class LoLRecommenderApp(QMainWindow):
         self.timer_lcu = QTimer(self)
         self.timer_lcu.timeout.connect(self.auto_detectar_lcu)
         self.timer_lcu.start(1500)
+        
+        # Timer para detectar partida en vivo (cada 5s)
+        self.timer_ingame = QTimer(self)
+        self.timer_ingame.timeout.connect(self.actualizar_ingame)
+        self.timer_ingame.start(5000)
 
     def aplicar_estilos(self):
         self.setStyleSheet(f"""
@@ -219,15 +224,18 @@ class LoLRecommenderApp(QMainWindow):
         self.tab_counters = QWidget()
         self.tab_ia = QWidget()
         self.tab_bans = QWidget()
+        self.tab_ingame = QWidget()
 
         self.tabview.addTab(self.tab_perfil, "👤 MI PERFIL")
         self.tabview.addTab(self.tab_vivo, "📡 RADAR EN VIVO")
+        self.tabview.addTab(self.tab_ingame, "🎮 IN-GAME")
         self.tabview.addTab(self.tab_counters, "📊 META & BUILDS")
         self.tabview.addTab(self.tab_ia, "🤖 SIMULADOR 1v1")
         self.tabview.addTab(self.tab_bans, "🚫 TIER LIST DE BANS")
 
         self.armar_tab_perfil()
         self.armar_tab_vivo()
+        self.armar_tab_ingame()
         self.armar_tab_counters()
         self.armar_tab_ia()
         self.armar_tab_bans()
@@ -617,6 +625,13 @@ class LoLRecommenderApp(QMainWindow):
             self.labels_wr_rol[rol] = lbl
         self.l_wr_rol.addLayout(self.fr_wr_rol)
         self.col_hist.addWidget(self.pnl_wr_rol)
+
+        # ===== ESTADÍSTICAS DE LA SEASON (BD LOCAL) =====
+        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA (BD Local)")
+        self.lbl_season_stats = QLabel("Cargando datos de la season...")
+        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 6px;")
+        self.l_season.addWidget(self.lbl_season_stats)
+        self.col_hist.addWidget(self.pnl_season)
         
         # Filtro por campeón y modo de juego
         self.fr_filtro = QHBoxLayout()
@@ -939,6 +954,9 @@ class LoLRecommenderApp(QMainWindow):
                 lbl.setText(f"{rol}\n--")
                 lbl.setStyleSheet("font-size: 10px; color: #8fa3b8; padding: 4px;")
                 lbl.setToolTip("Sin datos en el historial reciente")
+
+        # --- ESTADÍSTICAS DE LA SEASON (BD LOCAL) ---
+        self._cargar_stats_season()
 
         # --- Filtro de campeones + modos de juego ---
         champs_usados = sorted(set(
@@ -1288,6 +1306,27 @@ class LoLRecommenderApp(QMainWindow):
             card_layout.addStretch()
             layout.addWidget(card)
 
+    def _cargar_stats_season(self):
+        """Carga estadisticas de la season desde la BD local (21K+ partidas)."""
+        try:
+            conn = obtener_conexion()
+            cur = conn.cursor()
+            # Total de partidas en la BD
+            cur.execute("SELECT COUNT(*) FROM matches")
+            total_matches = cur.fetchone()[0]
+            # Distribucion de parches
+            cur.execute("SELECT patch, COUNT(*) FROM matches WHERE patch IS NOT NULL GROUP BY patch ORDER BY COUNT(*) DESC LIMIT 3")
+            patches = cur.fetchall()
+            conn.close()
+            patches_str = " | ".join([f"{p['patch']}: {p[1]} partidas" for p in patches]) if patches else "sin datos de parches"
+            self.lbl_season_stats.setText(
+                f"📦 {total_matches:,} partidas analizadas en la BD local\n"
+                f"📅 Parches: {patches_str}\n"
+                f"💡 Datos usados para entrenar modelos IA y calcular estadísticas"
+            )
+        except Exception as e:
+            self.lbl_season_stats.setText("Error al cargar datos de la season")
+
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
         clear_layout(self.fr_picks_icons)
         sugerencias = recomendar_picks_vivo(rol, aliados, enemigos)
@@ -1312,6 +1351,124 @@ class LoLRecommenderApp(QMainWindow):
             cat_layout.addLayout(grid_icons)
             self.fr_picks_icons.addLayout(cat_layout, 0, col_idx)
             col_idx += 1
+
+    # ================= IN-GAME =================
+    def armar_tab_ingame(self):
+        layout = QVBoxLayout(self.tab_ingame)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+
+        self.lbl_ingame_status = QLabel("🎮 Esperando partida...\nAbre una partida de LoL para ver datos en vivo")
+        self.lbl_ingame_status.setAlignment(Qt.AlignCenter)
+        self.lbl_ingame_status.setStyleSheet("color: gray; font-size: 16px; padding: 40px;")
+        layout.addWidget(self.lbl_ingame_status)
+
+        # Tabla de jugadores
+        self.tb_ingame = QTableWidget()
+        self.tb_ingame.setColumnCount(6)
+        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "Invocador", "Rango", "WR Champ", "KDA", "Racha"])
+        self.tb_ingame.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tb_ingame.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tb_ingame.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tb_ingame.verticalHeader().setDefaultSectionSize(42)
+        self.tb_ingame.setVisible(False)
+        layout.addWidget(self.tb_ingame)
+
+        # Stats de composicion
+        self.lbl_ingame_comp = QLabel("")
+        self.lbl_ingame_comp.setAlignment(Qt.AlignCenter)
+        self.lbl_ingame_comp.setStyleSheet("color: #8fa3b8; font-size: 12px; margin-top: 8px;")
+        layout.addWidget(self.lbl_ingame_comp)
+
+    def actualizar_ingame(self):
+        """Detecta si hay partida en vivo y actualiza la tabla de jugadores."""
+        if not self.lcu or not self.lcu.port:
+            return
+        fase = self.lcu.obtener_fase_juego()
+        if fase != "InProgress":
+            self.lbl_ingame_status.setVisible(True)
+            self.lbl_ingame_status.setText("🎮 Esperando partida...")
+            self.tb_ingame.setVisible(False)
+            self.lbl_ingame_comp.setText("")
+            return
+
+        # Partida en vivo - obtener jugadores
+        jugadores = self.lcu.obtener_summoners_partida()
+        if not jugadores:
+            self.lbl_ingame_status.setText("🎮 Partida detectada - cargando jugadores...")
+            return
+
+        self.lbl_ingame_status.setVisible(False)
+        self.tb_ingame.setVisible(True)
+
+        # Separar equipos
+        aliados_raw = [j for j in jugadores if j.get("team") == "ORDER"]
+        enemigos_raw = [j for j in jugadores if j.get("team") == "CHAOS"]
+
+        self.tb_ingame.setRowCount(0)
+
+        for team_name, team_players, bg in [("🔵 ALIADOS", aliados_raw, ALLY_BG), ("🔴 ENEMIGOS", enemigos_raw, ENEMY_BG)]:
+            # Fila de encabezado de equipo
+            row = self.tb_ingame.rowCount()
+            self.tb_ingame.insertRow(row)
+            hdr = QTableWidgetItem(team_name)
+            hdr.setBackground(QColor(bg))
+            hdr.setForeground(QColor(BORDER_GOLD))
+            font = hdr.font(); font.setBold(True); hdr.setFont(font)
+            self.tb_ingame.setItem(row, 0, hdr)
+            for c in range(1, 6):
+                empty = QTableWidgetItem("")
+                empty.setBackground(QColor(bg))
+                self.tb_ingame.setItem(row, c, empty)
+
+            for j in team_players:
+                cid = str(j.get("championId", 0))
+                cname = self.procesar_nombre_champ(cid, 0) or "?"
+                sname = j.get("summonerId", "???")
+                
+                row = self.tb_ingame.rowCount()
+                self.tb_ingame.insertRow(row)
+
+                # Campeon con icono
+                item_c = QTableWidgetItem(f"  {self._nombre_display(cname)}")
+                icon_p = self.descargar_imagen(cname, "champ")
+                if icon_p: item_c.setIcon(QIcon(icon_p))
+                self.tb_ingame.setItem(row, 0, item_c)
+
+                # Invocador
+                self.tb_ingame.setItem(row, 1, QTableWidgetItem(sname))
+
+                # WR en el campeon (de DB local)
+                wr_champ = self._wr_champ_db(cname)
+                item_wr = QTableWidgetItem(wr_champ)
+                item_wr.setForeground(QColor(GREEN_WR if wr_champ != "--" and float(wr_champ.replace("%","")) >= 50 else RED_WR))
+                self.tb_ingame.setItem(row, 2, QTableWidgetItem("--"))  # Rango (requiere Riot API)
+                self.tb_ingame.setItem(row, 3, item_wr)
+                self.tb_ingame.setItem(row, 4, QTableWidgetItem("--"))  # KDA
+                self.tb_ingame.setItem(row, 5, QTableWidgetItem("--"))  # Racha
+
+        # Composicion
+        aliados_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), 0) for j in aliados_raw if self.procesar_nombre_champ(str(j.get("championId",0)),0)]
+        enemigos_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), 0) for j in enemigos_raw if self.procesar_nombre_champ(str(j.get("championId",0)),0)]
+        if len(aliados_nombres) == 5 and len(enemigos_nombres) == 5:
+            ad, ap, tanks = analizar_composicion(aliados_nombres)
+            ade, ape, tankse = analizar_composicion(enemigos_nombres)
+            self.lbl_ingame_comp.setText(
+                f"ALIADOS: AD {ad}% / AP {ap}% ({tanks} front)  |  "
+                f"ENEMIGOS: AD {ade}% / AP {ape}% ({tankse} front)"
+            )
+
+    def _wr_champ_db(self, champion):
+        """Devuelve el WR de un campeon desde la DB local."""
+        try:
+            conn = obtener_conexion()
+            cur = conn.cursor()
+            cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=? AND win IS NOT NULL", (champion,))
+            row = cur.fetchone()
+            conn.close()
+            if row and row[0]: return f"{row[0]}%"
+        except: pass
+        return "--"
 
     # ================= META & BUILDS =================
     def armar_tab_counters(self):

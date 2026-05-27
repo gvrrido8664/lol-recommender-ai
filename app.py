@@ -1519,12 +1519,17 @@ class LoLRecommenderApp(QMainWindow):
                 else:
                     self.lbl_season_stats.setText("🎮 Juega partidas ranked para ver tus estadísticas")
 
-            # Top campeones desde historial extendido (100 partidas)
-            historial = self.lcu.obtener_historial_extendido(cantidad=100)
+            # Top campeones desde historial extendido (pagina hasta 500 partidas)
+            all_games = []
+            for offset in range(0, 500, 100):
+                batch = self.lcu.obtener_historial_extendido(cantidad=100, inicio=offset)
+                if not batch: break
+                all_games.extend(batch)
+                if len(batch) < 100: break  # no hay mas partidas
             self.tb_season_champs.setRowCount(0)
-            if historial:
+            if all_games:
                 champ_stats = {}
-                for g in historial:
+                for g in all_games:
                     part = g.get("participants", [{}])[0]
                     stats = part.get("stats", {})
                     cid = str(part.get("championId", "0"))

@@ -226,70 +226,77 @@ def procesar_jugador(puuid: str) -> list:
     match_ids = peticion_segura(url)
     return match_ids if match_ids else []
 
-def descargar_partida(match_id: str, conn: sqlite3.Connection) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM matches WHERE match_id=?", (match_id,))
-    if cur.fetchone(): return False
+def descargar_partida(match_id: str) -> bool:
+    """Descarga una partida y la guarda en BD. Cada hilo usa su propia conexión."""
+    conn = obtener_conexion()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM matches WHERE match_id=?", (match_id,))
+        if cur.fetchone(): return False
 
-    url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
-    data = peticion_segura(url)
-    if not data or "info" not in data: return False
-    info = data["info"]
-    if info.get("gameDuration", 0) < 600: return False
+        url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        data = peticion_segura(url)
+        if not data or "info" not in data: return False
+        info = data["info"]
+        if info.get("gameDuration", 0) < 600: return False
 
-    version = info.get("gameVersion", "0")
-    parts = version.split(".")
-    patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
-    if patch != PARCHE_ACTUAL: return False
+        version = info.get("gameVersion", "0")
+        parts = version.split(".")
+        patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
+        if patch != PARCHE_ACTUAL: return False
 
-    url_tl = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
-    timeline = peticion_segura(url_tl)
-    boots_map, supp_map = {}, {}
-    if timeline and "info" in timeline:
-        for frame in timeline["info"].get("frames", []):
-            for ev in frame.get("events", []):
-                if ev.get("type") != "ITEM_PURCHASED": continue
-                pid = ev.get("participantId"); iid = str(ev.get("itemId", 0))
-                if not pid or iid == "0": continue
-                if es_bota(iid): boots_map[pid] = iid
-                elif es_item_supp_final(iid): supp_map[pid] = iid
+        url_tl = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+        timeline = peticion_segura(url_tl)
+        boots_map, supp_map = {}, {}
+        if timeline and "info" in timeline:
+            for frame in timeline["info"].get("frames", []):
+                for ev in frame.get("events", []):
+                    if ev.get("type") != "ITEM_PURCHASED": continue
+                    pid = ev.get("participantId"); iid = str(ev.get("itemId", 0))
+                    if not pid or iid == "0": continue
+                    if es_bota(iid): boots_map[pid] = iid
+                    elif es_item_supp_final(iid): supp_map[pid] = iid
 
-    champions = []
-    with transaction(conn):
-        cur.execute("INSERT INTO matches(match_id,game_version,game_duration,patch) VALUES(?,?,?,?)",
-                    (match_id, version, info.get("gameDuration", 0), patch))
-        for p in info.get("participants", []):
-            raw = p.get("championName")
-            champ = raw if raw != "MonkeyKing" else "Wukong"
-            champions.append(champ)
+        champions = []
+        with transaction(conn):
+            cur.execute("INSERT INTO matches(match_id,game_version,game_duration,patch) VALUES(?,?,?,?)",
+                        (match_id, version, info.get("gameDuration", 0), patch))
+            for p in info.get("participants", []):
+                raw = p.get("championName")
+                champ = raw if raw != "MonkeyKing" else "Wukong"
+                champions.append(champ)
 
-            items = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
-            pid = p.get("participantId"); pos = p.get("teamPosition", "")
-            if pid in boots_map and not any(es_bota(i) for i in items): items.append(boots_map[pid])
-            if pos == "UTILITY" and pid in supp_map and not any(es_item_supp_final(i) for i in items): items.append(supp_map[pid])
+                items = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
+                pid_p = p.get("participantId"); pos = p.get("teamPosition", "")
+                if pid_p in boots_map and not any(es_bota(i) for i in items): items.append(boots_map[pid_p])
+                if pos == "UTILITY" and pid_p in supp_map and not any(es_item_supp_final(i) for i in items): items.append(supp_map[pid_p])
 
-            styles = p.get("perks", {}).get("styles", [])
-            runas = []
-            for s in styles:
-                runas.append(str(s.get("style")))
-                for sel in s.get("selections", []): runas.append(str(sel.get("perk")))
-            sp = p.get("perks", {}).get("statPerks", {})
-            if sp:
-                for k in ("defense", "flex", "offense"): runas.append(str(sp.get(k, "")))
-            runas_str = ",".join(r for r in runas if r)
-            spells = f"{p.get('summoner1Id',0)},{p.get('summoner2Id',0)}"
+                styles = p.get("perks", {}).get("styles", [])
+                runas = []
+                for s in styles:
+                    runas.append(str(s.get("style")))
+                    for sel in s.get("selections", []): runas.append(str(sel.get("perk")))
+                sp = p.get("perks", {}).get("statPerks", {})
+                if sp:
+                    for k in ("defense", "flex", "offense"): runas.append(str(sp.get(k, "")))
+                runas_str = ",".join(r for r in runas if r)
+                spells = f"{p.get('summoner1Id',0)},{p.get('summoner2Id',0)}"
 
-            cur.execute("""INSERT INTO participantes(match_id,champion,team_position,team,win,items,runes,spells,kills,deaths,assists)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                        (match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
-                         ",".join(items), runas_str, spells, p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)))
-    DASH.add_match(match_id, champions, len(json.dumps(data)))
-    return True
+                cur.execute("""INSERT INTO participantes(match_id,champion,team_position,team,win,items,runes,spells,kills,deaths,assists)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                            (match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
+                             ",".join(items), runas_str, spells, p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)))
+        DASH.add_match(match_id, champions, len(json.dumps(data)))
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
 
-def descargar_lote(match_ids: list, conn: sqlite3.Connection) -> int:
+def descargar_lote(match_ids: list) -> int:
     descargadas = 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(descargar_partida, mid, conn): mid for mid in match_ids}
+        futures = {pool.submit(descargar_partida, mid): mid for mid in match_ids}
         for future in as_completed(futures):
             try:
                 if future.result(): descargadas += 1
@@ -372,7 +379,7 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
             while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
                 lote = buffer_match_ids[:BATCH_SIZE]
                 buffer_match_ids = buffer_match_ids[BATCH_SIZE:]
-                n = descargar_lote(lote, conn)
+                n = descargar_lote(lote)
                 total_descargadas += n
                 if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
                     last_checkpoint = total_descargadas

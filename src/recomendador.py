@@ -323,7 +323,17 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
             placeholders = ",".join(["?"]*len(enemigos))
             cur.execute(f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1), COUNT(*) FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id WHERE p1.champion = ? AND p1.team_position = ? AND p2.champion IN ({placeholders}) AND p1.team != p2.team", [c, rol] + enemigos)
             row = cur.fetchone()
-            if row and row[0]: wr = (row[0] * row[1] + 50.0 * (5 - row[1])) / 5 if row[1] < 5 else row[0]
+            if row and row[0]:
+                n = row[1]
+                wr_raw = row[0]
+                if n < 3:
+                    # Suavizado bayesiano ligero: prior de la BD global (no 50% fijo)
+                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=?", (c,))
+                    prior_row = cur.fetchone()
+                    prior = float(prior_row[0]) if prior_row and prior_row[0] else 50.0
+                    wr = round((wr_raw * n + prior * (3 - n)) / 3, 1)
+                else:
+                    wr = wr_raw
             
         if pct_ad >= 60 and es_ap: candidatos["Falta Daño Mágico (AP)"].append((c, wr, "Aporta AP"))
         elif pct_ap >= 60 and es_ad: candidatos["Falta Daño Físico (AD)"].append((c, wr, "Aporta AD"))
@@ -389,7 +399,7 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
             if row and row["wr"] is not None:
                 # Suavizar con prior (50% WR) si hay pocas partidas
                 n = row["partidas"]
-                wr = (row["wr"] * n + 50.0 * max(0, 10 - n)) / max(10, n)
+                wr = (row["wr"] * n + 50.0 * max(0, 5 - n)) / max(5, n)
                 wr_por_lane.append(wr)
             else:
                 wr_por_lane.append(50.0)

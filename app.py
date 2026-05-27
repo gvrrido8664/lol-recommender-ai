@@ -1382,14 +1382,30 @@ class LoLRecommenderApp(QMainWindow):
                 if j.get("cellId") == mi_celda: mi_campeon = champ
                 
             enemigo_lane = None
-            for j in draft.get("theirTeam", []):
+            posiciones = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+            # Normalizador de posiciones (LCU puede devolver SUPPORT en vez de UTILITY)
+            def _normalizar_pos(pos_str):
+                p = (pos_str or "").upper().strip()
+                mapa = {"SUPPORT": "UTILITY", "ADC": "BOTTOM", "JUNGLA": "JUNGLE", "MID": "MIDDLE"}
+                return mapa.get(p, p) if p in posiciones or p in mapa else (posiciones[len(picks_en)] if len(picks_en) < 5 else "MIDDLE")
+
+            enemigos_procesados = []
+            for idx, j in enumerate(draft.get("theirTeam", [])):
                 champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
                 if champ:
                     picks_en.append(champ)
-                    pos_en.append(j.get("assignedPosition", "MIDDLE"))
-                    # Detectar el rival de linea (misma posicion asignada)
-                    if j.get("assignedPosition", "").upper() == rol_api.upper():
+                    pos = _normalizar_pos(j.get("assignedPosition", ""))
+                    pos_en.append(pos)
+                    enemigos_procesados.append((champ, pos, idx))
+                    if pos == rol_api:
                         enemigo_lane = champ
+            # Fallback por indice si no encontro por posicion
+            if not enemigo_lane:
+                mi_idx = next((i for i, j in enumerate(draft.get("myTeam", [])) if j.get("cellId") == mi_celda), 0)
+                for champ, pos, idx in enemigos_procesados:
+                    if idx == mi_idx and mi_idx < 5:
+                        enemigo_lane = champ
+                        break
                 
             if picks_al != self.last_aliados or picks_en != self.last_enemigos:
                 self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
@@ -1459,6 +1475,16 @@ class LoLRecommenderApp(QMainWindow):
                         self.fr_counters_vivo.addWidget(lbl)
                 else:
                     self.panel_counters_vivo.label_title.setText("COUNTERS (esperando rival...)")
+                    # Dropdown manual para pickear rival
+                    if not hasattr(self, 'cb_rival_manual'):
+                        self.cb_rival_manual = QComboBox()
+                        self.cb_rival_manual.setMinimumWidth(100)
+                        self.cb_rival_manual.addItem("Seleccionar rival...")
+                        self.cb_rival_manual.addItems(sorted(self.nombres_campeones_global))
+                        self.cb_rival_manual.currentTextChanged.connect(
+                            lambda t: self._actualizar_counters_manual(rol_api, t) if t != "Seleccionar rival..." else None
+                        )
+                        self.l_counters_vivo.addWidget(self.cb_rival_manual)
 
                 if mi_campeon:
                     ids_runas = obtener_top_runas(mi_campeon, rol_api)
@@ -1469,6 +1495,21 @@ class LoLRecommenderApp(QMainWindow):
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)
         except Exception as e:
             pass
+
+    def _actualizar_counters_manual(self, rol_api, rival_nombre):
+        """Actualiza counters cuando el usuario selecciona un rival manualmente."""
+        rival_db = self._nombre_db(rival_nombre)
+        if not rival_db or rival_db == "Seleccionar rival...": return
+        clear_layout(self.fr_counters_vivo)
+        self.panel_counters_vivo.label_title.setText(f"COUNTERS vs {self._nombre_display(rival_db).upper()}")
+        counters = obtener_counters(rol_api, rival_db, min_partidas=5)
+        counters_filtrados = [(c, wr, p) for c, wr, p in counters 
+                             if c not in self.last_aliados and c not in self.last_enemigos][:6]
+        for i, (c, wr, p) in enumerate(counters_filtrados):
+            self.renderizar_icono(c, "champ", self.fr_counters_vivo, 0, i,
+                f"{self._nombre_display(c)}\nWR: {wr}% ({p} partidas)", size=35)
+        if not counters_filtrados:
+            lbl = QLabel("Sin datos"); lbl.setStyleSheet("color: gray;"); self.fr_counters_vivo.addWidget(lbl)
 
     def mostrar_equipo_vivo(self, layout, picks, is_ally=True):
         clear_layout(layout)
@@ -1615,6 +1656,7 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_ingame.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_ingame.setSelectionMode(QAbstractItemView.NoSelection)
         self.tb_ingame.verticalHeader().setDefaultSectionSize(42)
+        self.tb_ingame.verticalHeader().setVisible(False)
         self.tb_ingame.setVisible(False)
         layout.addWidget(self.tb_ingame)
 

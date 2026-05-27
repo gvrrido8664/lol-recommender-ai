@@ -63,17 +63,20 @@ class LCUConnector:
         return None
 
     def obtener_summoners_partida(self):
-        """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName."""
+        """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName.
+        Usa playerChampionSelections (funciona en champ select) o teamOne/teamTwo (funciona in-game)."""
         if not self.port: return []
         try:
             url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
             res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                game_data = data.get("gameData", {})
-                players = []
-                selections = game_data.get("playerChampionSelections", [])
-                queue_info = game_data.get("queue", {})
+            if res.status_code != 200: return []
+            data = res.json()
+            game_data = data.get("gameData", {})
+            players = []
+
+            # Metodo 1: playerChampionSelections (funciona en champ select y a veces in-game)
+            selections = game_data.get("playerChampionSelections", [])
+            if selections:
                 for sel in selections:
                     players.append({
                         "summonerId": sel.get("summonerInternalName", ""),
@@ -85,6 +88,36 @@ class LCUConnector:
                         "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
                     })
                 return players
+
+            # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
+            for team_key, team_name in [("teamOne", "ORDER"), ("teamTwo", "CHAOS")]:
+                team = game_data.get(team_key, {})
+                if isinstance(team, dict):
+                    # team tiene summonerName, championId, etc?
+                    for summoner in team.get("summoners", team.get("players", [])):
+                        if isinstance(summoner, dict):
+                            players.append({
+                                "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                                "championId": summoner.get("championId", 0),
+                                "spell1Id": summoner.get("spell1Id", 0),
+                                "spell2Id": summoner.get("spell2Id", 0),
+                                "team": team_name,
+                                "skinIndex": 0,
+                                "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                            })
+                elif isinstance(team, list):
+                    for summoner in team:
+                        if isinstance(summoner, dict):
+                            players.append({
+                                "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                                "championId": summoner.get("championId", 0),
+                                "spell1Id": summoner.get("spell1Id", 0),
+                                "spell2Id": summoner.get("spell2Id", 0),
+                                "team": team_name,
+                                "skinIndex": 0,
+                                "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                            })
+            return players
         except: pass
         return []
 

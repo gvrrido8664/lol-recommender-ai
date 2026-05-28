@@ -347,8 +347,8 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
     return finales
 
 def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None):
-    """Calcula el winrate estimado de un equipo 5v5 usando matchups por línea.
-    Empareja cada aliado con su enemigo de misma posición para mayor precisión.
+    """Calcula el winrate estimado de un equipo 5v5 usando matchups por línea
+    + stats comparativas de composición (CC total, movilidad, escalado, daño).
     """
     if len(aliados) != 5 or len(enemigos) != 5:
         return 50.0
@@ -386,7 +386,6 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
                 break
         
         if enemigo_lane:
-            # WR específico del matchup por línea
             cur.execute("""
                 SELECT ROUND(SUM(p1.win)*100.0/COUNT(*), 1) as wr, COUNT(*) as partidas
                 FROM participantes p1
@@ -397,7 +396,6 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
             """, (aliado, pos_al, enemigo_lane, pos_norm))
             row = cur.fetchone()
             if row and row["wr"] is not None:
-                # Suavizar con prior (50% WR) si hay pocas partidas
                 n = row["partidas"]
                 wr = (row["wr"] * n + 50.0 * max(0, 5 - n)) / max(5, n)
                 wr_por_lane.append(wr)
@@ -407,6 +405,48 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
             wr_por_lane.append(50.0)
     
     conn.close()
+    
+    # ═══════ FEATURE ENGINEERING 5v5: stats de composición ═══════
+    try:
+        from .tags_champions import obtener_tag
+        
+        cc_aliado_total = sum(obtener_tag(c).get("cc_level", 1) for c in aliados)
+        cc_enemigo_total = sum(obtener_tag(c).get("cc_level", 1) for c in enemigos)
+        
+        _EARLY = {"weak": 1, "neutral": 2, "strong": 3}
+        _SCALE = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
+        early_aliado = sum(_EARLY.get(obtener_tag(c).get("early_power", "neutral"), 2) for c in aliados)
+        early_enemigo = sum(_EARLY.get(obtener_tag(c).get("early_power", "neutral"), 2) for c in enemigos)
+        scale_aliado = sum(_SCALE.get(obtener_tag(c).get("scaling", "mid"), 2) for c in aliados)
+        scale_enemigo = sum(_SCALE.get(obtener_tag(c).get("scaling", "mid"), 2) for c in enemigos)
+        
+        tanks_aliado = sum(1 for c in aliados if obtener_tag(c).get("champion_class") == "Tank")
+        tanks_enemigo = sum(1 for c in enemigos if obtener_tag(c).get("champion_class") == "Tank")
+        
+        ad_aliado = sum(1 for c in aliados if obtener_tag(c).get("damage_type") == "AD")
+        ap_aliado = sum(1 for c in aliados if obtener_tag(c).get("damage_type") == "AP")
+        ad_enemigo = sum(1 for c in enemigos if obtener_tag(c).get("damage_type") == "AD")
+        ap_enemigo = sum(1 for c in enemigos if obtener_tag(c).get("damage_type") == "AP")
+        
+        # Ajustes de composición (pesos calibrados)
+        ajuste_cc = min(5, (cc_aliado_total - cc_enemigo_total) * 0.8)
+        ajuste_early = min(3, (early_aliado - early_enemigo) * 0.6)
+        ajuste_scale = min(3, (scale_aliado - scale_enemigo) * 0.5)
+        
+        balance_aliado = 1.0 if (ad_aliado >= 2 and ap_aliado >= 2) else 0.0
+        balance_enemigo = 1.0 if (ad_enemigo >= 2 and ap_enemigo >= 2) else 0.0
+        ajuste_balance = (balance_aliado - balance_enemigo) * 1.5
+        
+        ajuste_tank = (tanks_aliado - tanks_enemigo) * 1.2
+        
+        ajuste_total = ajuste_cc + ajuste_early + ajuste_scale + ajuste_balance + ajuste_tank
+        
+        if wr_por_lane:
+            wr_base = sum(wr_por_lane) / len(wr_por_lane)
+            wr_final = max(35, min(65, wr_base + ajuste_total))
+            return round(wr_final, 1)
+    except Exception:
+        pass
     
     if wr_por_lane:
         return round(sum(wr_por_lane) / len(wr_por_lane), 1)

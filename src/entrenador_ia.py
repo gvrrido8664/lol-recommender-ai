@@ -12,9 +12,168 @@ sys.path.append(BASE_DIR)
 
 from src.db_manager import obtener_conexion, DATA_DIR
 from src.riot_api import cargar_campeones
+from src.tags_champions import (
+    obtener_tag, obtener_nivel_cc, obtener_dano, obtener_poder_temprano,
+    obtener_escalado, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte
+)
 
 MODELO_PATH = os.path.join(DATA_DIR, "modelo_ia.pkl")
 MODELO_1V1_PATH = os.path.join(DATA_DIR, "modelo_1v1.pkl")
+
+# ═══════════════════════════════════════════════════════════════
+# FEATURE ENGINEERING — CONVERSIÓN CATEGÓRICA → NUMÉRICA
+# ═══════════════════════════════════════════════════════════════
+
+_EARLY_MAP = {"weak": 1, "neutral": 2, "strong": 3}
+_SCALING_MAP = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
+_DAMAGE_MAP = {"AD": 0, "AP": 1, "HYBRID": 2}
+# Orden para one-hot de clase
+_CLASSES = ["Tank", "Fighter", "Assassin", "Mage", "Marksman", "Support"]
+_CLASS_DICT = {c: i for i, c in enumerate(_CLASSES)}  # Tank=0, Fighter=1, ...
+
+# ═══════════════════════════════════════════════════════════════
+# FEATURE ENGINEERING — VECTOR COMPARATIVO
+# ═══════════════════════════════════════════════════════════════
+
+def extraer_features_comparativas(aliado: str, enemigo: str) -> np.ndarray:
+    """
+    Construye un vector de características comparativas entre dos campeones.
+    
+    Features (15 dimensiones):
+      0: delta_cc          (cc_aliado - cc_enemigo)
+      1: delta_mobility    (movilidad_aliado - movilidad_enemigo)
+      2: delta_early       (early_power_aliado - early_power_enemigo)
+      3: delta_scaling     (scaling_aliado - scaling_enemigo)
+      4: aliado_es_tanque  (1/0)
+      5: enemigo_es_tanque (1/0)
+      6: aliado_tiene_cc_alto (cc >= 4)
+      7: enemigo_tiene_cc_alto (cc >= 4)
+      8: aliado_burst_vs_tanque (aliado burst y enemigo es tanque)
+      9: aliado_tank_vs_true_dmg (aliado es tanque y enemigo tiene daño verdadero implícito)
+     10: mismo_tipo_dano  (1 si ambos son AD o ambos AP)
+     11: aliado_early_strong (1 si early_power == strong)
+     12: enemigo_early_strong
+     13: aliado_hiperescala (1 si scaling == hyper)
+     14: enemigo_hiperescala
+    """
+    tag_a = obtener_tag(aliado)
+    tag_e = obtener_tag(enemigo)
+
+    # Extraer valores base
+    cc_a = tag_a.get("cc_level", 1)
+    cc_e = tag_e.get("cc_level", 1)
+    mob_a = tag_a.get("mobility", 2)
+    mob_e = tag_e.get("mobility", 2)
+    early_a = _EARLY_MAP.get(tag_a.get("early_power", "neutral"), 2)
+    early_e = _EARLY_MAP.get(tag_e.get("early_power", "neutral"), 2)
+    scale_a = _SCALING_MAP.get(tag_a.get("scaling", "mid"), 2)
+    scale_e = _SCALING_MAP.get(tag_e.get("scaling", "mid"), 2)
+    dmg_a = tag_a.get("damage_type", "AD")
+    dmg_e = tag_e.get("damage_type", "AD")
+    class_a = tag_a.get("champion_class", "Fighter")
+    class_e = tag_e.get("champion_class", "Fighter")
+    sub_a = tag_a.get("sub_class", "")
+    sub_e = tag_e.get("sub_class", "")
+    profile_a = tag_a.get("damage_profile", "dps")
+    profile_e = tag_e.get("damage_profile", "dps")
+
+    features = np.zeros(15, dtype=np.float32)
+
+    # 0-3: Deltas
+    features[0] = cc_a - cc_e
+    features[1] = mob_a - mob_e
+    features[2] = early_a - early_e
+    features[3] = scale_a - scale_e
+
+    # 4-5: Es tanque
+    features[4] = 1.0 if class_a == "Tank" else 0.0
+    features[5] = 1.0 if class_e == "Tank" else 0.0
+
+    # 6-7: CC alto (>=4)
+    features[6] = 1.0 if cc_a >= 4 else 0.0
+    features[7] = 1.0 if cc_e >= 4 else 0.0
+
+    # 8: Aliado burst vs enemigo tanque
+    features[8] = 1.0 if (profile_a == "burst" and class_e == "Tank") else 0.0
+
+    # 9: Aliado tanque vs enemigo con daño verdadero (clases que counterean tanks)
+    tank_melters = {"Assassin", "Fighter"}
+    features[9] = 1.0 if (class_a == "Tank" and class_e in tank_melters) else 0.0
+
+    # 10: Mismo tipo de daño (los dos AD o los dos AP)
+    features[10] = 1.0 if (dmg_a == dmg_e and dmg_a != "HYBRID") else 0.0
+
+    # 11-12: Early strong
+    features[11] = 1.0 if tag_a.get("early_power") == "strong" else 0.0
+    features[12] = 1.0 if tag_e.get("early_power") == "strong" else 0.0
+
+    # 13-14: Hiperescala
+    features[13] = 1.0 if tag_a.get("scaling") == "hyper" else 0.0
+    features[14] = 1.0 if tag_e.get("scaling") == "hyper" else 0.0
+
+    return features
+
+# ═══════════════════════════════════════════════════════════════
+# INTERPRETE MATEMÁTICO
+# ═══════════════════════════════════════════════════════════════
+
+def interpretar_features(aliado: str, enemigo: str) -> list:
+    """
+    Lee el vector comparativo y devuelve una lista de ventajas/desventajas
+    clave en lenguaje humano.
+    """
+    feats = extraer_features_comparativas(aliado, enemigo)
+    insights = []
+
+    delta_cc = int(feats[0])
+    delta_mob = int(feats[1])
+    delta_early = int(feats[2])
+    delta_scale = int(feats[3])
+
+    if delta_cc >= 3:
+        insights.append(f"🔒 Dominio total de CC (+{delta_cc}): {aliado} anula las opciones de {enemigo}")
+    elif delta_cc >= 1:
+        insights.append(f"🔒 Ventaja de CC (+{delta_cc}): {aliado} controla mejor las peleas")
+    elif delta_cc <= -3:
+        insights.append(f"⚠️ Déficit crítico de CC ({delta_cc}): {enemigo} te supera ampliamente en control")
+    elif delta_cc <= -1:
+        insights.append(f"⚠️ Desventaja de CC ({delta_cc}): {enemigo} tiene mejor control de masas")
+
+    if delta_mob >= 3:
+        insights.append(f"👟 Dominio de movilidad (+{delta_mob}): {aliado} dicta el ritmo del enfrentamiento")
+    elif delta_mob >= 1:
+        insights.append(f"👟 Ventaja de movilidad (+{delta_mob}): {aliado} puede esquivar y reposicionarse mejor")
+    elif delta_mob <= -2:
+        insights.append(f"🐌 Desventaja de movilidad ({delta_mob}): {enemigo} es significativamente más ágil")
+
+    if delta_early >= 1:
+        insights.append(f"⚡ Pico de poder más temprano (+{delta_early}): {aliado} domina el early game")
+    elif delta_early <= -1:
+        insights.append(f"📉 Poder temprano inferior ({delta_early}): {enemigo} es más fuerte al inicio")
+
+    if delta_scale >= 1:
+        insights.append(f"📈 Mejor escalado (+{delta_scale}): {aliado} supera a {enemigo} en late game")
+    elif delta_scale <= -1:
+        insights.append(f"⏳ Escalado inferior ({delta_scale}): {enemigo} escala mejor que tú. Cierra la partida rápido")
+
+    # Tanque vs burst
+    if feats[8] == 1.0:
+        insights.append(f"🛡️ {aliado} es burst vs Tanque: {enemigo} absorbe tu daño inicial con facilidad")
+    if feats[9] == 1.0:
+        insights.append(f"⚔️ {enemigo} counterea tanques: tu armadura/resistencia natural es menos efectiva")
+
+    if feats[10] == 1.0:
+        insights.append(f"🔄 Ambos comparten tipo de daño — las builds defensivas son más eficientes")
+
+    if feats[13] == 1.0:
+        insights.append(f"🐉 {aliado} es hyper-carry: juega seguro en early y escala imparable")
+    if feats[14] == 1.0:
+        insights.append(f"🐉 {enemigo} es hyper-carry: acaba la partida antes de que escale")
+
+    if not insights:
+        insights.append("⚖️ Enfrentamiento equilibrado: la habilidad individual y el macro decidirán")
+
+    return insights
 
 def obtener_lista_campeones():
     """Obtiene la lista global y ordenada de campeones, idéntica a app.py para evitar desajustes de matrices."""
@@ -112,6 +271,7 @@ def entrenar_modelos():
 
 def entrenar_modelo_1v1():
     print("\n🧠 Entrenando modelo binario (Predicción 1v1 y Winrate predictivo)...")
+    print("   ⚡ FEATURE ENGINEERING: usando stats comparativas de tags_champions")
     conn = obtener_conexion()
     roles = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
     modelos_binarios = {}
@@ -137,30 +297,45 @@ def entrenar_modelo_1v1():
             continue
 
         print(f"  ✅ Entrenando {rol} con {len(df)} enfrentamientos directos...")
-        X = np.zeros((len(df), n * 2))
+
+        # FEATURE VECTOR: one-hot campeones (aliado + enemigo) + 15 features comparativas
+        n_features_comparativas = 15
+        X = np.zeros((len(df), n * 2 + n_features_comparativas), dtype=np.float32)
         y = df['win'].values
 
         for idx, row in df.iterrows():
-            if row['aliado'] in todos_campeones:
-                X[idx, todos_campeones.index(row['aliado'])] = 1
-            if row['enemigo'] in todos_campeones:
-                X[idx, n + todos_campeones.index(row['enemigo'])] = 1
+            aliado = row['aliado']
+            enemigo = row['enemigo']
+
+            # One-hot de campeones
+            if aliado in todos_campeones:
+                X[idx, todos_campeones.index(aliado)] = 1
+            if enemigo in todos_campeones:
+                X[idx, n + todos_campeones.index(enemigo)] = 1
+
+            # Features comparativas (deltas + interacciones)
+            try:
+                feats = extraer_features_comparativas(aliado, enemigo)
+                X[idx, n * 2:] = feats
+            except Exception:
+                pass  # Si falla por campeón desconocido, deja features en 0
 
         modelo = RandomForestClassifier(
-            n_estimators=25,        # 100→25
-            max_depth=12,
+            n_estimators=30,        # 25→30 con más features
+            max_depth=14,           # más profundidad para capturar interacciones
             min_samples_leaf=5,
             random_state=42,
             n_jobs=-1
         )
         modelo.fit(X, y)
         modelos_binarios[rol] = modelo
+        print(f"     📊 {rol}: {n_features_comparativas} features comparativas añadidas a {n*2} de one-hot")
 
     conn.close()
     
     if modelos_binarios:
         joblib.dump(modelos_binarios, MODELO_1V1_PATH, compress=3)
-        print(f"🎉 Modelo IA 1v1 guardado en {MODELO_1V1_PATH}\n")
+        print(f"🎉 Modelo IA 1v1 (con feature engineering) guardado en {MODELO_1V1_PATH}\n")
     else:
         print("❌ No se pudo entrenar el modelo 1v1.\n")
 

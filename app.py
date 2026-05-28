@@ -18,6 +18,7 @@ from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
 from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
 from src.db_manager import DATA_DIR, obtener_conexion
+from src.db_manager import etiquetar_estado_emocional, obtener_estado_emocional, obtener_estadisticas_emocionales
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.tags_champions import obtener_tag, obtener_nivel_cc, es_soporte, obtener_dano, es_tanque
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
@@ -25,6 +26,8 @@ from src.recomendador import (obtener_counters, obtener_top_items, obtener_campe
                               recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
 from src.lcu_api import LCUConnector
 from src.analizador_fatiga import analizar_fatiga
+from src.perfil_jugador import analizar_personalidad, detectar_habitos, generar_objetivos_semanales, analizar_emocional_vs_wr
+from src.entrenador_ia import extraer_features_comparativas, interpretar_features
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -61,17 +64,26 @@ UI_ROLES = ["TOP", "JUNGLA", "MID", "ADC", "SUPPORT"]
 ROL_TO_API = {"TOP": "TOP", "JUNGLA": "JUNGLE", "MID": "MIDDLE", "ADC": "BOTTOM", "SUPPORT": "UTILITY"}
 API_TO_ROL = {"TOP": "TOP", "JUNGLE": "JUNGLA", "MIDDLE": "MID", "BOTTOM": "ADC", "UTILITY": "SUPPORT"}
 
-BG_DARK = "#010a13"      
-BG_PANEL = "#0a1428"     
-BORDER_GOLD = "#c89b3c"  
-TEXT_WHITE = "#ffffff"   
-TEXT_GOLD = "#f0e6d2"    
-ACCENT_BLUE = "#0ac8b9"  
-RED_WR = "#ff4e50"
-GREEN_WR = "#00e676"
-YELLOW_WR = "#f9a826"
-ALLY_BG = "#0b1b3d"      
-ENEMY_BG = "#3d0b13"     
+# ═══════════════════════════════════════════════════════════════
+# SELLO GVRRIDO — SISTEMA DE DISEÑO
+# ═══════════════════════════════════════════════════════════════
+BG_DARK = "#05080f"          # Fondo principal — negro azabache profundo
+BG_PANEL = "#0c101a"         # Paneles — casi negro con un toque de azul
+BG_CARD = "#111827"          # Tarjetas internas — gris azulado oscuro
+BORDER_ACCENT = "#e63946"    # Borde acento — rojo carmesí agresivo (sello gvrrido)
+BORDER_SUBTLE = "#1e293b"    # Borde sutil — gris pizarra para tarjetas
+TEXT_WHITE = "#f1f5f9"       # Texto principal — blanco roto, legible
+TEXT_MUTED = "#64748b"       # Texto secundario — gris medio
+TEXT_GOLD = "#f8fafc"        # Texto destacado — casi blanco puro
+ACCENT_RED = "#e63946"       # Acento principal — rojo gvrrido
+ACCENT_TEAL = "#2dd4bf"      # Acento secundario — teal para datos/estadísticas
+RED_WR = "#ef4444"           # Derrota — rojo intenso
+GREEN_WR = "#22c55e"         # Victoria — verde esmeralda
+YELLOW_WR = "#f59e0b"        # Advertencia — ámbar
+ALLY_BG = "#0f172a"          # Aliados — azul muy oscuro
+ENEMY_BG = "#1a0a0f"         # Enemigos — rojo muy oscuro
+HOVER_GLOW = "#f43f5e"       # Hover — rosa-rojo para botones
+FONT_FAMILY = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
 
 STAT_SHARDS = {
     "5008": ("Fuerza Adapt.", "#e74c3c"),
@@ -139,17 +151,17 @@ class SettingsDialog(QDialog):
             QLabel {{ color: {TEXT_WHITE}; font-size: 12px; background: transparent; }}
             QCheckBox {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 8px; padding: 1px 0; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; }}
-            QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 3px; max-width: 80px; }}
+            QSpinBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_ACCENT}; padding: 3px; max-width: 80px; }}
         """)
         layout = QVBoxLayout(self); layout.setSpacing(6)
 
         title = QLabel("⚙️ CONFIGURACIÓN DE LA APP")
-        title.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 16px;")
+        title.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 16px;")
         layout.addWidget(title)
 
         def _seccion(texto):
             lbl = QLabel(texto)
-            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px; margin-top: 6px; padding: 3px 0; border-bottom: 1px solid #1e3050;")
+            lbl.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 12px; margin-top: 6px; padding: 3px 0; border-bottom: 1px solid #1e3050;")
             layout.addWidget(lbl)
 
         def _check(texto, key, desc=""):
@@ -225,7 +237,7 @@ class LoLRecommenderApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LoL Esports Analytics Pro - V1.0")
+        self.setWindowTitle("GVRRIDO // LoL Performance Engine")
         self.resize(1500, 950)
         self.aplicar_estilos()
 
@@ -293,32 +305,201 @@ class LoLRecommenderApp(QMainWindow):
     def aplicar_estilos(self):
         self.setStyleSheet(f"""
             QMainWindow {{ background-color: {BG_DARK}; }}
-            QWidget {{ color: {TEXT_WHITE}; font-family: Helvetica; font-size: 12px; }}
-            QFrame#Panel {{ background-color: {BG_PANEL}; border: 1px solid {BORDER_GOLD}; border-radius: 10px; padding: 4px; }}
-            QFrame#CardAlly {{ background-color: {ALLY_BG}; border: 1px solid {BORDER_GOLD}; border-radius: 6px; }}
-            QFrame#CardEnemy {{ background-color: {ENEMY_BG}; border: 1px solid {BORDER_GOLD}; border-radius: 6px; }}
-            QFrame#BuildCard {{ background-color: #0b1b30; border: 1px solid #1e3a5f; border-radius: 8px; }}
-            QFrame#BuildCard:hover {{ border: 1px solid {BORDER_GOLD}; }}
+            QWidget {{ 
+                color: {TEXT_WHITE}; 
+                font-family: {FONT_FAMILY}; 
+                font-size: 12px; 
+            }}
+            
+            /* ═══ PANELES / TARJETAS ═══ */
+            QFrame#Panel {{ 
+                background-color: {BG_PANEL}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 8px; 
+                padding: 10px; 
+            }}
+            QFrame#Panel:hover {{ border: 1px solid {BORDER_ACCENT}; }}
+            QFrame#CardAlly {{ 
+                background-color: {ALLY_BG}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 6px; 
+            }}
+            QFrame#CardEnemy {{ 
+                background-color: {ENEMY_BG}; 
+                border: 1px solid #3b1018; 
+                border-radius: 6px; 
+            }}
+            QFrame#BuildCard {{ 
+                background-color: {BG_CARD}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 6px; 
+            }}
+            QFrame#BuildCard:hover {{ 
+                border: 1px solid {BORDER_ACCENT}; 
+                background-color: #1a1520; 
+            }}
+            QFrame#StatCard {{
+                background-color: {BG_CARD};
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 8px;
+                padding: 8px;
+            }}
+            QFrame#StatCard:hover {{
+                border: 1px solid {BORDER_ACCENT};
+            }}
+            
             QLabel {{ border: none; background: transparent; }}
-            QPushButton {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; border-radius: 5px; padding: 7px 14px; font-weight: bold; font-size: 12px; }}
-            QPushButton:hover {{ background-color: {ACCENT_BLUE}; color: {BG_DARK}; }}
-            QPushButton:disabled {{ background-color: #1a2b4c; color: #555; border: 1px solid #555; }}
             
-            /* TABS ESTILIZADOS PROFESIONALES */
-            QTabWidget::pane {{ border: 1px solid {BORDER_GOLD}; background-color: {BG_PANEL}; border-radius: 10px; border-top-left-radius: 0px; }}
-            QTabBar::tab {{ background: #1a2b4c; color: {TEXT_WHITE}; padding: 12px 28px; border: 1px solid {BORDER_GOLD}; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 2px; font-weight: bold; font-size: 12px; }}
-            QTabBar::tab:selected {{ background: {BG_PANEL}; color: {ACCENT_BLUE}; border-bottom: 2px solid {BG_PANEL}; }}
-            QTabBar::tab:hover:!selected {{ background: #253a5e; }}
+            /* ═══ BOTONES ═══ */
+            QPushButton {{ 
+                background-color: {BG_CARD}; 
+                color: {TEXT_WHITE}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 5px; 
+                padding: 7px 14px; 
+                font-weight: 600; 
+                font-size: 12px; 
+                letter-spacing: 0.3px;
+            }}
+            QPushButton:hover {{ 
+                background-color: {ACCENT_RED}; 
+                color: #ffffff; 
+                border: 1px solid {ACCENT_RED}; 
+            }}
+            QPushButton:pressed {{ 
+                background-color: #be123c; 
+            }}
+            QPushButton:disabled {{ 
+                background-color: #1e293b; 
+                color: #475569; 
+                border: 1px solid #334155; 
+            }}
             
-            QComboBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid {BORDER_GOLD}; padding: 5px; border-radius: 4px; font-size: 12px; }}
-            QComboBox:hover {{ border: 1px solid {ACCENT_BLUE}; }}
-            QComboBox QAbstractItemView {{ background-color: #0d1b38; color: {TEXT_WHITE}; selection-background-color: {BORDER_GOLD}; selection-color: {BG_DARK}; }}
-            QTableWidget {{ background-color: {BG_PANEL}; alternate-background-color: #0b1b30; color: {TEXT_WHITE}; gridline-color: transparent; border: 1px solid {BORDER_GOLD}; border-radius: 8px; font-size: 12px; outline: 0; }}
-            QTableWidget::item {{ padding: 4px 6px; border-bottom: 1px solid #162040; }}
-            QTableWidget::item:selected {{ background-color: {BORDER_GOLD}; color: {BG_DARK}; }}
-            QHeaderView::section {{ background-color: #152040; color: {BORDER_GOLD}; font-weight: bold; padding: 8px; border: none; border-bottom: 2px solid {BORDER_GOLD}; font-size: 11px; }}
-            QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: transparent; color: white; font-weight: bold; font-size: 12px; }}
-            QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}
+            /* ═══ PESTAÑAS ═══ */
+            QTabWidget::pane {{ 
+                border: 1px solid {BORDER_SUBTLE}; 
+                background-color: {BG_PANEL}; 
+                border-radius: 8px; 
+                border-top-left-radius: 0px; 
+            }}
+            QTabBar::tab {{ 
+                background: {BG_CARD}; 
+                color: {TEXT_MUTED}; 
+                padding: 10px 22px; 
+                border: 1px solid transparent; 
+                border-bottom: none; 
+                border-top-left-radius: 6px; 
+                border-top-right-radius: 6px; 
+                margin-right: 1px; 
+                font-weight: 600; 
+                font-size: 12px; 
+                letter-spacing: 0.3px;
+            }}
+            QTabBar::tab:selected {{ 
+                background: {BG_PANEL}; 
+                color: {ACCENT_RED}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-bottom: 2px solid {BG_PANEL}; 
+                border-top: 2px solid {ACCENT_RED};
+            }}
+            QTabBar::tab:hover:!selected {{ 
+                background: #1e293b; 
+                color: {TEXT_WHITE}; 
+            }}
+            
+            /* ═══ COMBOBOX ═══ */
+            QComboBox {{ 
+                background-color: {BG_CARD}; 
+                color: {TEXT_WHITE}; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                padding: 6px 10px; 
+                border-radius: 4px; 
+                font-size: 12px; 
+            }}
+            QComboBox:hover {{ border: 1px solid {BORDER_ACCENT}; }}
+            QComboBox:focus {{ border: 1px solid {ACCENT_RED}; }}
+            QComboBox QAbstractItemView {{ 
+                background-color: {BG_PANEL}; 
+                color: {TEXT_WHITE}; 
+                selection-background-color: {ACCENT_RED}; 
+                selection-color: #ffffff; 
+                border: 1px solid {BORDER_SUBTLE};
+                outline: 0;
+            }}
+            
+            /* ═══ TABLAS ═══ */
+            QTableWidget {{ 
+                background-color: {BG_PANEL}; 
+                alternate-background-color: {BG_CARD}; 
+                color: {TEXT_WHITE}; 
+                gridline-color: transparent; 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 8px; 
+                font-size: 12px; 
+                outline: 0; 
+            }}
+            QTableWidget::item {{ 
+                padding: 6px 8px; 
+                border-bottom: 1px solid #1a2236; 
+            }}
+            QTableWidget::item:selected {{ 
+                background-color: {ACCENT_RED}; 
+                color: #ffffff; 
+            }}
+            QHeaderView::section {{ 
+                background-color: {BG_CARD}; 
+                color: {TEXT_MUTED}; 
+                font-weight: 700; 
+                padding: 10px 8px; 
+                border: none; 
+                border-bottom: 2px solid {BORDER_ACCENT}; 
+                font-size: 11px; 
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+            }}
+            
+            /* ═══ BARRA DE PROGRESO ═══ */
+            QProgressBar {{ 
+                border: 1px solid {BORDER_SUBTLE}; 
+                border-radius: 5px; 
+                text-align: center; 
+                background-color: {BG_CARD}; 
+                color: {TEXT_WHITE}; 
+                font-weight: 700; 
+                font-size: 11px; 
+            }}
+            QProgressBar::chunk {{ 
+                background-color: {ACCENT_RED}; 
+                border-radius: 4px; 
+            }}
+            
+            /* ═══ SCROLLBAR ═══ */
+            QScrollBar:vertical {{
+                background: {BG_DARK};
+                width: 8px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {BORDER_SUBTLE};
+                border-radius: 4px;
+                min-height: 30px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {BORDER_ACCENT};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            
+            /* ═══ TOOLTIP ═══ */
+            QToolTip {{
+                background-color: {BG_PANEL};
+                color: {TEXT_WHITE};
+                border: 1px solid {BORDER_ACCENT};
+                padding: 6px 10px;
+                border-radius: 4px;
+                font-size: 11px;
+            }}
         """)
 
     def crear_panel(self, text=""):
@@ -326,9 +507,11 @@ class LoLRecommenderApp(QMainWindow):
         fr.setObjectName("Panel")
         layout = QVBoxLayout(fr)
         layout.setAlignment(Qt.AlignTop)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         if text:
             lbl = QLabel(text.upper())
-            lbl.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px;")
+            lbl.setStyleSheet(f"color: {ACCENT_RED}; font-weight: 700; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 4px;")
             layout.addWidget(lbl)
             fr.label_title = lbl
         return fr, layout
@@ -342,7 +525,7 @@ class LoLRecommenderApp(QMainWindow):
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_lbl = QLabel("LOL ESPORTS ANALYTICS")
-        header_lbl.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 28px;")
+        header_lbl.setStyleSheet(f"color: {BORDER_ACCENT}; font-family: Impact; font-size: 28px;")
         header_lbl.setAlignment(Qt.AlignCenter)
         header_row.addStretch()
         header_row.addWidget(header_lbl)
@@ -355,7 +538,7 @@ class LoLRecommenderApp(QMainWindow):
         btn_settings.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid #2a3050; border-radius: 17px;
                            font-size: 15px; color: #4a5070; }}
-            QPushButton:hover {{ border: 1px solid {BORDER_GOLD}; color: {BORDER_GOLD}; }}
+            QPushButton:hover {{ border: 1px solid {BORDER_ACCENT}; color: {BORDER_ACCENT}; }}
         """)
         btn_settings.clicked.connect(self.abrir_settings)
         header_row.addWidget(btn_settings)
@@ -363,11 +546,11 @@ class LoLRecommenderApp(QMainWindow):
 
         self.tabview = QTabWidget()
         self.tabview.setStyleSheet(f"""
-            QTabWidget::pane {{ border: 1px solid {BORDER_GOLD}; background-color: {BG_PANEL}; border-radius: 6px; }}
+            QTabWidget::pane {{ border: 1px solid {BORDER_ACCENT}; background-color: {BG_PANEL}; border-radius: 6px; }}
             QTabBar::tab {{ background: #111a2e; color: #6a7a90; padding: 8px 16px; border: 1px solid #1a2540;
                            border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px;
                            margin-right: 1px; font-size: 11px; min-width: 90px; }}
-            QTabBar::tab:selected {{ background: {BG_PANEL}; color: {ACCENT_BLUE}; border-bottom: 2px solid {BG_PANEL};
+            QTabBar::tab:selected {{ background: {BG_PANEL}; color: {ACCENT_RED}; border-bottom: 2px solid {BG_PANEL};
                                     font-weight: bold; }}
             QTabBar::tab:hover:!selected {{ background: #1a2844; color: #8a9ab0; }}
         """)
@@ -530,7 +713,7 @@ class LoLRecommenderApp(QMainWindow):
         card_runas.setObjectName("BuildCard")
         l_runas = QVBoxLayout(card_runas)
         lbl_r = QLabel("RUNAS RECOMENDADAS")
-        lbl_r.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 11px;")
+        lbl_r.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 11px;")
         l_runas.addWidget(lbl_r, alignment=Qt.AlignCenter)
 
         r_grid = QGridLayout()
@@ -576,7 +759,7 @@ class LoLRecommenderApp(QMainWindow):
         card_spells.setObjectName("BuildCard")
         l_spells = QVBoxLayout(card_spells)
         lbl_s = QLabel("HECHIZOS")
-        lbl_s.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 11px;")
+        lbl_s.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 11px;")
         l_spells.addWidget(lbl_s, alignment=Qt.AlignCenter)
 
         for sp in ids_spells: self.renderizar_icono(str(sp), "spell", l_spells, size=45)
@@ -594,7 +777,7 @@ class LoLRecommenderApp(QMainWindow):
         l_items = QVBoxLayout(card_items)
         
         lbl_i1 = QLabel("INICIO")
-        lbl_i1.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px;")
+        lbl_i1.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px;")
         l_items.addWidget(lbl_i1, alignment=Qt.AlignCenter)
         
         w_start = QWidget()
@@ -606,7 +789,7 @@ class LoLRecommenderApp(QMainWindow):
         l_items.addWidget(w_start)
         
         lbl_i2 = QLabel("CORE BUILD")
-        lbl_i2.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px; padding-top: 10px;")
+        lbl_i2.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px; padding-top: 10px;")
         l_items.addWidget(lbl_i2, alignment=Qt.AlignCenter)
         
         w_core = QWidget()
@@ -679,7 +862,7 @@ class LoLRecommenderApp(QMainWindow):
         
         # Nombre de invocador
         self.lbl_sum_name = QLabel("Esperando al Cliente...")
-        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_GOLD}; font-size: 22px; font-weight: bold;")
+        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 22px; font-weight: bold;")
         self.lbl_sum_name.setAlignment(Qt.AlignCenter)
         self.col_id.addWidget(self.lbl_sum_name, alignment=Qt.AlignCenter)
         
@@ -692,7 +875,7 @@ class LoLRecommenderApp(QMainWindow):
         # Separador
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background-color: {BORDER_GOLD}; max-height: 1px; margin: 8px 20px;")
+        sep.setStyleSheet(f"background-color: {BORDER_ACCENT}; max-height: 1px; margin: 8px 20px;")
         self.col_id.addWidget(sep)
         
         # ===== PANEL DE RANKS =====
@@ -706,7 +889,7 @@ class LoLRecommenderApp(QMainWindow):
         self.fr_soloq.addWidget(self.lbl_soloq_icon)
         self.fr_soloq_info = QVBoxLayout()
         self.lbl_soloq_tier = QLabel("Solo/Duo\n--")
-        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 14px;")
+        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 14px;")
         self.lbl_soloq_tier.setAlignment(Qt.AlignLeft)
         self.fr_soloq_info.addWidget(self.lbl_soloq_tier)
         self.lbl_soloq_stats = QLabel("")
@@ -751,6 +934,51 @@ class LoLRecommenderApp(QMainWindow):
         self.l_season.addWidget(self.tb_season_champs)
         self.col_id.addWidget(self.pnl_season)
 
+        # ===== PERFIL DE JUGADOR & OBJETIVOS (GVRRIDO) =====
+        self.pnl_player_profile, self.l_player_profile = self.crear_panel("🎯 PERFIL DE JUGADOR & OBJETIVOS")
+        
+        self.lbl_personality_style = QLabel("--")
+        self.lbl_personality_style.setStyleSheet(f"color: {ACCENT_RED}; font-size: 16px; font-weight: 700; padding: 4px 0;")
+        self.lbl_personality_style.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_personality_style)
+        
+        self.lbl_personality_desc = QLabel("Conecta al cliente para analizar tu perfil de juego")
+        self.lbl_personality_desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding-bottom: 6px;")
+        self.lbl_personality_desc.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_personality_desc)
+        
+        # Insights accionables
+        self.lbl_insights_title = QLabel("")
+        self.lbl_insights_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: 700; font-size: 10px; letter-spacing: 1px;")
+        self.l_player_profile.addWidget(self.lbl_insights_title)
+        
+        self.lbl_insights = QLabel("")
+        self.lbl_insights.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_insights.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_insights)
+        
+        # Objetivos semanales
+        self.lbl_objetivos_title = QLabel("")
+        self.lbl_objetivos_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: 700; font-size: 10px; letter-spacing: 1px; margin-top: 6px;")
+        self.l_player_profile.addWidget(self.lbl_objetivos_title)
+        
+        self.lbl_objetivos = QLabel("")
+        self.lbl_objetivos.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_objetivos.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_objetivos)
+        
+        # Cruce emocional vs winrate
+        self.lbl_emocional_title = QLabel("")
+        self.lbl_emocional_title.setStyleSheet(f"color: {YELLOW_WR}; font-weight: 700; font-size: 10px; letter-spacing: 1px; margin-top: 6px;")
+        self.l_player_profile.addWidget(self.lbl_emocional_title)
+        
+        self.lbl_emocional_stats = QLabel("")
+        self.lbl_emocional_stats.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_emocional_stats.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_emocional_stats)
+        
+        self.col_id.addWidget(self.pnl_player_profile)
+
         # ===== PANEL DE FATIGA (columna izquierda, abajo) =====
         self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL")
         self.lbl_fatiga = QLabel("Analizando...")
@@ -773,10 +1001,10 @@ class LoLRecommenderApp(QMainWindow):
         self.card_wr, self.lbl_card_wr_val = self._crear_stat_card("📊 WINRATE", "--%", GREEN_WR)
         self.fr_stats_cards.addWidget(self.card_wr, 1)
         
-        self.card_kda, self.lbl_card_kda_val = self._crear_stat_card("⚔️ KDA", "--", ACCENT_BLUE)
+        self.card_kda, self.lbl_card_kda_val = self._crear_stat_card("⚔️ KDA", "--", ACCENT_TEAL)
         self.fr_stats_cards.addWidget(self.card_kda, 1)
         
-        self.card_most, self.lbl_card_most_val = self._crear_stat_card("🔥 +JUGADO", "--", BORDER_GOLD)
+        self.card_most, self.lbl_card_most_val = self._crear_stat_card("🔥 +JUGADO", "--", BORDER_ACCENT)
         self.fr_stats_cards.addWidget(self.card_most, 1)
         
         self.card_best, self.lbl_card_best_val = self._crear_stat_card("🏆 MEJOR WR", "--", GREEN_WR)
@@ -818,12 +1046,12 @@ class LoLRecommenderApp(QMainWindow):
         
         # Historial
         lbl_h = QLabel("HISTORIAL DE PARTIDAS")
-        lbl_h.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 13px; margin-top: 4px;")
+        lbl_h.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
         
         self.tb_historial = QTableWidget()
-        self.tb_historial.setColumnCount(8)
-        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "LP", "Modo", "Fecha"])
+        self.tb_historial.setColumnCount(9)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "LP", "Modo", "Fecha", "Estado"])
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
@@ -1045,6 +1273,12 @@ class LoLRecommenderApp(QMainWindow):
             self.tb_historial.setItem(row, 5, item_lp)
             self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
+            
+            # ─── Columna de Estado Emocional (GVRRIDO) ───
+            game_id = str(g.get("gameId", ""))
+            estado_actual = obtener_estado_emocional(game_id)
+            tag_widget = self._crear_widget_emocional(game_id, champ_name, estado_actual)
+            self.tb_historial.setCellWidget(row, 8, tag_widget)
 
         # --- Tarjetas de estadísticas ---
         if total_games > 0:
@@ -1059,7 +1293,7 @@ class LoLRecommenderApp(QMainWindow):
             most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
             most_g = champ_stats[most_played]["games"]
             self.lbl_card_most_val.setText(most_played[:10])
-            self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_GOLD}; font-size: 16px; font-weight: bold;")
+            self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
             self.lbl_card_most_val.setToolTip(f"{most_g} partidas jugadas con {most_played}")
             best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 2}
             if best_wr_champs:
@@ -1168,7 +1402,7 @@ class LoLRecommenderApp(QMainWindow):
         try:
             fatiga = analizar_fatiga(self.historial_games)
             estado = fatiga.get("estado", "neutral")
-            colores = {"fresh": GREEN_WR, "neutral": ACCENT_BLUE, "tired": YELLOW_WR, "tilted": RED_WR, "sin_datos": TEXT_WHITE}
+            colores = {"fresh": GREEN_WR, "neutral": ACCENT_TEAL, "tired": YELLOW_WR, "tilted": RED_WR, "sin_datos": TEXT_WHITE}
             color = colores.get(estado, TEXT_WHITE)
             msg = fatiga.get("mensaje", "Sin datos")
             rec = fatiga.get("recomendacion", "")
@@ -1211,6 +1445,60 @@ class LoLRecommenderApp(QMainWindow):
                     self._renderizar_historial(self.historial_games)
         finally:
             self._cargando_historial = False
+
+    # ═══════════════════════════════════════════════════════════
+    # MOTOR EMOCIONAL — ETIQUETADO DE PARTIDAS (GVRRIDO)
+    # ═══════════════════════════════════════════════════════════
+
+    def _crear_widget_emocional(self, game_id: str, champ_name: str, estado_actual: str = None):
+        """Crea un widget con 4 botones de estado emocional para una fila del historial."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignCenter)
+
+        estados = [
+            ("🔥", "Concentrado", "#ef4444", "Concentrado: enfoque total"),
+            ("😐", "Normal", "#64748b", "Normal: estado neutro"),
+            ("😤", "Tilted", "#f59e0b", "Tilted: frustrado"),
+            ("😴", "Cansado", "#3b82f6", "Cansado: fatiga"),
+        ]
+
+        for emoji, estado, color, tooltip in estados:
+            btn = QPushButton(emoji)
+            btn.setFixedSize(28, 24)
+            btn.setToolTip(tooltip)
+            if estado_actual == estado:
+                btn.setStyleSheet(f"""
+                    QPushButton {{ background-color: {color}; color: #fff; border: 1px solid {color}; 
+                                   border-radius: 3px; font-size: 13px; padding: 0px; }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{ background-color: transparent; color: #475569; border: 1px solid #1e293b; 
+                                   border-radius: 3px; font-size: 13px; padding: 0px; }}
+                    QPushButton:hover {{ background-color: {color}; color: #fff; border: 1px solid {color}; }}
+                """)
+            btn.clicked.connect(lambda checked, gid=game_id, est=estado, ch=champ_name: 
+                                self._on_tag_emocional(gid, est, ch))
+            layout.addWidget(btn)
+
+        return widget
+
+    def _on_tag_emocional(self, game_id: str, estado: str, champion: str):
+        """Guarda el estado emocional y refresca la fila."""
+        try:
+            # Obtener puuid del perfil actual
+            puuid = ""
+            if hasattr(self, 'perfil_data') and self.perfil_data:
+                puuid = self.perfil_data.get("puuid", "")
+            etiquetar_estado_emocional(game_id, estado, puuid, champion)
+            # Refrescar solo el historial para mostrar el nuevo estado
+            if hasattr(self, 'historial_games'):
+                self._renderizar_historial(self.historial_games)
+        except Exception as e:
+            print(f"[_on_tag_emocional] Error: {e}")
 
     def filtrar_historial(self, _=None):
         """Filtra la tabla de historial por campeón Y modo de juego."""
@@ -1280,6 +1568,12 @@ class LoLRecommenderApp(QMainWindow):
             self.tb_historial.setItem(row, 5, item_lp)
             self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
+            
+            # ─── Columna de Estado Emocional ───
+            game_id = str(g.get("gameId", ""))
+            estado_actual = obtener_estado_emocional(game_id)
+            tag_widget = self._crear_widget_emocional(game_id, champ_name, estado_actual)
+            self.tb_historial.setCellWidget(row, 8, tag_widget)
 
     # ================= RADAR EN VIVO =================
     def armar_tab_vivo(self):
@@ -1328,7 +1622,7 @@ class LoLRecommenderApp(QMainWindow):
         l_center.setAlignment(Qt.AlignTop)
         
         self.lbl_rol_vivo = QLabel("ASIGNACIÓN PENDIENTE")
-        self.lbl_rol_vivo.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 18px;")
+        self.lbl_rol_vivo.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 18px;")
         self.lbl_rol_vivo.setAlignment(Qt.AlignCenter)
         l_center.addWidget(self.lbl_rol_vivo)
         
@@ -1347,7 +1641,7 @@ class LoLRecommenderApp(QMainWindow):
 
         self.col_ally, l_ally = self.crear_panel("Aliados")
         self.lbl_ally_stats = QLabel("AD: --% | AP: --% | Tanks: 0")
-        self.lbl_ally_stats.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold;")
+        self.lbl_ally_stats.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: bold;")
         l_ally.addWidget(self.lbl_ally_stats)
         self.fr_aliados_picks = QVBoxLayout()
         l_ally.addLayout(self.fr_aliados_picks)
@@ -1708,7 +2002,7 @@ class LoLRecommenderApp(QMainWindow):
             cat_layout = QVBoxLayout()
             cat_layout.setAlignment(Qt.AlignTop)
             lbl_cat = QLabel(categoria)
-            lbl_cat.setStyleSheet(f"color: {BORDER_GOLD}; font-weight: bold; font-size: 10px;")
+            lbl_cat.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px;")
             lbl_cat.setAlignment(Qt.AlignCenter)
             cat_layout.addWidget(lbl_cat)
             
@@ -1738,7 +2032,7 @@ class LoLRecommenderApp(QMainWindow):
         self.pnl_recordatorios.setObjectName("Panel")
         rlayout = QVBoxLayout(self.pnl_recordatorios)
         self.lbl_recordatorios = QLabel("⏰ CONSEJOS DE PARTIDA")
-        self.lbl_recordatorios.setStyleSheet(f"color: {ACCENT_BLUE}; font-weight: bold; font-size: 12px;")
+        self.lbl_recordatorios.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 12px;")
         rlayout.addWidget(self.lbl_recordatorios)
         self.fr_recordatorios = QHBoxLayout()
         rlayout.addLayout(self.fr_recordatorios)
@@ -1807,7 +2101,7 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_ingame.setRowCount(0)
         for team_name, team_players, bg in [("🔵 ALIADOS", aliados_raw, ALLY_BG), ("🔴 ENEMIGOS", enemigos_raw, ENEMY_BG)]:
             row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
-            hdr = QTableWidgetItem(team_name); hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_GOLD))
+            hdr = QTableWidgetItem(team_name); hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
             font = hdr.font(); font.setBold(True); hdr.setFont(font)
             self.tb_ingame.setItem(row, 0, hdr)
             for c in range(1, self.tb_ingame.columnCount()):
@@ -1890,7 +2184,7 @@ class LoLRecommenderApp(QMainWindow):
             self.tb_ingame.insertRow(row)
             hdr = QTableWidgetItem(team_name)
             hdr.setBackground(QColor(bg))
-            hdr.setForeground(QColor(BORDER_GOLD))
+            hdr.setForeground(QColor(BORDER_ACCENT))
             font = hdr.font(); font.setBold(True); hdr.setFont(font)
             self.tb_ingame.setItem(row, 0, hdr)
             for c in range(1, self.tb_ingame.columnCount()):
@@ -2340,7 +2634,7 @@ class LoLRecommenderApp(QMainWindow):
         
         centro_layout = QVBoxLayout()
         lbl_vs_grande = QLabel("VS")
-        lbl_vs_grande.setStyleSheet(f"color: {BORDER_GOLD}; font-family: Impact; font-size: 50px;")
+        lbl_vs_grande.setStyleSheet(f"color: {BORDER_ACCENT}; font-family: Impact; font-size: 50px;")
         lbl_vs_grande.setAlignment(Qt.AlignCenter)
         centro_layout.addWidget(lbl_vs_grande)
         
@@ -2361,9 +2655,11 @@ class LoLRecommenderApp(QMainWindow):
         l_hud.addLayout(batalla_layout)
         
         self.lbl_analisis_ia = QLabel("Selecciona los campeones y presiona Simular.")
-        self.lbl_analisis_ia.setStyleSheet(f"color: {ACCENT_BLUE}; font-style: italic; font-size: 16px; padding: 20px;")
-        self.lbl_analisis_ia.setAlignment(Qt.AlignCenter)
+        self.lbl_analisis_ia.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px; padding: 16px;")
+        self.lbl_analisis_ia.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.lbl_analisis_ia.setWordWrap(True)
+        self.lbl_analisis_ia.setTextFormat(Qt.RichText)
+        self.lbl_analisis_ia.setMinimumHeight(400)
         l_hud.addWidget(self.lbl_analisis_ia)
         layout.addWidget(hud_panel, 1)  # El panel de resultados ocupa el espacio restante
 
@@ -2394,16 +2690,29 @@ class LoLRecommenderApp(QMainWindow):
         if ruta_al: self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         if ruta_en: self.img_enemigo_1v1.setPixmap(QPixmap(ruta_en).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         
-        # === PREDICCIÓN DEL MODELO ML ===
+        # === FEATURE ENGINEERING: mismo vector que en entrenamiento ===
         n = len(self.nombres_campeones_global)
-        X = np.zeros(n * 2)
-        if aliado in self.nombres_campeones_global: X[self.nombres_campeones_global.index(aliado)] = 1
-        if enemigo in self.nombres_campeones_global: X[n + self.nombres_campeones_global.index(enemigo)] = 1
-            
+        N_COMP = 15  # features comparativas
+        X = np.zeros(n * 2 + N_COMP)
+        if aliado in self.nombres_campeones_global: 
+            X[self.nombres_campeones_global.index(aliado)] = 1
+        if enemigo in self.nombres_campeones_global: 
+            X[n + self.nombres_campeones_global.index(enemigo)] = 1
+        
+        # Añadir features comparativas (mismas que usa el modelo entrenado)
+        try:
+            feats = extraer_features_comparativas(aliado, enemigo)
+            X[n * 2:] = feats
+        except Exception:
+            pass
+        
+        # Predicción IA
         prob = modelo_1v1[rol_api].predict_proba(X.reshape(1, -1))[0][1] * 100
         self.barra_wr.setValue(int(prob))
-        if prob >= 50: self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: {RED_WR}; color: {BG_DARK}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}")
-        else: self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_GOLD}; border-radius: 5px; text-align: center; background-color: {GREEN_WR}; color: {TEXT_WHITE}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 5px; }}")
+        if prob >= 50: 
+            self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_ACCENT}; border-radius: 5px; text-align: center; background-color: {RED_WR}; color: {BG_DARK}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}")
+        else: 
+            self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_ACCENT}; border-radius: 5px; text-align: center; background-color: {GREEN_WR}; color: {TEXT_WHITE}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 5px; }}")
         
         # === DATOS REALES DE LA DB ===
         counters = obtener_counters(rol_api, enemigo, min_partidas=10)
@@ -2415,82 +2724,119 @@ class LoLRecommenderApp(QMainWindow):
                 partidas_real = p
                 break
         
-        # === ANÁLISIS POR CLASE DE CAMPEÓN ===
-        tags_al = self.champs_dict.get(aliado, {}).get("tags", [])
-        tags_en = self.champs_dict.get(enemigo, {}).get("tags", [])
+        # === RADAR DE ESTADÍSTICAS COMPARATIVAS (VISUAL MEJORADO) ===
+        from src.tags_champions import obtener_tag
+        t_a = obtener_tag(aliado)
+        t_e = obtener_tag(enemigo)
         
-        # Construir consejos tácticos según clases
-        consejos = []
+        mob_a = t_a.get("mobility", 2)
+        mob_e = t_e.get("mobility", 2)
+        cc_a = t_a.get("cc_level", 1)
+        cc_e = t_e.get("cc_level", 1)
+        _EM = {"weak": 1, "neutral": 2, "strong": 3}
+        _SM = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
+        early_a = _EM.get(t_a.get("early_power", "neutral"), 2)
+        early_e = _EM.get(t_e.get("early_power", "neutral"), 2)
+        scale_a = _SM.get(t_a.get("scaling", "mid"), 2)
+        scale_e = _SM.get(t_e.get("scaling", "mid"), 2)
         
-        # Relaciones clásicas de clase
-        if "Assassin" in tags_al and "Mage" in tags_en:
-            consejos.append("🔥 Asesino vs Mago: Tienes ventaja en all-ins rápidos. Busca el flanqueo post-nivel 6 y castiga cada vez que gaste su CC.")
-        elif "Assassin" in tags_al and "Marksman" in tags_en:
-            consejos.append("🎯 Asesino vs Tirador: No dejes que te kitee. Entra con definitiva y burst, si alargas el trade pierdes.")
-        elif "Mage" in tags_al and "Assassin" in tags_en:
-            consejos.append("🛡️ Mago vs Asesino: Juega bajo torre, guarda tu CC para cuando salte. Rush Zhonyas y respeta el nivel 6.")
-        elif "Tank" in tags_al and "Assassin" in tags_en:
-            consejos.append("🧱 Tanque vs Asesino: No puede matarte en una rotación. Forcéalo a gastar habilidades en ti y sobrevive para que tu equipo limpie.")
-        elif "Marksman" in tags_al and "Tank" in tags_en:
-            consejos.append("🏹 Tirador vs Tanque: Compra Dominio del Señor pronto. Kitea hacia atrás, no te quedes cuerpo a cuerpo.")
-        elif "Mage" in tags_al and "Tank" in tags_en:
-            consejos.append("📜 Mago vs Tanque: Pokea sin parar. No tienes kill pressure 1v1 temprano, enfócate en farmear y escalar.")
-        elif "Fighter" in tags_al and "Marksman" in tags_en:
-            consejos.append("⚔️ Luchador vs Tirador: Cierra la distancia con gap-closer. Una vez encima ganas el trade extendido.")
-        elif "Marksman" in tags_al and "Fighter" in tags_en:
-            consejos.append("🏃 Tirador vs Luchador: Mantén la distancia máxima. Si te alcanza con su gap-closer, retrocede de inmediato.")
-        elif "Support" in tags_al:
-            consejos.append("🤝 Soporte: No busques duelos 1v1. Tu valor está en peel, visión y rotaciones para tu equipo.")
+        # ─── Helper: HTML barra de comparación ───
+        def _barra_html(val_a, val_e, max_v, label):
+            pct_a = min(100, int(val_a / max_v * 100))
+            pct_e = min(100, int(val_e / max_v * 100))
+            delta = val_a - val_e
+            if delta > 0:
+                delta_str = f'<span style="color:{GREEN_WR};">(+{delta})</span>'
+            elif delta < 0:
+                delta_str = f'<span style="color:{RED_WR};">({delta})</span>'
+            else:
+                delta_str = '<span style="color:#64748b;">(=)</span>'
+            return (
+                f'<tr>'
+                f'<td width="140" style="color:{TEXT_MUTED};font-size:11px;padding:2px 6px;">{label}</td>'
+                f'<td width="160"><div style="background:#1e293b;border-radius:3px;height:14px;width:100%;">'
+                f'<div style="background:{GREEN_WR};height:14px;width:{pct_a}%;border-radius:3px 0 0 3px;"></div></div></td>'
+                f'<td width="30" style="color:{TEXT_WHITE};font-size:11px;text-align:center;font-weight:700;">{val_a}</td>'
+                f'<td width="20" style="text-align:center;">{delta_str}</td>'
+                f'<td width="30" style="color:{TEXT_WHITE};font-size:11px;text-align:center;font-weight:700;">{val_e}</td>'
+                f'<td width="160"><div style="background:#1e293b;border-radius:3px;height:14px;width:100%;">'
+                f'<div style="background:{RED_WR};height:14px;width:{pct_e}%;border-radius:0 3px 3px 0;float:right;"></div></div></td>'
+                f'</tr>'
+            )
         
-        # Consejos genéricos según la clase aliada
-        if not consejos:
-            if "Assassin" in tags_al:
-                consejos.append("🗡️ Roaming: No te cases con la línea. Empuja y busca kills en otros carriles.")
-            elif "Mage" in tags_al:
-                consejos.append("📚 Control de oleadas: Farmea seguro y escala. Tu poder está en teamfights.")
-            elif "Fighter" in tags_al:
-                consejos.append("💪 Duelista: Busca trades cortos frecuentes. Controla el arbusto para zonear.")
-            elif "Tank" in tags_al:
-                consejos.append("🛡️ Frontlane: Absorbe presión y facilita ganks. No necesitas kills para ganar la línea.")
-            elif "Marksman" in tags_al:
-                consejos.append("🎯 Posicionamiento: Esquiva skillshots y farmea. Castiga cada error de posición enemigo.")
-        
-        # === CONSTRUIR TEXTO FINAL ===
+        # ─── Cabecera con color ───
         if prob > 55:
-            nivel = "✅ VENTAJA CLARA"
-            detalle = f"Tu {aliado} contrarresta mecánicamente a {enemigo}."
+            nivel_color = GREEN_WR
+            nivel_icono = "&#9989;"
+            nivel_texto = "VENTAJA CLARA"
         elif prob >= 45:
-            nivel = "⚔️ MATCHUP DE HABILIDAD"
-            detalle = f"Enfrentamiento muy equilibrado. Ganará el que mejor controle oleadas, visión y rotaciones."
+            nivel_color = YELLOW_WR
+            nivel_icono = "&#9876;&#65039;"
+            nivel_texto = "MATCHUP DE HABILIDAD"
         else:
-            nivel = "⚠️ MATCHUP DESFAVORABLE"
-            detalle = f"{enemigo} tiene ventaja estadística. Juega seguro, prioriza farm y busca outscale."
+            nivel_color = RED_WR
+            nivel_icono = "&#9888;&#65039;"
+            nivel_texto = "MATCHUP DESFAVORABLE"
         
-        # Cabecera con datos
-        partes = [f"{nivel} ({prob:.1f}% WR estimado)"]
-        partes.append(detalle)
+        html = f"""
+        <div style="font-family:{FONT_FAMILY};font-size:12px;">
+        <p style="font-size:18px;font-weight:700;color:{nivel_color};margin:4px 0;">
+            {nivel_icono} {nivel_texto} <span style="font-size:14px;">({prob:.1f}% WR IA)</span>
+        </p>"""
         
         if wr_real is not None:
-            color_wr = GREEN_WR if wr_real >= 50 else RED_WR
-            partes.append(f"📊 Dato real: {wr_real}% WR en {partidas_real} partidas analizadas en {self.cb_ia_rol.currentText()}.")
+            real_color = GREEN_WR if wr_real >= 50 else RED_WR
+            html += f'<p style="color:{TEXT_MUTED};font-size:11px;margin:2px 0;">WR Real: <b style="color:{real_color};">{wr_real}%</b> ({partidas_real} partidas)</p>'
         
-        if consejos:
-            partes.append("")
-            partes.append("💡 CONSEJOS TÁCTICOS:")
-            for c in consejos:
-                partes.append(f"  {c}")
+        html += f"""
+        <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:10px 0;">
+        <p style="color:{ACCENT_RED};font-weight:700;font-size:13px;letter-spacing:1px;margin:6px 0;">
+            &#9889; STATS COMPARATIVAS
+        </p>
+        <p style="color:{TEXT_MUTED};font-size:10px;margin:2px 0;">
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{aliado[:10]:<10} <span style="color:{GREEN_WR};">verde</span> &nbsp;&#8594;&nbsp; DELTA &nbsp;&#8592;&nbsp; <span style="color:{RED_WR};">rojo</span> {enemigo[:10]:<10}
+        </p>
+        <table cellspacing="2" style="margin:8px 0;">
+            {_barra_html(mob_a, mob_e, 5, "Movilidad")}
+            {_barra_html(cc_a, cc_e, 5, "Control (CC)")}
+            {_barra_html(early_a, early_e, 3, "Early Game")}
+            {_barra_html(scale_a, scale_e, 4, "Escalado")}
+        </table>
+        <p style="color:{TEXT_MUTED};font-size:11px;margin:4px 0;">
+            Daño: <b style="color:{ACCENT_TEAL};">{aliado} {t_a.get('damage_type','?')}</b>
+            &nbsp;vs&nbsp;
+            <b style="color:{YELLOW_WR};">{enemigo} {t_e.get('damage_type','?')}</b>
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            Clase: <b style="color:{ACCENT_TEAL};">{t_a.get('champion_class','?')}</b>
+            &nbsp;vs&nbsp;
+            <b style="color:{YELLOW_WR};">{t_e.get('champion_class','?')}</b>
+        </p>
+        <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:10px 0;">
+        <p style="color:{ACCENT_RED};font-weight:700;font-size:13px;letter-spacing:1px;margin:6px 0;">
+            &#129504; QUE VE LA IA
+        </p>
+        <ul style="margin:4px 0;padding-left:18px;line-height:1.6;">"""
         
-        # Añadir consejos de build según matchup
-        if prob < 45:
-            partes.append("")
-            partes.append("🛒 Recomendación de build: Prioriza componentes defensivos (Resistencias/Vida).")
-            partes.append("📋 En early: Farmea bajo torre, no arriesgues trades innecesarios.")
-        elif prob > 55:
-            partes.append("")
-            partes.append("🛒 Recomendación de build: Rush daño ofensivo para snowballear la ventaja.")
-            partes.append("📋 En early: Zonéalo del farm, castiga cada vez que intente last-hitear.")
+        try:
+            insights = interpretar_features(aliado, enemigo)
+            for ins in insights:
+                # Colorear según tipo de insight
+                if "Desventaja" in ins or "Déficit" in ins or "contra" in ins:
+                    color = RED_WR
+                elif "Ventaja" in ins or "Dominio" in ins or "mejor" in ins or "dicta" in ins:
+                    color = GREEN_WR
+                elif "hyper-carry" in ins:
+                    color = YELLOW_WR
+                else:
+                    color = TEXT_MUTED
+                html += f'<li style="color:{color};font-size:11px;">{ins}</li>'
+        except Exception:
+            html += f'<li style="color:{TEXT_MUTED};font-size:11px;">Análisis no disponible para este matchup.</li>'
         
-        self.lbl_analisis_ia.setText("\n".join(partes))
+        html += "</ul></div>"
+        
+        self.lbl_analisis_ia.setText(html)
+        self.lbl_analisis_ia.setTextFormat(Qt.RichText)
 
     def armar_tab_bans(self):
         layout = QVBoxLayout(self.tab_bans)

@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 
-from .db_manager import obtener_conexion, inicializar_db, DATA_DIR
+from .db_manager import obtener_conexion, inicializar_db, DATA_DIR, purgar_parches_antiguos
 from .riot_api import cargar_objetos
 
 # ═══════════════════════════════════════════════════════════════
@@ -63,26 +63,75 @@ BATCH_SIZE = 10
 CHECKPOINT_EVERY = 500
 RATE_LIMIT_RPS = 18
 
+# Días hacia atrás para filtrar partidas (evita descargar partidas de parches viejos)
+# A inicio de season/patch usa 3-5 días. Con la season avanzada puedes subir a 14.
+DIAS_RECIENTES = 5
+# Cuántos jugadores semillar de high elo (aumentar a inicio de season)
+JUGADORES_SEMILLA = 500
+
 # ═══════════════════════════════════════════════════════════════
-# TOKEN BUCKET RATE LIMITER
+# RIOT RATE LIMITER DUAL (Development API Key)
+#   • Límite corto: 20 req / 1 segundo
+#   • Límite largo: 100 req / 120 segundos
 # ═══════════════════════════════════════════════════════════════
 
-class TokenBucket:
-    def __init__(self, rate: float, burst: int = 5):
-        self.rate = rate; self.burst = burst
-        self.tokens = float(burst); self.last_refill = time.monotonic()
+class RiotRateLimiter:
+    def __init__(self, short_rate: int = 20, short_window: float = 1.0,
+                 long_rate: int = 100, long_window: float = 120.0):
+        self.short_rate = short_rate
+        self.short_window = short_window
+        self.long_rate = long_rate
+        self.long_window = long_window
+        self.short_timestamps: deque[float] = deque()
+        self.long_timestamps: deque[float] = deque()
         self.lock = threading.Lock()
+
+    def _clean_old(self, timestamps: deque, window: float, now: float):
+        while timestamps and now - timestamps[0] > window:
+            timestamps.popleft()
+
     def acquire(self):
+        """Bloquea hasta que sea seguro hacer una petición."""
         with self.lock:
             now = time.monotonic()
-            self.tokens = min(self.burst, self.tokens + (now - self.last_refill) * self.rate)
-            self.last_refill = now
-            if self.tokens < 1:
-                time.sleep((1 - self.tokens) / self.rate)
-                self.tokens = 0
-            else: self.tokens -= 1
+            self._clean_old(self.short_timestamps, self.short_window, now)
+            self._clean_old(self.long_timestamps, self.long_window, now)
 
-RATE_LIMITER = TokenBucket(RATE_LIMIT_RPS)
+            # Si el límite largo está al tope, esperar hasta que se libere el más antiguo
+            if len(self.long_timestamps) >= self.long_rate:
+                wait = self.long_timestamps[0] + self.long_window - now
+                if wait > 0:
+                    time.sleep(wait)
+                    now = time.monotonic()
+                    self._clean_old(self.long_timestamps, self.long_window, now)
+                    self._clean_old(self.short_timestamps, self.short_window, now)
+
+            # Si el límite corto está al tope, esperar
+            if len(self.short_timestamps) >= self.short_rate:
+                wait = self.short_timestamps[0] + self.short_window - now
+                if wait > 0:
+                    time.sleep(wait)
+                    now = time.monotonic()
+                    self._clean_old(self.short_timestamps, self.short_window, now)
+                    self._clean_old(self.long_timestamps, self.long_window, now)
+
+            # Registrar esta petición
+            self.short_timestamps.append(now)
+            self.long_timestamps.append(now)
+
+    @property
+    def short_used(self) -> int:
+        with self.lock:
+            self._clean_old(self.short_timestamps, self.short_window, time.monotonic())
+            return len(self.short_timestamps)
+
+    @property
+    def long_used(self) -> int:
+        with self.lock:
+            self._clean_old(self.long_timestamps, self.long_window, time.monotonic())
+            return len(self.long_timestamps)
+
+RATE_LIMITER = RiotRateLimiter()
 
 # ═══════════════════════════════════════════════════════════════
 # COLA PERSISTENTE
@@ -171,6 +220,17 @@ def obtener_version_riot() -> tuple:
         return (".".join(parts[:2]), v)
     except: return ("14.10", "14.10.1")
 
+def epoch_dias_atras(dias: int) -> int:
+    """Devuelve epoch timestamp en segundos de hace N días."""
+    return int((datetime.utcnow() - timedelta(days=dias)).timestamp())
+
+def epoch_medianoche_hoy() -> int:
+    """Devuelve epoch timestamp de la medianoche de hoy (00:00:00 UTC).
+    Ideal para filtrar partidas del día actual con startTime."""
+    from datetime import timezone as tz
+    hoy = datetime.now(tz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(hoy.timestamp())
+
 def es_bota(item_id: str) -> bool:
     data = ITEMS_DATA.get(item_id, {})
     tags = data.get("tags", [])
@@ -221,9 +281,14 @@ def transaction(conn):
 # PROCESAMIENTO
 # ═══════════════════════════════════════════════════════════════
 
-def procesar_jugador(puuid: str) -> list:
-    url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?queue=420&start=0&count=50"
-    match_ids = peticion_segura(url)
+def procesar_jugador(puuid: str, start_time: int = 0, count: int = 10) -> list:
+    """Obtiene los match IDs de un jugador.
+    Con startTime filtra quirúrgicamente (solo partidas desde esa fecha).
+    count=10 es óptimo para día 1 de parche (nadie juega 50 partidas en un día)."""
+    base = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?queue=420&start=0&count={count}"
+    if start_time > 0:
+        base += f"&startTime={start_time}"
+    match_ids = peticion_segura(base)
     return match_ids if match_ids else []
 
 def descargar_partida(match_id: str) -> bool:
@@ -245,17 +310,29 @@ def descargar_partida(match_id: str) -> bool:
         patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
         if patch != PARCHE_ACTUAL: return False
 
-        url_tl = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
-        timeline = peticion_segura(url_tl)
+        # ─── TIMELINE CONDICIONAL: solo si faltan botas o ítem supp ───
+        necesita_timeline = False
+        for p in info.get("participants", []):
+            items_slots = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
+            pos = p.get("teamPosition", "")
+            tiene_bota = any(es_bota(i) for i in items_slots)
+            tiene_supp = any(es_item_supp_final(i) for i in items_slots)
+            if not tiene_bota or (pos == "UTILITY" and not tiene_supp):
+                necesita_timeline = True
+                break
+
         boots_map, supp_map = {}, {}
-        if timeline and "info" in timeline:
-            for frame in timeline["info"].get("frames", []):
-                for ev in frame.get("events", []):
-                    if ev.get("type") != "ITEM_PURCHASED": continue
-                    pid = ev.get("participantId"); iid = str(ev.get("itemId", 0))
-                    if not pid or iid == "0": continue
-                    if es_bota(iid): boots_map[pid] = iid
-                    elif es_item_supp_final(iid): supp_map[pid] = iid
+        if necesita_timeline:
+            url_tl = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+            timeline = peticion_segura(url_tl)
+            if timeline and "info" in timeline:
+                for frame in timeline["info"].get("frames", []):
+                    for ev in frame.get("events", []):
+                        if ev.get("type") != "ITEM_PURCHASED": continue
+                        pid = ev.get("participantId"); iid = str(ev.get("itemId", 0))
+                        if not pid or iid == "0": continue
+                        if es_bota(iid): boots_map[pid] = iid
+                        elif es_item_supp_final(iid): supp_map[pid] = iid
 
         champions = []
         with transaction(conn):
@@ -322,12 +399,22 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     print("═" * 55)
 
     PARCHE_ACTUAL, VERSION_COMPLETA = obtener_version_riot()
+    start_time = epoch_medianoche_hoy()
     print(f"  📅 Parche activo: {PARCHE_ACTUAL} ({VERSION_COMPLETA})")
+    print(f"  ⏪ Filtrando SOLO partidas de HOY (medianoche UTC)")
+    print(f"  🛡️ Rate Limiter: 20 req/s + 100 req/120s (Riot Dev Key)")
     print(f"  🎯 Meta: {meta:,} partidas  |  🧵 Workers: {MAX_WORKERS}  |  📦 Batch: {BATCH_SIZE}")
-    print(f"  💾 Checkpoint: cada {CHECKPOINT_EVERY} partidas")
+    print(f"  💾 Checkpoint: {CHECKPOINT_EVERY}  |  ⚡ Timeline: condicional (ahorra ~50% llamadas)")
     print()
 
     if not API_KEY: print("❌ ERROR: API_KEY no encontrada."); return
+
+    # ─── PURGA AUTOMÁTICA DE PARCHES ANTIGUOS ───
+    print(f"🧹 Verificando base de datos para el parche {PARCHE_ACTUAL}...")
+    eliminadas, _ = purgar_parches_antiguos(PARCHE_ACTUAL)
+    if eliminadas == 0:
+        print(f"  ✅ No hay partidas de parches antiguos. BD limpia.")
+    print()
 
     cola = ColaPersistente()
     if reset:
@@ -340,8 +427,8 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     print(f"  📋 Cola: {cola.size()} pendientes | 📈 Base descargadas: {total_base:,}")
 
     if cola.size() < 50:
-        print("\n🌱 Sembrando cola desde High Elo (Challenger/GM/Master)...")
-        sembrados = sembrar_desde_high_elo(cola, 200)
+        print(f"\n🌱 Sembrando cola desde High Elo (Challenger/GM/Master, max {JUGADORES_SEMILLA})...")
+        sembrados = sembrar_desde_high_elo(cola, JUGADORES_SEMILLA)
         print(f"   ✅ {sembrados} jugadores agregados\n")
 
     if cola.size() == 0: print("❌ Cola vacía."); return
@@ -355,7 +442,7 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
         while total_descargadas < meta and cola.size() > 0:
             puuid = cola.pop()
             if not puuid: break
-            match_ids = procesar_jugador(puuid)
+            match_ids = procesar_jugador(puuid, start_time=start_time, count=10)
             if not match_ids: continue
 
             # Filtrar partidas ya existentes
@@ -388,7 +475,7 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
 
             if cola.size() < 50 and total_descargadas < meta:
                 print(f"\n🔄 Re-sembrando cola ({cola.size()} pendientes)...")
-                sembrar_desde_high_elo(cola, 100)
+                sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // 3))
 
     except KeyboardInterrupt:
         print("\n\n⏸️  Pausado. Guardando checkpoint...")

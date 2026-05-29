@@ -3,6 +3,7 @@ import json
 import requests
 import urllib3
 import sys
+import time
 from base64 import b64encode
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -85,7 +86,8 @@ class LCUConnector:
 
     def obtener_summoners_partida(self):
         """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName.
-        Usa playerChampionSelections (funciona en champ select) o teamOne/teamTwo (funciona in-game)."""
+        Usa playerChampionSelections (champ select) o teamOne/teamTwo (in-game).
+        Durante InProgress tambien busca en el objeto 'gameData' completo como fallback."""
         if not self.port: return []
         try:
             url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
@@ -108,39 +110,97 @@ class LCUConnector:
                         "skinIndex": sel.get("skinIndex", 0),
                         "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
                     })
-                return players
+                if players:
+                    print(f"[LCU] {len(players)} jugadores via playerChampionSelections")
+                    return players
 
             # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
-            for team_key, team_name in [("teamOne", "ORDER"), ("teamTwo", "CHAOS")]:
-                team = game_data.get(team_key, {})
-                if isinstance(team, dict):
-                    # team tiene summonerName, championId, etc?
-                    for summoner in team.get("summoners", team.get("players", [])):
-                        if isinstance(summoner, dict):
-                            players.append({
-                                "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
-                                "championId": summoner.get("championId", 0),
-                                "spell1Id": summoner.get("spell1Id", 0),
-                                "spell2Id": summoner.get("spell2Id", 0),
-                                "team": team_name,
-                                "skinIndex": 0,
-                                "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
-                            })
-                elif isinstance(team, list):
-                    for summoner in team:
-                        if isinstance(summoner, dict):
-                            players.append({
-                                "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
-                                "championId": summoner.get("championId", 0),
-                                "spell1Id": summoner.get("spell1Id", 0),
-                                "spell2Id": summoner.get("spell2Id", 0),
-                                "team": team_name,
-                                "skinIndex": 0,
-                                "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
-                            })
-            return players
-        except: pass
-        return []
+            players = self._extraer_de_team(game_data, "teamOne", "ORDER")
+            if not players:
+                players = self._extraer_de_team(game_data, "teamTwo", "CHAOS")
+            # Si teamOne encontro jugadores, añadir teamTwo tambien
+            players += self._extraer_de_team(game_data, "teamTwo", "CHAOS")
+            
+            # Si encontro jugadores de los dos equipos, devolver
+            if len(players) >= 2:
+                print(f"[LCU] {len(players)} jugadores via teamOne/teamTwo")
+                return players
+
+            # Metodo 3: Buscar en todo gameData recursivamente objetos con championId
+            players_fallback = self._buscar_jugadores_en_dict(game_data)
+            if players_fallback:
+                print(f"[LCU] {len(players_fallback)} jugadores via busqueda profunda en gameData")
+                return players_fallback
+
+            print(f"[LCU] gameData keys: {list(game_data.keys()) if game_data else 'vacio'}")
+            return players if players else []
+        except Exception as e:
+            print(f"[LCU] Error en obtener_summoners_partida: {e}")
+            return []
+
+    def _extraer_de_team(self, game_data, team_key, team_name):
+        """Extrae jugadores de teamOne/teamTwo del gameData."""
+        players = []
+        team = game_data.get(team_key, {})
+        if isinstance(team, dict):
+            for summoner in team.get("summoners", team.get("players", [])):
+                if isinstance(summoner, dict):
+                    players.append({
+                        "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                        "championId": summoner.get("championId", 0),
+                        "spell1Id": summoner.get("spell1Id", 0),
+                        "spell2Id": summoner.get("spell2Id", 0),
+                        "team": team_name,
+                        "skinIndex": 0,
+                        "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                    })
+        elif isinstance(team, list):
+            for summoner in team:
+                if isinstance(summoner, dict):
+                    players.append({
+                        "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                        "championId": summoner.get("championId", 0),
+                        "spell1Id": summoner.get("spell1Id", 0),
+                        "spell2Id": summoner.get("spell2Id", 0),
+                        "team": team_name,
+                        "skinIndex": 0,
+                        "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                    })
+        return players
+
+    def _buscar_jugadores_en_dict(self, d, profundidad=0):
+        """Busqueda recursiva en dict/list buscando objetos con championId > 0.
+        Retorna lista de dicts con championId, summonerName y team inferido."""
+        if profundidad > 4:
+            return []
+        resultados = []
+        if isinstance(d, dict):
+            # ¿Es un objeto jugador?
+            if d.get("championId", 0) and d.get("championId") != 0:
+                team_guess = "ORDER"  # No podemos saber el equipo, el caller debe inferirlo
+                # Intentar inferir equipo
+                for k in d:
+                    if "team" in str(k).lower():
+                        val = str(d[k]).upper()
+                        if "CHAOS" in val or "RED" in val or "TWO" in val.upper():
+                            team_guess = "CHAOS"
+                        break
+                resultados.append({
+                    "summonerId": d.get("summonerInternalName", d.get("summonerName", "")),
+                    "championId": d.get("championId", 0),
+                    "spell1Id": d.get("spell1Id", 0),
+                    "spell2Id": d.get("spell2Id", 0),
+                    "team": team_guess,
+                    "skinIndex": 0,
+                    "summonerName": d.get("summonerName", d.get("summonerInternalName", "")),
+                })
+            # Buscar en hijos
+            for v in d.values():
+                resultados += self._buscar_jugadores_en_dict(v, profundidad + 1)
+        elif isinstance(d, list):
+            for item in d:
+                resultados += self._buscar_jugadores_en_dict(item, profundidad + 1)
+        return resultados
 
     def obtener_maestria_champ(self, champion_id):
         """Obtiene la maestria del jugador actual con un campeon especifico."""
@@ -317,7 +377,9 @@ class LCUConnector:
 
     def obtener_liveclient_data(self):
         """Obtiene datos en vivo de la partida via Live Client Data API (puerto 2999).
-        Solo disponible cuando la partida esta corriendo (InProgress)."""
+        Solo disponible cuando la partida esta corriendo (InProgress).
+        NOTA: Esta API debe estar activada en LoL: Ajustes > Juego > Live Client Data API.
+        Retorna ([], {'status': 'loading'}) si la partida esta en pantalla de carga."""
         try:
             url = "https://127.0.0.1:2999/liveclientdata/allgamedata"
             res = requests.get(url, verify=False, timeout=2)
@@ -325,25 +387,57 @@ class LCUConnector:
                 data = res.json()
                 players = []
                 for p in data.get("allPlayers", []):
+                    if not isinstance(p, dict):
+                        continue
+                    team_raw = p.get("team", "")
+                    if isinstance(team_raw, str):
+                        team_norm = "ORDER" if team_raw.upper() in ("ORDER", "BLUE", "ALLY", "ALLIES") else "CHAOS"
+                    else:
+                        team_norm = "ORDER"
+                    
+                    # Sanitizar items: evitar IndexError si la lista es corta
+                    items_raw = p.get("items", [])
+                    safe_items = []
+                    if isinstance(items_raw, list):
+                        for i in range(min(7, len(items_raw))):
+                            safe_items.append(items_raw[i] if isinstance(items_raw[i], dict) else {})
+                    
+                    # Sanitizar summoner spells
+                    spells = p.get("summonerSpells", {})
+                    spell_one = (spells.get("summonerSpellOne") or {}).get("rawDisplayName", "") if isinstance(spells, dict) else ""
+                    spell_two = (spells.get("summonerSpellsTwo") or {}).get("rawDisplayName", "") if isinstance(spells, dict) else ""
+                    
                     players.append({
-                        "summonerName": p.get("summonerName", ""),
+                        "summonerName": p.get("summonerName", p.get("riotId", "")),
                         "championName": p.get("championName", ""),
-                        "team": "ORDER" if p.get("team") == "ORDER" else "CHAOS",
+                        "team": team_norm,
                         "level": p.get("level", 1),
-                        "kills": p.get("scores", {}).get("kills", 0),
-                        "deaths": p.get("scores", {}).get("deaths", 0),
-                        "assists": p.get("scores", {}).get("assists", 0),
-                        "creepScore": p.get("scores", {}).get("creepScore", 0),
-                        "items": [p.get(f"items", [{}])[i] for i in range(7)] if p.get("items") else [],
-                        "summonerSpells": [p.get("summonerSpells", {}).get("summonerSpellOne", {}).get("rawDisplayName", ""),
-                                          p.get("summonerSpells", {}).get("summonerSpellTwo", {}).get("rawDisplayName", "")],
+                        "kills": (p.get("scores") or {}).get("kills", 0),
+                        "deaths": (p.get("scores") or {}).get("deaths", 0),
+                        "assists": (p.get("scores") or {}).get("assists", 0),
+                        "creepScore": (p.get("scores") or {}).get("creepScore", 0),
+                        "items": safe_items,
+                        "summonerSpells": [spell_one, spell_two],
                         "runes": p.get("runes", {}),
                         "isDead": p.get("isDead", False),
-                        "championId": 0,  # Live Client API no da championId, usamos el nombre
+                        "championId": 0,
                     })
+                print(f"[LiveClient] Jugadores obtenidos: {len(players)} (ORDER={sum(1 for p in players if p['team']=='ORDER')}, CHAOS={sum(1 for p in players if p['team']=='CHAOS')})")
                 return players, data.get("gameData", {})
-        except:
-            pass
+            else:
+                print(f"[LiveClient] API no disponible (status={res.status_code}). ¿Activada en ajustes de LoL?")
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            # Rate-limit: solo avisar cada 60 segundos para no spamear
+            try:
+                now = time.time()
+                if not hasattr(self, '_last_liveclient_warn') or now - self._last_liveclient_warn > 60:
+                    print("[LiveClient] Puerto 2999 no accesible (pantalla de carga o API no activada).")
+                    self._last_liveclient_warn = now
+            except Exception:
+                pass
+            return [], {"status": "loading"}
+        except Exception as e:
+            print(f"[LiveClient] Error: {e}")
         return [], {}
 
     def obtener_ranked_stats(self):

@@ -13,7 +13,7 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QGridLayout, QLabel, QPushButton, 
                                QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar, QCheckBox, QDialog, QDialogButtonBox, QSlider, QSpinBox)
+                               QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar, QCheckBox, QDialog, QDialogButtonBox, QSlider, QSpinBox, QScrollArea, QSizePolicy)
 from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
 from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
@@ -119,6 +119,7 @@ DEFAULT_SETTINGS = {
     "recordatorios_partida": True,
     "mostrar_dificultad": True,
     "tooltips_grandes": False,
+    "flash_en_d": True,  # True = Flash en D, False = Flash en F
 }
 
 def cargar_settings():
@@ -215,6 +216,8 @@ class SettingsDialog(QDialog):
         _seccion("⚡ EXTRA (general)")
         self.cb_sonido = _check("Sonidos de alerta al detectar partida o cambios", "sonidos",
             "Suena al conectarse al cliente, detectar draft o iniciar partida.")
+        self.cb_flash_d = _check("Flash en la tecla D (desmarca para Flash en F)", "flash_en_d",
+            "Al importar hechizos, coloca Flash en D. Si lo desactivas, Flash ira en F.")
 
         layout.addStretch()
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -227,7 +230,155 @@ class SettingsDialog(QDialog):
                 "frecuencia_radar": self.spin_radar.value(), "frecuencia_ingame": self.spin_ingame.value(),
                 "modo_principiante": self.cb_principiante.isChecked(), "modo_profesional": self.cb_pro.isChecked(),
                 "recordatorios_partida": self.cb_recordatorios.isChecked(),
-                "mostrar_dificultad": self.cb_dificultad.isChecked(), "tooltips_grandes": self.cb_tooltips.isChecked()}
+                "mostrar_dificultad": self.cb_dificultad.isChecked(), "tooltips_grandes": self.cb_tooltips.isChecked(),
+                "flash_en_d": self.cb_flash_d.isChecked()}
+
+def generar_reporte_coach(historial_games):
+    """
+    Analiza el historial y devuelve un reporte de coaching con 3 modulos:
+    1. Auditoria de Champion Pool
+    2. Rendimiento en Fase de Lineas (CS/min)
+    3. Toma de Decisiones y Supervivencia (muertes/KDA)
+    """
+    if not historial_games or len(historial_games) < 3:
+        return {"champion_pool": {}, "early_game": {}, "survivability": {}}
+    
+    # Tomar ultimas 20 partidas para analisis reciente
+    recent = historial_games[:20]
+    total = len(recent)
+    
+    # === 1. AUDITORIA DE CHAMPION POOL ===
+    champ_games = {}  # {champ: {"wins": 0, "games": 0}}
+    for g in recent:
+        part = g.get("participants", [{}])[0]
+        # Necesitamos el championId pero no tenemos procesar_nombre_champ aqui
+        # Usamos los nombres directamente del game data
+        cid = str(part.get("championId", "0"))
+        stats = part.get("stats", {})
+        win = stats.get("win", False)
+        if cid not in champ_games:
+            champ_games[cid] = {"wins": 0, "games": 0, "name": cid}
+        champ_games[cid]["games"] += 1
+        if win: champ_games[cid]["wins"] += 1
+    
+    unique = len(champ_games)
+    is_too_wide = unique > 5
+    
+    # Top 3 por partidas
+    sorted_champs = sorted(champ_games.values(), key=lambda x: x["games"], reverse=True)
+    top3 = sorted_champs[:3]
+    rest = sorted_champs[3:]
+    
+    top3_wins = sum(c["wins"] for c in top3)
+    top3_games = sum(c["games"] for c in top3)
+    rest_wins = sum(c["wins"] for c in rest)
+    rest_games = sum(c["games"] for c in rest)
+    
+    top3_wr = (top3_wins / top3_games * 100) if top3_games > 0 else 0
+    rest_wr = (rest_wins / rest_games * 100) if rest_games > 0 else 0
+    
+    if is_too_wide:
+        cp_advice = (
+            f"⚠️ Estás usando DEMASIADOS campeones ({unique} distintos en 20 partidas). "
+            f"Reduce tu pool a 2-3 campeones principales para subir de elo. "
+            f"Tu WR con tu top 3 es {top3_wr:.0f}% vs {rest_wr:.0f}% con el resto. "
+            f"La consistencia gana partidas."
+        )
+    else:
+        cp_advice = (
+            f"✅ Pool de campeones enfocada ({unique} distintos). "
+            f"WR con top 3: {top3_wr:.0f}%. Sigue así."
+        )
+    
+    # === 2. RENDIMIENTO EN FASE DE LINEAS (CS/min) ===
+    try:
+        cs_values = []
+        for g in recent:
+            part = g.get("participants", [{}])[0]
+            stats = part.get("stats", {})
+            cs = stats.get("totalMinionsKilled", 0) + stats.get("neutralMinionsKilled", 0)
+            dur = g.get("gameDuration", 0)
+            if dur > 0 and cs > 0:
+                cs_values.append(cs / (dur / 60))
+        
+        avg_cs = sum(cs_values) / len(cs_values) if cs_values else 0
+        
+        if avg_cs < 5.0:
+            eg_advice = (
+                f"🔴 Tu farmeo es muy bajo ({avg_cs:.1f} CS/min). "
+                f"Prioriza las oleadas sobre los trades innecesarios. "
+                f"Cada 15-20 CS equivalen a una kill en oro. Practica last-hitting 10 min/día."
+            )
+        elif avg_cs < 6.5:
+            eg_advice = (
+                f"🟡 Farmeo aceptable pero mejorable ({avg_cs:.1f} CS/min). "
+                f"Enfócate en no perder CS por trades forzados en early. "
+                f"Un buen objetivo es 7+ CS/min constante."
+            )
+        else:
+            eg_advice = (
+                f"🟢 Excelente farmeo ({avg_cs:.1f} CS/min). "
+                f"Tu economía early es sólida: puedes traducir esa ventaja en presión de mapa."
+            )
+    except Exception as e:
+        print(f"[generar_reporte_coach] Error CS: {e}")
+        avg_cs = 0
+        eg_advice = "Datos de farmeo insuficientes en el historial reciente."
+    
+    # === 3. TOMA DE DECISIONES Y SUPERVIVENCIA ===
+    deaths = []
+    kda_vals = []
+    for g in recent:
+        part = g.get("participants", [{}])[0]
+        stats = part.get("stats", {})
+        k = stats.get("kills", 0)
+        d = stats.get("deaths", 0)
+        a = stats.get("assists", 0)
+        deaths.append(d)
+        if k + d + a > 0:
+            kda_vals.append((k + a) / max(1, d))
+    
+    avg_deaths = sum(deaths) / len(deaths) if deaths else 0
+    avg_kda = sum(kda_vals) / len(kda_vals) if kda_vals else 0
+    
+    if avg_deaths > 7:
+        sv_advice = (
+            f"🔴 Promedio de muertes MUY alto ({avg_deaths:.1f}/partida). "
+            f"Estás overextendiéndote o tomando peleas en desventaja. "
+            f"Regla de oro: tras morir 2 veces en lane, juega bajo torre y espera a tu jungla."
+        )
+    elif avg_deaths > 5.5:
+        sv_advice = (
+            f"🟡 Muertes por encima de lo ideal ({avg_deaths:.1f}/partida, KDA {avg_kda:.2f}). "
+            f"Revisa tu posicionamiento en teamfights. Wardeá antes de pushear."
+        )
+    else:
+        sv_advice = (
+            f"🟢 Buen control de muertes ({avg_deaths:.1f}/partida, KDA {avg_kda:.2f}). "
+            f"Mantén la disciplina: cada muerte le da 300g al enemigo."
+        )
+    
+    return {
+        "champion_pool": {
+            "unique_champs": unique,
+            "is_too_wide": is_too_wide,
+            "top3_wr": top3_wr,
+            "rest_wr": rest_wr,
+            "advice": cp_advice,
+        },
+        "early_game": {
+            "avg_cs_per_min": avg_cs,
+            "is_weak": avg_cs < 6.5,
+            "advice": eg_advice,
+        },
+        "survivability": {
+            "avg_deaths": avg_deaths,
+            "avg_kda": avg_kda,
+            "is_risky": avg_deaths > 5.5,
+            "advice": sv_advice,
+        },
+    }
+
 
 class LoLRecommenderApp(QMainWindow):
     lcu_task_finished = Signal(object, object, str, str)
@@ -237,6 +388,8 @@ class LoLRecommenderApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # Fijar fuente por defecto para evitar el warning "QFont::setPointSize: Point size <= 0 (-1)"
+        QApplication.setFont(QFont("Segoe UI", 10))
         self.setWindowTitle("GVRRIDO // LoL Performance Engine")
         self.resize(1500, 950)
         self.aplicar_estilos()
@@ -557,6 +710,7 @@ class LoLRecommenderApp(QMainWindow):
         main_layout.addWidget(self.tabview)
 
         self.tab_perfil = QWidget()
+        self.tab_coaching = QWidget()
         self.tab_vivo = QWidget()
         self.tab_counters = QWidget()
         self.tab_ia = QWidget()
@@ -564,6 +718,7 @@ class LoLRecommenderApp(QMainWindow):
         self.tab_ingame = QWidget()
 
         self.tabview.addTab(self.tab_perfil, "👤 MI PERFIL")
+        self.tabview.addTab(self.tab_coaching, "🎓 COACHING PRO")
         self.tabview.addTab(self.tab_vivo, "📡 RADAR EN VIVO")
         self.tabview.addTab(self.tab_ingame, "🎮 IN-GAME")
         self.tabview.addTab(self.tab_counters, "📊 META & BUILDS")
@@ -571,6 +726,7 @@ class LoLRecommenderApp(QMainWindow):
         self.tabview.addTab(self.tab_bans, "🚫 TIER LIST DE BANS")
 
         self.armar_tab_perfil()
+        self.armar_tab_coaching()
         self.armar_tab_vivo()
         self.armar_tab_ingame()
         self.armar_tab_counters()
@@ -674,10 +830,21 @@ class LoLRecommenderApp(QMainWindow):
         if len(ids_spells) < 2:
             QMessageBox.critical(self, "Error", "Selecciona los dos hechizos primero.")
             return
+        s1, s2 = str(ids_spells[0]), str(ids_spells[1])
+        # Aplicar preferencia de tecla para Flash (ID=4)
+        flash_en_d = self.user_settings.get("flash_en_d", True)
+        if not flash_en_d:
+            # Usuario quiere Flash en F: si Flash esta en pos 0 (D), intercambiar
+            if s1 == "4" and s2 != "4":
+                s1, s2 = s2, s1
+        else:
+            # Usuario quiere Flash en D: si Flash esta en pos 1 (F), intercambiar
+            if s2 == "4" and s1 != "4":
+                s1, s2 = s2, s1
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_hechizos(ids_spells[0], ids_spells[1]), btn, "Exportar a LoL", "Asegúrate de estar en una sala de Draft."),
+            args=(lambda: self.lcu.importar_hechizos(s1, s2), btn, "Exportar a LoL", "Asegúrate de estar en una sala de Draft."),
             daemon=True
         ).start()
 
@@ -851,150 +1018,113 @@ class LoLRecommenderApp(QMainWindow):
         l_pnl = QHBoxLayout(self.pnl_perfil)
         l_pnl.setAlignment(Qt.AlignTop)
         
-        # ===== COLUMNA IZQUIERDA: IDENTIDAD + RANKS + MAESTRÍAS =====
+        # ===== COLUMNA IZQUIERDA =====
         self.col_id = QVBoxLayout()
         self.col_id.setAlignment(Qt.AlignTop)
+        self.col_id.setSpacing(4)
         
-        # Icono de perfil
+        # ===== TARJETA COMPACTA: IDENTIDAD + LIGAS (FUSIONADA) =====
+        self.pnl_identity_card = QFrame()
+        self.pnl_identity_card.setObjectName("Panel")
+        self.pnl_identity_card.setMaximumHeight(120)
+        id_card_layout = QHBoxLayout(self.pnl_identity_card)
+        id_card_layout.setContentsMargins(8, 8, 8, 8)
+        id_card_layout.setSpacing(8)
+        
+        # Icono perfil (izquierda, 60x60)
         self.lbl_prof_icon = QLabel()
+        self.lbl_prof_icon.setFixedSize(60, 60)
         self.lbl_prof_icon.setAlignment(Qt.AlignCenter)
-        self.col_id.addWidget(self.lbl_prof_icon, alignment=Qt.AlignCenter)
+        id_card_layout.addWidget(self.lbl_prof_icon)
         
-        # Nombre de invocador
+        # Centro: Nombre + Nivel
+        center_info = QVBoxLayout()
+        center_info.setSpacing(0)
         self.lbl_sum_name = QLabel("Esperando al Cliente...")
-        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 22px; font-weight: bold;")
-        self.lbl_sum_name.setAlignment(Qt.AlignCenter)
-        self.col_id.addWidget(self.lbl_sum_name, alignment=Qt.AlignCenter)
-        
-        # Nivel
+        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
+        center_info.addWidget(self.lbl_sum_name)
         self.lbl_sum_lvl = QLabel("Nivel: --")
-        self.lbl_sum_lvl.setStyleSheet("color: #8fa3b8; font-size: 14px;")
-        self.lbl_sum_lvl.setAlignment(Qt.AlignCenter)
-        self.col_id.addWidget(self.lbl_sum_lvl, alignment=Qt.AlignCenter)
+        self.lbl_sum_lvl.setStyleSheet("color: #8fa3b8; font-size: 11px;")
+        center_info.addWidget(self.lbl_sum_lvl)
+        id_card_layout.addLayout(center_info, 1)
         
-        # Separador
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(f"background-color: {BORDER_ACCENT}; max-height: 1px; margin: 8px 20px;")
-        self.col_id.addWidget(sep)
-        
-        # ===== PANEL DE RANKS =====
-        self.pnl_ranks, self.l_ranks = self.crear_panel("LIGAS ACTUALES")
-        self.l_ranks.setSpacing(10)
-        
-        # SoloQ
-        self.fr_soloq = QHBoxLayout()
-        self.lbl_soloq_icon = QLabel("⚔️")
-        self.lbl_soloq_icon.setStyleSheet("font-size: 30px;")
-        self.fr_soloq.addWidget(self.lbl_soloq_icon)
-        self.fr_soloq_info = QVBoxLayout()
-        self.lbl_soloq_tier = QLabel("Solo/Duo\n--")
-        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 14px;")
-        self.lbl_soloq_tier.setAlignment(Qt.AlignLeft)
-        self.fr_soloq_info.addWidget(self.lbl_soloq_tier)
+        # Derecha: SoloQ + Flex (compacto, una linea cada uno)
+        ranks_info = QVBoxLayout()
+        ranks_info.setSpacing(2)
+        self.lbl_soloq_tier = QLabel("⚔️ --")
+        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 11px;")
+        ranks_info.addWidget(self.lbl_soloq_tier)
         self.lbl_soloq_stats = QLabel("")
-        self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 10px;")
-        self.fr_soloq_info.addWidget(self.lbl_soloq_stats)
-        self.fr_soloq.addLayout(self.fr_soloq_info)
-        self.fr_soloq.addStretch()
-        self.l_ranks.addLayout(self.fr_soloq)
-        
-        # Flex
-        self.fr_flex = QHBoxLayout()
-        self.lbl_flex_icon = QLabel("🛡️")
-        self.lbl_flex_icon.setStyleSheet("font-size: 30px;")
-        self.fr_flex.addWidget(self.lbl_flex_icon)
-        self.fr_flex_info = QVBoxLayout()
-        self.lbl_flex_tier = QLabel("Flex\n--")
-        self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 14px;")
-        self.lbl_flex_tier.setAlignment(Qt.AlignLeft)
-        self.fr_flex_info.addWidget(self.lbl_flex_tier)
+        self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 9px;")
+        ranks_info.addWidget(self.lbl_soloq_stats)
+        self.lbl_flex_tier = QLabel("🛡️ --")
+        self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 11px;")
+        ranks_info.addWidget(self.lbl_flex_tier)
         self.lbl_flex_stats = QLabel("")
-        self.lbl_flex_stats.setStyleSheet("color: #8fa3b8; font-size: 10px;")
-        self.fr_flex_info.addWidget(self.lbl_flex_stats)
-        self.fr_flex.addLayout(self.fr_flex_info)
-        self.fr_flex.addStretch()
-        self.l_ranks.addLayout(self.fr_flex)
+        self.lbl_flex_stats.setStyleSheet("color: #8fa3b8; font-size: 9px;")
+        ranks_info.addWidget(self.lbl_flex_stats)
+        id_card_layout.addLayout(ranks_info)
         
-        self.col_id.addWidget(self.pnl_ranks)
+        self.col_id.addWidget(self.pnl_identity_card)
         
-        # ===== ESTADÍSTICAS DE LA TEMPORADA (columna izquierda) =====
+        # ===== ESTADÍSTICAS DE LA TEMPORADA (columna izquierda, stretch) =====
         self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA")
-        self.lbl_season_stats = QLabel("Conecta al cliente de LoL para ver tus estadísticas de la season")
-        self.lbl_season_stats.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 4px;")
-        self.lbl_season_stats.setWordWrap(True)
+        self.lbl_season_stats = QLabel("")
+        self.lbl_season_stats.setVisible(False)  # Oculto: el rango ya se ve en la tarjeta de identidad
         self.l_season.addWidget(self.lbl_season_stats)
         self.tb_season_champs = QTableWidget()
         self.tb_season_champs.setColumnCount(4)
         self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
-        self.tb_season_champs.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        # sin limite de altura: usa el espacio disponible
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, 4):
+            self.tb_season_champs.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.tb_season_champs.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tb_season_champs.setShowGrid(False)
+        self.tb_season_champs.setAlternatingRowColors(True)
+        self.tb_season_champs.verticalHeader().setVisible(False)
+        self.tb_season_champs.horizontalHeader().setVisible(True)
+        self.tb_season_champs.verticalHeader().setDefaultSectionSize(32)
+        self.tb_season_champs.setIconSize(QSize(22, 22))
+        self.tb_season_champs.setStyleSheet("""
+            QTableWidget { border: none; background-color: transparent; }
+            QHeaderView::section { background-color: #152040; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; }
+            QTableWidget::item { border-bottom: 1px solid #1e2535; padding: 2px 6px; }
+        """)
         self.l_season.addWidget(self.tb_season_champs)
-        self.col_id.addWidget(self.pnl_season)
+        self.col_id.addWidget(self.pnl_season)  # Solo ocupa lo que necesita (8 filas)
 
-        # ===== PERFIL DE JUGADOR & OBJETIVOS (GVRRIDO) =====
-        self.pnl_player_profile, self.l_player_profile = self.crear_panel("🎯 PERFIL DE JUGADOR & OBJETIVOS")
-        
-        self.lbl_personality_style = QLabel("--")
-        self.lbl_personality_style.setStyleSheet(f"color: {ACCENT_RED}; font-size: 16px; font-weight: 700; padding: 4px 0;")
-        self.lbl_personality_style.setWordWrap(True)
-        self.l_player_profile.addWidget(self.lbl_personality_style)
-        
-        self.lbl_personality_desc = QLabel("Conecta al cliente para analizar tu perfil de juego")
-        self.lbl_personality_desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding-bottom: 6px;")
-        self.lbl_personality_desc.setWordWrap(True)
-        self.l_player_profile.addWidget(self.lbl_personality_desc)
-        
-        # Insights accionables
-        self.lbl_insights_title = QLabel("")
-        self.lbl_insights_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: 700; font-size: 10px; letter-spacing: 1px;")
-        self.l_player_profile.addWidget(self.lbl_insights_title)
-        
-        self.lbl_insights = QLabel("")
-        self.lbl_insights.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
-        self.lbl_insights.setWordWrap(True)
-        self.l_player_profile.addWidget(self.lbl_insights)
-        
-        # Objetivos semanales
-        self.lbl_objetivos_title = QLabel("")
-        self.lbl_objetivos_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: 700; font-size: 10px; letter-spacing: 1px; margin-top: 6px;")
-        self.l_player_profile.addWidget(self.lbl_objetivos_title)
-        
-        self.lbl_objetivos = QLabel("")
-        self.lbl_objetivos.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
-        self.lbl_objetivos.setWordWrap(True)
-        self.l_player_profile.addWidget(self.lbl_objetivos)
-        
-        # Cruce emocional vs winrate
-        self.lbl_emocional_title = QLabel("")
-        self.lbl_emocional_title.setStyleSheet(f"color: {YELLOW_WR}; font-weight: 700; font-size: 10px; letter-spacing: 1px; margin-top: 6px;")
-        self.l_player_profile.addWidget(self.lbl_emocional_title)
-        
-        self.lbl_emocional_stats = QLabel("")
-        self.lbl_emocional_stats.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding: 2px 6px;")
-        self.lbl_emocional_stats.setWordWrap(True)
-        self.l_player_profile.addWidget(self.lbl_emocional_stats)
-        
-        self.col_id.addWidget(self.pnl_player_profile)
-
-        # ===== PANEL DE FATIGA (columna izquierda, abajo) =====
+        # ===== PANEL DE FATIGA (columna izquierda, abajo, crece al espacio libre) =====
         self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL")
-        self.lbl_fatiga = QLabel("Analizando...")
-        self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
-        self.lbl_fatiga.setWordWrap(True)
-        self.l_fatiga.addWidget(self.lbl_fatiga)
-        self.col_id.addWidget(self.pnl_fatiga)
+        self.l_fatiga.setAlignment(Qt.AlignCenter)
+        self.l_fatiga.setSpacing(2)
         
-        l_pnl.addLayout(self.col_id, 1)
+        self.lbl_fatiga_icono = QLabel("⏳")
+        self.lbl_fatiga_icono.setAlignment(Qt.AlignCenter)
+        self.lbl_fatiga_icono.setStyleSheet("font-size: 30px; padding: 0px;")
+        self.l_fatiga.addWidget(self.lbl_fatiga_icono)
         
-        # ===== COLUMNA DERECHA: ESTADÍSTICAS + HISTORIAL =====
+        self.lbl_fatiga_estado = QLabel("ANALIZANDO...")
+        self.lbl_fatiga_estado.setAlignment(Qt.AlignCenter)
+        self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 14px; font-weight: bold; padding: 0px;")
+        self.l_fatiga.addWidget(self.lbl_fatiga_estado)
+        
+        self.lbl_fatiga_consejo = QLabel("Esperando datos del cliente.")
+        self.lbl_fatiga_consejo.setAlignment(Qt.AlignCenter)
+        self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 0px 4px;")
+        self.lbl_fatiga_consejo.setWordWrap(True)
+        self.l_fatiga.addWidget(self.lbl_fatiga_consejo)
+        
+        self.col_id.addWidget(self.pnl_fatiga, 1)  # Stretch: ocupa el espacio que deja season stats
+        
+        l_pnl.addLayout(self.col_id, 2)
+        
+        # ===== COLUMNA DERECHA: ESTADÍSTICAS + PERFIL + HISTORIAL =====
         self.col_hist = QVBoxLayout()
         self.col_hist.setAlignment(Qt.AlignTop)
-        self.col_hist.setSpacing(8)
+        self.col_hist.setSpacing(6)
         
-        # Tarjetas de estadísticas (KDA / WR / Más jugado / Mejor WR)
+        # 1. Tarjetas de estadísticas (KDA / WR / Más jugado / Mejor WR)
         self.fr_stats_cards = QHBoxLayout()
         self.fr_stats_cards.setSpacing(8)
         
@@ -1012,11 +1142,11 @@ class LoLRecommenderApp(QMainWindow):
         
         self.col_hist.addLayout(self.fr_stats_cards)
         
-        # ===== WR POR LÍNEA =====
+        # WR POR LÍNEA
         self.pnl_wr_rol, self.l_wr_rol = self.crear_panel("WINRATE POR LÍNEA (últimas 20 partidas)")
         self.fr_wr_rol = QHBoxLayout()
         self.fr_wr_rol.setSpacing(4)
-        self.labels_wr_rol = {}  # {"TOP": QLabel, ...}
+        self.labels_wr_rol = {}
         for rol in UI_ROLES:
             lbl = QLabel(f"{rol}\n--")
             lbl.setAlignment(Qt.AlignCenter)
@@ -1044,27 +1174,183 @@ class LoLRecommenderApp(QMainWindow):
         self.fr_filtro.addStretch()
         self.col_hist.addLayout(self.fr_filtro)
         
-        # Historial
+        # 3. HISTORIAL DE PARTIDAS (stretch masivo)
         lbl_h = QLabel("HISTORIAL DE PARTIDAS")
         lbl_h.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
         
         self.tb_historial = QTableWidget()
-        self.tb_historial.setColumnCount(9)
-        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "LP", "Modo", "Fecha", "Estado"])
-        self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
+        self.tb_historial.setColumnCount(7)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha"])
+        # Columnas fijas para datos que no varian, SOLO Campeon usa Stretch
+        self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.tb_historial.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tb_historial.horizontalHeader().setMinimumSectionSize(80)
+        self.tb_historial.setColumnWidth(1, 90)   # Resultado
+        self.tb_historial.setColumnWidth(2, 70)   # K/D/A
+        self.tb_historial.setColumnWidth(3, 50)   # CS
+        self.tb_historial.setColumnWidth(4, 60)   # Dur.
+        self.tb_historial.setColumnWidth(5, 70)   # Modo
+        self.tb_historial.setColumnWidth(6, 90)   # Fecha (completa dd/mm)
+        self.tb_historial.horizontalHeader().setStretchLastSection(False)
         self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
-        self.tb_historial.verticalHeader().setDefaultSectionSize(32)  # mas compacto
-        self.tb_historial.setIconSize(QSize(24, 24))
+        self.tb_historial.verticalHeader().setDefaultSectionSize(28)
+        self.tb_historial.setIconSize(QSize(20, 20))
         self.tb_historial.verticalHeader().setVisible(False)
-        self.col_hist.addWidget(self.tb_historial, 1)
+        self.tb_historial.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.tb_historial.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.col_hist.addWidget(self.tb_historial, 1)  # Stretch masivo: ocupa todo el resto
         
-        # Scroll infinito: detecta cuando el usuario llega al final
-        self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)  # Stretch factor 1 para que ocupe el espacio restante
+        self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)
         
-        l_pnl.addLayout(self.col_hist, 2)
+        l_pnl.addLayout(self.col_hist, 3)
         layout.addWidget(self.pnl_perfil)
+
+    def armar_tab_coaching(self):
+        """Pestaña COACHING PRO con scroll, perfil de jugador y tarjetas de análisis."""
+        layout = QVBoxLayout(self.tab_coaching)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("scrollCoaching")
+        scroll.setStyleSheet("QScrollArea#scrollCoaching { border: none; background-color: transparent; } QWidget#scrollAreaWidgetContents { background-color: #010a13; }")
+        
+        content = QWidget()
+        content.setObjectName("scrollAreaWidgetContents")
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(10)
+        content_layout.setAlignment(Qt.AlignTop)
+        
+        # ===== 1. PERFIL DE JUGADOR & OBJETIVOS (reubicado desde MI PERFIL) =====
+        self.pnl_player_profile, self.l_player_profile = self.crear_panel("🎯 PERFIL DE JUGADOR & OBJETIVOS")
+        
+        self.lbl_personality_style = QLabel("--")
+        self.lbl_personality_style.setStyleSheet(f"color: {ACCENT_RED}; font-size: 15px; font-weight: 700; padding: 4px 0;")
+        self.lbl_personality_style.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_personality_style)
+        
+        self.lbl_personality_desc = QLabel("Conecta al cliente para analizar tu perfil de juego")
+        self.lbl_personality_desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding-bottom: 6px;")
+        self.lbl_personality_desc.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_personality_desc)
+        
+        self.lbl_insights_title = QLabel("")
+        self.lbl_insights_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: 700; font-size: 11px; letter-spacing: 1px;")
+        self.l_player_profile.addWidget(self.lbl_insights_title)
+        
+        self.lbl_insights = QLabel("")
+        self.lbl_insights.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_insights.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_insights)
+        
+        self.lbl_objetivos_title = QLabel("")
+        self.lbl_objetivos_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: 700; font-size: 11px; letter-spacing: 1px; margin-top: 6px;")
+        self.l_player_profile.addWidget(self.lbl_objetivos_title)
+        
+        self.lbl_objetivos = QLabel("")
+        self.lbl_objetivos.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_objetivos.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_objetivos)
+        
+        self.lbl_emocional_title = QLabel("")
+        self.lbl_emocional_title.setStyleSheet(f"color: {YELLOW_WR}; font-weight: 700; font-size: 11px; letter-spacing: 1px; margin-top: 6px;")
+        self.l_player_profile.addWidget(self.lbl_emocional_title)
+        
+        self.lbl_emocional_stats = QLabel("")
+        self.lbl_emocional_stats.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding: 2px 6px;")
+        self.lbl_emocional_stats.setWordWrap(True)
+        self.l_player_profile.addWidget(self.lbl_emocional_stats)
+        
+        content_layout.addWidget(self.pnl_player_profile)
+        
+        # ===== 2. TARJETAS DE COACHING (se llenan dinámicamente) =====
+        self.coaching_cards = {}  # {"champ_pool": QFrame, "early": QFrame, "survival": QFrame}
+        titulos_coach = [
+            ("champ_pool", "📋 AUDITORÍA DE CHAMPION POOL", TEXT_GOLD),
+            ("early", "⚔️ RENDIMIENTO EN FASE DE LÍNEAS", ACCENT_TEAL),
+            ("survival", "🛡️ TOMA DE DECISIONES Y SUPERVIVENCIA", ACCENT_RED),
+        ]
+        
+        for key, titulo, color in titulos_coach:
+            card = QFrame()
+            card.setObjectName("Panel")
+            card.setStyleSheet(f"QFrame#Panel {{ border: 1px solid {color}; border-radius: 6px; padding: 10px; }}")
+            card_layout = QVBoxLayout(card)
+            card_layout.setSpacing(4)
+            
+            lbl_title = QLabel(titulo)
+            lbl_title.setStyleSheet(f"color: {color}; font-weight: 700; font-size: 13px;")
+            card_layout.addWidget(lbl_title)
+            
+            lbl_data = QLabel("Esperando datos...")
+            lbl_data.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px; padding: 2px 0;")
+            lbl_data.setWordWrap(True)
+            card_layout.addWidget(lbl_data)
+            
+            lbl_advice = QLabel("")
+            lbl_advice.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-style: italic; padding: 4px 0;")
+            lbl_advice.setWordWrap(True)
+            card_layout.addWidget(lbl_advice)
+            
+            self.coaching_cards[key] = {"card": card, "data": lbl_data, "advice": lbl_advice}
+            content_layout.addWidget(card)
+        
+        content_layout.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+    def _actualizar_coaching(self):
+        """Puebla las tarjetas de coaching usando el historial cargado."""
+        if not hasattr(self, 'historial_games') or not self.historial_games:
+            return
+        try:
+            reporte = generar_reporte_coach(self.historial_games)
+            
+            # Tarjeta 1: Champion Pool
+            cp = reporte.get("champion_pool", {})
+            if cp:
+                color = GREEN_WR if not cp.get("is_too_wide") else YELLOW_WR
+                self.coaching_cards["champ_pool"]["data"].setText(
+                    f"Has usado {cp.get('unique_champs', 0)} campeones distintos en las últimas 20 partidas.\n"
+                    f"Top 3 WR: {cp.get('top3_wr', 0):.0f}% — Resto: {cp.get('rest_wr', 0):.0f}%"
+                )
+                self.coaching_cards["champ_pool"]["data"].setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px; padding: 2px 0;")
+                self.coaching_cards["champ_pool"]["advice"].setText(cp.get("advice", ""))
+                # Cambiar borde según severidad
+                borde = YELLOW_WR if cp.get("is_too_wide") else GREEN_WR
+                self.coaching_cards["champ_pool"]["card"].setStyleSheet(
+                    f"QFrame#Panel {{ border: 1px solid {borde}; border-radius: 6px; padding: 10px; }}")
+            
+            # Tarjeta 2: Early Game / CS
+            eg = reporte.get("early_game", {})
+            if eg:
+                cs_val = eg.get("avg_cs_per_min", 0)
+                color = GREEN_WR if cs_val >= 6.5 else RED_WR
+                self.coaching_cards["early"]["data"].setText(f"Promedio de {cs_val:.1f} CS/min")
+                self.coaching_cards["early"]["data"].setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold; padding: 2px 0;")
+                self.coaching_cards["early"]["advice"].setText(eg.get("advice", ""))
+                borde = GREEN_WR if cs_val >= 6.5 else RED_WR
+                self.coaching_cards["early"]["card"].setStyleSheet(
+                    f"QFrame#Panel {{ border: 1px solid {borde}; border-radius: 6px; padding: 10px; }}")
+            
+            # Tarjeta 3: Supervivencia / Muertes
+            sv = reporte.get("survivability", {})
+            if sv:
+                d = sv.get("avg_deaths", 0)
+                kda_val = sv.get("avg_kda", 0)
+                color = GREEN_WR if d <= 5 else RED_WR if d >= 7 else YELLOW_WR
+                self.coaching_cards["survival"]["data"].setText(
+                    f"{d:.1f} muertes promedio | KDA: {kda_val:.2f}")
+                self.coaching_cards["survival"]["data"].setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold; padding: 2px 0;")
+                self.coaching_cards["survival"]["advice"].setText(sv.get("advice", ""))
+                borde = GREEN_WR if d <= 5 else RED_WR if d >= 7 else YELLOW_WR
+                self.coaching_cards["survival"]["card"].setStyleSheet(
+                    f"QFrame#Panel {{ border: 1px solid {borde}; border-radius: 6px; padding: 10px; }}")
+        except Exception as e:
+            print(f"[_actualizar_coaching] Error: {e}")
 
     # ================= CARGA DE PERFIL (HILO SEGUNDARIO) =================
     def _fetch_perfil(self):
@@ -1085,16 +1371,16 @@ class LoLRecommenderApp(QMainWindow):
             maestrias = self.lcu.obtener_maestrias()
             data["maestrias"] = maestrias[:3] if maestrias else []
             
-            # Historial (con reintentos: a veces no está listo inmediatamente tras login)
+            # Historial (100 partidas iniciales con reintentos)
             puuid = perfil.get("puuid")
             historial = None
             if puuid:
                 for intento in range(3):
-                    historial = self.lcu.obtener_historial(puuid)
+                    historial = self.lcu.obtener_historial_extendido(inicio=0, cantidad=100)
                     if historial:
                         break
                     if intento < 2:
-                        time.sleep(2)  # esperar antes de reintentar
+                        time.sleep(2)
             data["historial"] = historial
             
             data["ok"] = True
@@ -1123,11 +1409,11 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_sum_name.setText(display_name)
         self.lbl_sum_lvl.setText(f"Nivel: {perfil.get('summonerLevel', '--')}")
         
-        # --- Icono de perfil ---
+        # --- Icono de perfil (tamano compacto para tarjeta fusionada) ---
         icon_id = perfil.get("profileIconId")
         ruta_icon = self.descargar_imagen(icon_id, "profile")
         if ruta_icon:
-            self.lbl_prof_icon.setPixmap(QPixmap(ruta_icon).scaled(110, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.lbl_prof_icon.setPixmap(QPixmap(ruta_icon).scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         # --- Ligas ---
         ligas = data.get("ligas")
@@ -1157,10 +1443,11 @@ class LoLRecommenderApp(QMainWindow):
 
         print(f"[Perfil] SoloQ: {ranked_solo}, Flex: {ranked_flex}")
 
-        def _format_rank(rank_data, lbl_tier, lbl_stats):
+        def _format_rank(rank_data, lbl_tier, lbl_stats, prefijo=""):
+            """Formato compacto para tarjeta fusionada (1 linea)."""
             if not rank_data or not rank_data.get("tier"):
-                lbl_tier.setText("--")
-                lbl_stats.setText("Sin clasificar")
+                lbl_tier.setText(f"{prefijo}--")
+                lbl_stats.setText("")
                 return
             t = rank_data["tier"]
             d = rank_data.get("division", "").strip()
@@ -1173,12 +1460,13 @@ class LoLRecommenderApp(QMainWindow):
                 d = ""
             display_tier = f"{icon} {t.capitalize()} {d}" if d else f"{icon} {t.capitalize()}"
             lbl_tier.setText(display_tier)
-            lbl_tier.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 14px;")
-            if w + l > 0:
-                wr = round(w / (w + l) * 100)
-                lbl_stats.setText(f"{lp} PL  •  {w}V / {l}D  •  {wr}% WR")
+            lbl_tier.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 11px;")
+            total = w + l
+            if total > 0:
+                wr = round(w / total * 100)
+                lbl_stats.setText(f"{lp} PL | {total}p | {wr}%")
             else:
-                lbl_stats.setText(f"{lp} PL  •  {w}V / {l}D")
+                lbl_stats.setText(f"{lp} PL")
 
         _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats)
         _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats)
@@ -1195,7 +1483,8 @@ class LoLRecommenderApp(QMainWindow):
             self._analizar_fatiga()
             return
         
-        games = historial.get("games", {}).get("games", [])
+        # obtener_historial_extendido devuelve lista directa, el viejo devuelve dict
+        games = historial if isinstance(historial, list) else historial.get("games", {}).get("games", [])
         self.historial_games = games
         self._renderizar_historial(games)
 
@@ -1220,7 +1509,7 @@ class LoLRecommenderApp(QMainWindow):
             duration_sec = g.get("gameDuration", 0)
             duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}"
             
-            # LP delta (intentar varios campos de la API de LCU)
+            # LP
             lp_delta = g.get("eloChange") or g.get("playerScoreChange") or stats.get("eloChange")
             if lp_delta is not None:
                 lp_str = f"{'+' if lp_delta > 0 else ''}{lp_delta}"
@@ -1260,25 +1549,13 @@ class LoLRecommenderApp(QMainWindow):
             modo_juego = g.get("gameMode", "Draft")
             if modo_juego == "CLASSIC": modo_juego = "Ranked"
             
-            # LP con color (verde positivo, rojo negativo)
-            item_lp = QTableWidgetItem(lp_str)
-            if lp_delta is not None:
-                item_lp.setForeground(QColor(GREEN_WR if lp_delta > 0 else RED_WR))
-            
             self.tb_historial.setItem(row, 0, item_c)
             self.tb_historial.setItem(row, 1, item_w)
             self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
             self.tb_historial.setItem(row, 3, QTableWidgetItem(str(cs)))
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
-            self.tb_historial.setItem(row, 5, item_lp)
-            self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
-            self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
-            
-            # ─── Columna de Estado Emocional (GVRRIDO) ───
-            game_id = str(g.get("gameId", ""))
-            estado_actual = obtener_estado_emocional(game_id)
-            tag_widget = self._crear_widget_emocional(game_id, champ_name, estado_actual)
-            self.tb_historial.setCellWidget(row, 8, tag_widget)
+            self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
         # --- Tarjetas de estadísticas ---
         if total_games > 0:
@@ -1393,28 +1670,103 @@ class LoLRecommenderApp(QMainWindow):
         self.cb_filtro_modo.addItems(modos_usados)
         self.cb_filtro_modo.blockSignals(False)
 
-    def _analizar_fatiga(self):
-        """Analiza fatiga/tilt desde el historial de la LCU."""
+        # ─── FASE 4: PERFIL DE JUGADOR & OBJETIVOS ───
+        self._actualizar_perfil_jugador()
+        self._actualizar_coaching()
+
+    def _actualizar_perfil_jugador(self):
+        """Puebla el panel de PERFIL DE JUGADOR & OBJETIVOS con datos del historial."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
-            self.lbl_fatiga.setText("Esperando datos del cliente...")
-            self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
+            return
+        try:
+            games = self.historial_games
+            
+            # 1. Personalidad
+            personalidad = analizar_personalidad(games)
+            estilo = personalidad.get("estilo", "NEUTRAL")
+            perfil_texto = personalidad.get("perfil", "")
+            detalles = personalidad.get("detalles", {})
+            
+            colores_estilo = {
+                "AGRESIVO": ACCENT_RED, "CONSISTENTE": GREEN_WR,
+                "CONTROL": ACCENT_TEAL, "BALANCEADO": TEXT_GOLD
+            }
+            color_estilo = colores_estilo.get(estilo, TEXT_WHITE)
+            
+            self.lbl_personality_style.setText(f"{estilo}")
+            self.lbl_personality_style.setStyleSheet(
+                f"color: {color_estilo}; font-size: 16px; font-weight: 700; padding: 4px 0;")
+            self.lbl_personality_desc.setText(perfil_texto)
+            
+            # 2. Insights / Habitos
+            insights = detectar_habitos(games)
+            if insights:
+                self.lbl_insights_title.setText("🔍 INSIGHTS DETECTADOS")
+                self.lbl_insights.setText("\n".join(f"• {i}" for i in insights[:5]))
+            
+            # 3. Objetivos semanales
+            objetivos = generar_objetivos_semanales(games)
+            if objetivos:
+                self.lbl_objetivos_title.setText("🎯 OBJETIVOS SEMANALES")
+                self.lbl_objetivos.setText("\n".join(objetivos))
+            
+            # 4. Cruce emocional vs WR
+            emocional = analizar_emocional_vs_wr(games)
+            if emocional:
+                self.lbl_emocional_title.setText("📊 RENDIMIENTO POR ESTADO")
+                lineas = []
+                emoji_map = {"Concentrado": "🔥", "Normal": "😐", "Tilted": "😤", "Cansado": "😴"}
+                for estado, data in sorted(emocional.items(), key=lambda x: x[1].get("winrate", 0), reverse=True):
+                    wr_e = data.get("winrate", 0)
+                    n = data.get("partidas", 0)
+                    emoji = emoji_map.get(estado, "❓")
+                    lineas.append(f"{emoji} {estado}: {wr_e}% WR ({n} partidas)")
+                self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
+        except Exception as e:
+            print(f"[_actualizar_perfil_jugador] Error: {e}")
+
+    def _analizar_fatiga(self):
+        """Analiza fatiga/tilt desde el historial de la LCU y actualiza el dashboard premium."""
+        if not hasattr(self, 'historial_games') or not self.historial_games:
+            self.lbl_fatiga_icono.setText("📊")
+            self.lbl_fatiga_icono.setStyleSheet("font-size: 30px; padding: 0px;")
+            self.lbl_fatiga_estado.setText("SIN DATOS")
+            self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 14px; font-weight: bold; padding: 0px;")
+            self.lbl_fatiga_consejo.setText("Esperando datos del cliente.")
+            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 0px 4px;")
             return
         try:
             fatiga = analizar_fatiga(self.historial_games)
             estado = fatiga.get("estado", "neutral")
+            mensaje = fatiga.get("mensaje", "Sin datos")
+            recomendacion = fatiga.get("recomendacion", "")
+            
+            emojis = {"fresh": "🔥", "neutral": "⚖️", "tired": "🥱", "tilted": "💢", "sin_datos": "📊"}
             colores = {"fresh": GREEN_WR, "neutral": ACCENT_TEAL, "tired": YELLOW_WR, "tilted": RED_WR, "sin_datos": TEXT_WHITE}
+            textos = {"fresh": "FRESCO", "neutral": "NEUTRAL", "tired": "CANSADO", "tilted": "TILTEADO", "sin_datos": "SIN DATOS"}
+            
+            emoji = emojis.get(estado, "📊")
             color = colores.get(estado, TEXT_WHITE)
-            msg = fatiga.get("mensaje", "Sin datos")
-            rec = fatiga.get("recomendacion", "")
-            texto = f"{msg}"
-            if rec:
-                texto += f"\n💡 {rec}"
-            self.lbl_fatiga.setText(texto)
-            self.lbl_fatiga.setStyleSheet(f"color: {color}; font-size: 10px; padding: 4px; font-weight: bold;")
+            estado_txt = textos.get(estado, "ANALIZANDO")
+            
+            self.lbl_fatiga_icono.setText(emoji)
+            self.lbl_fatiga_icono.setStyleSheet("font-size: 30px; padding: 0px;")
+            self.lbl_fatiga_estado.setText(estado_txt)
+            self.lbl_fatiga_estado.setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold; padding: 0px;")
+            
+            if recomendacion:
+                self.lbl_fatiga_consejo.setText(f"💡 {recomendacion}")
+            else:
+                self.lbl_fatiga_consejo.setText(mensaje)
+            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 0px 4px;")
         except Exception as e:
             print(f"[_analizar_fatiga] Error: {e}")
-            self.lbl_fatiga.setText("No se pudo analizar")
-            self.lbl_fatiga.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 4px;")
+            self.lbl_fatiga_icono.setText("❌")
+            self.lbl_fatiga_icono.setStyleSheet("font-size: 30px; padding: 0px;")
+            self.lbl_fatiga_estado.setText("ERROR")
+            self.lbl_fatiga_estado.setStyleSheet(f"color: {RED_WR}; font-size: 14px; font-weight: bold; padding: 0px;")
+            self.lbl_fatiga_consejo.setText("No se pudo analizar el estado mental.")
+            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 0px 4px;")
 
     def _on_scroll_historial(self, value):
         """Scroll infinito: carga mas partidas cuando el usuario llega al final."""
@@ -1428,23 +1780,75 @@ class LoLRecommenderApp(QMainWindow):
             self._cargar_mas_partidas_scroll()
 
     def _cargar_mas_partidas_scroll(self):
-        """Carga 20 partidas adicionales via LCU."""
+        """Carga 50 partidas ADICIONALES via LCU. Concatena sin borrar la tabla."""
         try:
             if not self.lcu or not self.lcu.port: return
             current = len(self.historial_games) if hasattr(self, 'historial_games') else 0
-            if current >= 100: return
+            if current >= 500: return
             perfil = self.lcu.obtener_perfil()
             if not perfil: return
             puuid = perfil.get("puuid")
             if not puuid: return
-            nuevas = self.lcu.obtener_historial(puuid, count=current + 20)
-            if nuevas:
-                games = nuevas.get("games", {}).get("games", [])
-                if len(games) > current:
-                    self.historial_games = games
-                    self._renderizar_historial(self.historial_games)
+            
+            # Cargar siguiente bloque: desde current hasta current+50
+            nuevas = self.lcu.obtener_historial_extendido(inicio=current, cantidad=50)
+            if not nuevas: return
+            
+            # Filtrar duplicados por gameId
+            existing_ids = {str(g.get("gameId", "")) for g in self.historial_games}
+            really_new = [g for g in nuevas if str(g.get("gameId", "")) not in existing_ids]
+            
+            if really_new:
+                self.historial_games.extend(really_new)
+                # Añadir filas de forma ADITIVA (no limpiar tabla)
+                self._append_games_to_table(really_new)
         finally:
             self._cargando_historial = False
+
+    def _append_games_to_table(self, games):
+        """Añade partidas a la tabla sin borrar las existentes."""
+        for g in games:
+            part_info = g.get("participants", [{}])[0]
+            stats = part_info.get("stats", {})
+            champ_id = str(part_info.get("championId", "0"))
+            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
+            
+            win = stats.get("win", False)
+            k = stats.get("kills", 0)
+            d = stats.get("deaths", 0)
+            a = stats.get("assists", 0)
+            cs = stats.get("totalMinionsKilled", 0) + stats.get("neutralMinionsKilled", 0)
+            duration_sec = g.get("gameDuration", 0)
+            duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}"
+            
+            fecha_str = g.get("gameCreationDate", "")
+            if fecha_str:
+                try:
+                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
+                    fecha = dt.strftime("%d/%m")
+                except:
+                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
+            else:
+                fecha = "?"
+            
+            modo_juego = g.get("gameMode", "Draft")
+            if modo_juego == "CLASSIC": modo_juego = "Ranked"
+            
+            row = self.tb_historial.rowCount()
+            self.tb_historial.insertRow(row)
+            item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(champ_name)}")
+            icon_p = self.descargar_imagen(champ_name, "champ")
+            if icon_p: item_c.setIcon(QIcon(icon_p))
+            item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
+            item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
+            
+            self.tb_historial.setItem(row, 0, item_c)
+            self.tb_historial.setItem(row, 1, item_w)
+            self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
+            self.tb_historial.setItem(row, 3, QTableWidgetItem(str(cs)))
+            self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
+            self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
     # ═══════════════════════════════════════════════════════════
     # MOTOR EMOCIONAL — ETIQUETADO DE PARTIDAS (GVRRIDO)
@@ -1556,24 +1960,13 @@ class LoLRecommenderApp(QMainWindow):
             item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
             item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
             
-            item_lp = QTableWidgetItem(lp_str)
-            if lp_delta is not None:
-                item_lp.setForeground(QColor(GREEN_WR if lp_delta > 0 else RED_WR))
-            
             self.tb_historial.setItem(row, 0, item_c)
             self.tb_historial.setItem(row, 1, item_w)
             self.tb_historial.setItem(row, 2, QTableWidgetItem(f"{k}/{d}/{a}"))
             self.tb_historial.setItem(row, 3, QTableWidgetItem(str(cs)))
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
-            self.tb_historial.setItem(row, 5, item_lp)
-            self.tb_historial.setItem(row, 6, QTableWidgetItem(modo_juego))
-            self.tb_historial.setItem(row, 7, QTableWidgetItem(fecha))
-            
-            # ─── Columna de Estado Emocional ───
-            game_id = str(g.get("gameId", ""))
-            estado_actual = obtener_estado_emocional(game_id)
-            tag_widget = self._crear_widget_emocional(game_id, champ_name, estado_actual)
-            self.tb_historial.setCellWidget(row, 8, tag_widget)
+            self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
+            self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
     # ================= RADAR EN VIVO =================
     def armar_tab_vivo(self):
@@ -1778,7 +2171,16 @@ class LoLRecommenderApp(QMainWindow):
             def _normalizar_pos(pos_str):
                 p = (pos_str or "").upper().strip()
                 mapa = {"SUPPORT": "UTILITY", "ADC": "BOTTOM", "JUNGLA": "JUNGLE", "MID": "MIDDLE"}
-                return mapa.get(p, p) if p in posiciones or p in mapa else (posiciones[len(picks_en)] if len(picks_en) < 5 else "MIDDLE")
+                return mapa.get(p, p) if p in posiciones or p in mapa else ""
+
+            # Cache de campeones por rol para inferir rol tipico
+            if not hasattr(self, '_cache_rol_tipico'):
+                self._cache_rol_tipico = {}
+            # Reconstruir cache si el rol actual no tiene datos
+            if rol_api not in self._cache_rol_tipico or not self._cache_rol_tipico.get(rol_api):
+                for rol_key in posiciones:
+                    champs_rol = set(obtener_campeones_por_rol(rol_key, min_partidas=5))
+                    self._cache_rol_tipico[rol_key] = champs_rol
 
             enemigos_procesados = []
             for idx, j in enumerate(draft.get("theirTeam", [])):
@@ -1786,17 +2188,58 @@ class LoLRecommenderApp(QMainWindow):
                 if champ:
                     picks_en.append(champ)
                     pos = _normalizar_pos(j.get("assignedPosition", ""))
+                    if not pos:
+                        # Inferir rol por indice (ultimo recurso antes de datos)
+                        pos = posiciones[idx] if idx < 5 else "MIDDLE"
                     pos_en.append(pos)
                     enemigos_procesados.append((champ, pos, idx))
                     if pos == rol_api:
                         enemigo_lane = champ
-            # Fallback por indice si no encontro por posicion
-            if not enemigo_lane:
-                mi_idx = next((i for i, j in enumerate(draft.get("myTeam", [])) if j.get("cellId") == mi_celda), 0)
+            
+            # Fallback inteligente si no se encontro rival de linea por posicion
+            if not enemigo_lane and enemigos_procesados:
+                # 1. Buscar enemigo cuyo campeon tipicamente juega en este rol (cache BD)
+                cache_rol = self._cache_rol_tipico.get(rol_api, set())
                 for champ, pos, idx in enemigos_procesados:
-                    if idx == mi_idx and mi_idx < 5:
+                    if champ in cache_rol:
                         enemigo_lane = champ
+                        print(f"[Radar] Rival de linea inferido por rol tipico: {champ} en {rol_api}")
                         break
+                
+                # 2. Por posicion normalizada de la LCU
+                if not enemigo_lane:
+                    for champ, pos, idx in enemigos_procesados:
+                        if pos and pos.upper() == rol_api.upper():
+                            enemigo_lane = champ
+                            break
+                
+                # 3. Por clase del campeon (fallback sin DB, usando tags)
+                if not enemigo_lane:
+                    from src.tags_champions import obtener_tag
+                    rol_to_class = {
+                        "TOP": ("Fighter", "Tank"), "JUNGLE": ("Fighter", "Tank", "Assassin"),
+                        "MIDDLE": ("Mage", "Assassin"), "BOTTOM": ("Marksman",),
+                        "UTILITY": ("Support",)
+                    }
+                    expected = rol_to_class.get(rol_api, ())
+                    for champ, pos, idx in enemigos_procesados:
+                        try:
+                            tag = obtener_tag(champ)
+                            if tag.get("champion_class", "") in expected:
+                                enemigo_lane = champ
+                                print(f"[Radar] Rival de linea por clase: {champ} ({tag.get('champion_class')}) en {rol_api}")
+                                break
+                        except Exception:
+                            pass
+                
+                # 4. Por indice verificando rol tipico (ultimo recurso)
+                if not enemigo_lane:
+                    mi_idx = next((i for i, j in enumerate(draft.get("myTeam", [])) if j.get("cellId") == mi_celda), -1)
+                    if 0 <= mi_idx < len(enemigos_procesados):
+                        champ_idx = enemigos_procesados[mi_idx][0]
+                        if champ_idx in cache_rol:
+                            enemigo_lane = champ_idx
+                            print(f"[Radar] Rival de linea por indice (verificado): {champ_idx} en {rol_api}")
                 
             if picks_al != self.last_aliados or picks_en != self.last_enemigos:
                 self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
@@ -1834,6 +2277,14 @@ class LoLRecommenderApp(QMainWindow):
                         f"BANS SI PICKEO {self._nombre_display(mi_campeon).upper()}"
                     )
                     bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=20)
+                    # Fallback: si no hay datos para este campeon en este rol (ej. Quinn JG),
+                    # usar bans generales del rol
+                    if not bans_sugeridos:
+                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=5)
+                    if not bans_sugeridos:
+                        # Ultimo fallback: bans mas comunes del rol
+                        bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
+                        self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
                 else: 
                     self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
                     bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
@@ -1866,16 +2317,6 @@ class LoLRecommenderApp(QMainWindow):
                         self.fr_counters_vivo.addWidget(lbl)
                 else:
                     self.panel_counters_vivo.label_title.setText("COUNTERS (esperando rival...)")
-                    # Dropdown manual para pickear rival
-                    if not hasattr(self, 'cb_rival_manual'):
-                        self.cb_rival_manual = QComboBox()
-                        self.cb_rival_manual.setMinimumWidth(100)
-                        self.cb_rival_manual.addItem("Seleccionar rival...")
-                        self.cb_rival_manual.addItems(sorted(self.nombres_campeones_global))
-                        self.cb_rival_manual.currentTextChanged.connect(
-                            lambda t: self._actualizar_counters_manual(rol_api, t) if t != "Seleccionar rival..." else None
-                        )
-                        self.l_counters_vivo.addWidget(self.cb_rival_manual)
 
                 if mi_campeon:
                     ids_runas = obtener_top_runas(mi_campeon, rol_api)
@@ -1929,67 +2370,71 @@ class LoLRecommenderApp(QMainWindow):
             layout.addWidget(card)
 
     def _cargar_stats_season(self):
-        """Carga estadisticas de la season del USUARIO desde LCU (ranked + historial extendido)."""
-        if not self.lcu or not self.lcu.port:
-            self.lbl_season_stats.setText("Abre el cliente de LoL para ver tus estadísticas de la season")
+        """Carga estadisticas reales de la season: combina historial ya cargado + paginacion extra."""
+        if not hasattr(self, 'historial_games') or not self.historial_games:
             return
         try:
-            # Obtener stats de ranked (wins/losses por queue)
-            ranked = self.lcu.obtener_ranked_stats()
-            if ranked and ranked.get("queues"):
-                soloq = ranked["queues"].get("RANKED_SOLO_5x5", {})
-                if soloq:
-                    wins = soloq.get("wins", soloq.get("winCount", 0))
-                    losses = soloq.get("losses", soloq.get("lossCount", 0))
-                    total = wins + losses
-                    wr = round(wins * 100 / total, 1) if total > 0 else 0
-                    tier = soloq.get("tier", "?"); div = soloq.get("division", soloq.get("rank", ""))
-                    self.lbl_season_stats.setText(
-                        f"🏆 SoloQ: {tier} {div} — {total} partidas ({wins}V/{losses}D) — {wr}% WR\n"
-                        f"📊 Datos de la season actual desde el cliente de LoL"
-                    )
-                else:
-                    self.lbl_season_stats.setText("🎮 Juega partidas ranked para ver tus estadísticas")
-
-            # Top campeones desde historial extendido (pagina hasta 500 partidas)
-            all_games = []
-            for offset in range(0, 500, 100):
-                batch = self.lcu.obtener_historial_extendido(cantidad=100, inicio=offset)
-                if not batch: break
-                all_games.extend(batch)
-                if len(batch) < 100: break  # no hay mas partidas
+            # Base: historial ya cargado y verificado (datos reales)
+            all_games = list(self.historial_games)
+            
+            # Intentar paginar mas partidas de la LCU para completar la season
+            if self.lcu and self.lcu.port:
+                for offset in range(len(all_games), 1000, 100):
+                    batch = self.lcu.obtener_historial_extendido(inicio=offset, cantidad=100)
+                    if not batch:
+                        break
+                    # Solo añadir partidas nuevas (evitar duplicados por gameId)
+                    existing = {str(g.get("gameId", "")) for g in all_games}
+                    new_batch = [g for g in batch if str(g.get("gameId", "")) not in existing]
+                    all_games.extend(new_batch)
+                    if len(batch) < 100:
+                        break
+            
+            champ_stats = {}
+            for g in all_games:
+                if g.get("gameMode", "") != "CLASSIC":
+                    continue
+                part = g.get("participants", [{}])[0]
+                stats = part.get("stats", {})
+                cid = str(part.get("championId", "0"))
+                cname = self.procesar_nombre_champ(cid, "0") or "?"
+                if cname == "?":
+                    continue
+                if cname not in champ_stats:
+                    champ_stats[cname] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
+                cs = champ_stats[cname]
+                cs["games"] += 1
+                if stats.get("win", False): cs["wins"] += 1
+                cs["kills"] += stats.get("kills", 0)
+                cs["deaths"] += stats.get("deaths", 0)
+                cs["assists"] += stats.get("assists", 0)
+            
+            top = sorted(champ_stats.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
+            print(f"[_cargar_stats_season] {len(all_games)} total partidas, {len(champ_stats)} campeones, top={[(c, s['games']) for c, s in top[:5]]}")
             self.tb_season_champs.setRowCount(0)
-            if all_games:
-                champ_stats = {}
-                for g in all_games:
-                    part = g.get("participants", [{}])[0]
-                    stats = part.get("stats", {})
-                    cid = str(part.get("championId", "0"))
-                    cname = self.procesar_nombre_champ(cid, "0") or "?"
-                    if cname not in champ_stats:
-                        champ_stats[cname] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
-                    cs = champ_stats[cname]; cs["games"] += 1
-                    if stats.get("win", False): cs["wins"] += 1
-                    cs["kills"] += stats.get("kills", 0)
-                    cs["deaths"] += stats.get("deaths", 0)
-                    cs["assists"] += stats.get("assists", 0)
-                
-                top = sorted(champ_stats.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
-                for cname, cs in top:
-                    row = self.tb_season_champs.rowCount(); self.tb_season_champs.insertRow(row)
-                    wr_c = round(cs["wins"] * 100 / cs["games"], 1) if cs["games"] > 0 else 0
-                    kda = round((cs["kills"] + cs["assists"]) / max(1, cs["deaths"]), 1)
-                    item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(cname)}")
-                    icon = self.descargar_imagen(cname, "champ")
-                    if icon: item_c.setIcon(QIcon(icon))
-                    self.tb_season_champs.setItem(row, 0, item_c)
-                    self.tb_season_champs.setItem(row, 1, QTableWidgetItem(str(cs["games"])))
-                    item_w = QTableWidgetItem(f"{wr_c}%")
-                    item_w.setForeground(QColor(GREEN_WR if wr_c >= 50 else RED_WR))
-                    self.tb_season_champs.setItem(row, 2, item_w)
-                    self.tb_season_champs.setItem(row, 3, QTableWidgetItem(str(kda)))
+            for cname, cs in top:
+                games = cs["games"]
+                wr_c = round(cs["wins"] * 100 / games, 1) if games > 0 else 0
+                kda = round((cs["kills"] + cs["assists"]) / max(1, cs["deaths"]), 1)
+                r = self.tb_season_champs.rowCount(); self.tb_season_champs.insertRow(r)
+                item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(cname)}")
+                icon = self.descargar_imagen(cname, "champ")
+                if icon: item_c.setIcon(QIcon(icon))
+                self.tb_season_champs.setItem(r, 0, item_c)
+                item_p = QTableWidgetItem(str(games))
+                item_p.setTextAlignment(Qt.AlignCenter)
+                self.tb_season_champs.setItem(r, 1, item_p)
+                item_w = QTableWidgetItem(f"{wr_c}%")
+                item_w.setTextAlignment(Qt.AlignCenter)
+                item_w.setForeground(QColor(GREEN_WR if wr_c >= 50 else RED_WR))
+                self.tb_season_champs.setItem(r, 2, item_w)
+                item_k = QTableWidgetItem(str(kda))
+                item_k.setTextAlignment(Qt.AlignCenter)
+                self.tb_season_champs.setItem(r, 3, item_k)
+        
+            print(f"[_cargar_stats_season] {len(all_games)} partidas procesadas, {len(champ_stats)} campeones")
         except Exception as e:
-            self.lbl_season_stats.setText(f"Error: {e}")
+            print(f"[_cargar_stats_season] Error: {e}")
 
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
         clear_layout(self.fr_picks_icons)
@@ -2041,8 +2486,8 @@ class LoLRecommenderApp(QMainWindow):
 
         # Tabla de jugadores
         self.tb_ingame = QTableWidget()
-        self.tb_ingame.setColumnCount(7)
-        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "Invocador", "WR", "KDA", "Racha", "Power Spike", "Tips"])
+        self.tb_ingame.setColumnCount(8)
+        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "Invocador", "WR", "KDA", "Racha", "Fatiga", "Power Spike", "Tips"])
         self.tb_ingame.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tb_ingame.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_ingame.setSelectionMode(QAbstractItemView.NoSelection)
@@ -2067,30 +2512,87 @@ class LoLRecommenderApp(QMainWindow):
         layout.addWidget(self.pnl_pro)
 
     def actualizar_ingame(self):
-        """Detecta partida en vivo usando LCU o Live Client Data API (puerto 2999)."""
+        """Detecta partida en vivo usando LCU o Live Client Data API (puerto 2999).
+        Usa un contador de fallos para evitar parpadeos: la UI solo se oculta tras
+        3 fallos consecutivos o cuando la fase es explicitamente de fin de partida."""
         if not self.lcu or not self.lcu.port:
             return
+        
+        # Inicializar contador anti-parpadeo si no existe
+        if not hasattr(self, '_ingame_fail_count'):
+            self._ingame_fail_count = 0
+            self._ingame_was_active = False
+        
         fase = self.lcu.obtener_fase_juego()
-        if fase != "InProgress":
-            self.lbl_ingame_status.setVisible(True)
-            self.lbl_ingame_status.setText("🎮 Esperando partida...")
-            self.tb_ingame.setVisible(False)
-            self.lbl_ingame_comp.setText("")
-            self.pnl_pro.setVisible(False)
+        
+        # Fases que indican que el juego TERMINO (no solo que la API fallo)
+        FASES_FIN = {"EndOfGame", "WaitingForStats", "PreEndOfGame", None}
+        # Fases que indican que NO hay partida en curso
+        FASES_SIN_PARTIDA = {"Lobby", "Matchmaking", "ReadyCheck", "None"}
+        
+        # Si la fase es explicitamente fin de partida, limpiar inmediatamente
+        if fase in FASES_FIN:
+            self._ingame_fail_count += 1
+            if self._ingame_fail_count >= 3 or fase != None:
+                self._ingame_was_active = False
+                self._ingame_fail_count = 0
+                self.lbl_ingame_status.setVisible(True)
+                self.lbl_ingame_status.setText("🎮 Esperando partida...")
+                self.tb_ingame.setVisible(False)
+                self.lbl_ingame_comp.setText("")
+                self.pnl_pro.setVisible(False)
             return
+        
+        # Si la fase no es InProgress ni GameStart, puede ser un error de API
+        if fase not in ("InProgress", "GameStart", "ChampSelect"):
+            self._ingame_fail_count += 1
+            # Solo ocultar tras 3 fallos consecutivos (evita parpadeos)
+            if self._ingame_fail_count >= 3:
+                self._ingame_was_active = False
+                self.lbl_ingame_status.setVisible(True)
+                self.lbl_ingame_status.setText("🎮 Esperando partida...")
+                self.tb_ingame.setVisible(False)
+                self.lbl_ingame_comp.setText("")
+                self.pnl_pro.setVisible(False)
+            return
+        
+        # Resetear contador: la API respondio bien
+        self._ingame_fail_count = 0
+        self._ingame_was_active = True
 
         # Intentar Live Client Data API (puerto 2999) - datos mas ricos en vivo
         jugadores, game_info = self.lcu.obtener_liveclient_data()
-        if jugadores:
+        
+        # Si la API devuelve status "loading" (pantalla de carga), esperar
+        if isinstance(game_info, dict) and game_info.get("status") == "loading":
+            self.lbl_ingame_status.setVisible(True)
+            self.lbl_ingame_status.setText("⏳ Partida encontrada. Esperando a entrar a la Grieta...")
+            self.tb_ingame.setVisible(False)
+            self.lbl_ingame_comp.setText("")
+            return
+        
+        if jugadores and len(jugadores) >= 2:
             self._renderizar_ingame_liveclient(jugadores, game_info)
             return
 
-        # Fallback: LCU gameflow data
-        jugadores = self.lcu.obtener_summoners_partida()
-        if not jugadores:
-            self.lbl_ingame_status.setText("🎮 Partida detectada - cargando jugadores...")
+        # Fallback: LCU gameflow data (sin KDA en vivo, pero al menos muestra champs)
+        if jugadores:
+            print(f"[App] LiveClient devolvio solo {len(jugadores)} jugadores, usando fallback LCU...")
+        jugadores_lcu = self.lcu.obtener_summoners_partida()
+        if jugadores_lcu and len(jugadores_lcu) >= 2:
+            self._renderizar_ingame_lcu(jugadores_lcu)
             return
-        self._renderizar_ingame_lcu(jugadores)
+        
+        # Ultimo recurso: si liveclient tiene algo, mostrarlo aunque sea incompleto
+        if jugadores:
+            self._renderizar_ingame_liveclient(jugadores, game_info)
+            return
+        
+        self.lbl_ingame_status.setVisible(True)
+        self.lbl_ingame_status.setText("🎮 Partida detectada - esperando datos de jugadores...\n(Activa 'Live Client Data API' en Ajustes > Juego de LoL)")
+        self.tb_ingame.setVisible(False)
+        self.lbl_ingame_comp.setText("")
+        self.pnl_pro.setVisible(False)
 
     def _renderizar_ingame_liveclient(self, jugadores, game_info):
         """Renderiza datos del Live Client Data API (KDA vivo) + WR/Racha de BD."""
@@ -2107,18 +2609,33 @@ class LoLRecommenderApp(QMainWindow):
             for c in range(1, self.tb_ingame.columnCount()):
                 e = QTableWidgetItem(""); e.setBackground(QColor(bg)); self.tb_ingame.setItem(row, c, e)
             for j in team_players:
-                cname = j.get("championName", "?")
-                sname = j.get("summonerName", "???")
-                lvl = j.get("level", 1); k = j.get("kills", 0); d = j.get("deaths", 0); a = j.get("assists", 0)
-                cs = j.get("creepScore", 0)
+                cname = j.get("championName", "Desconocido") or "Desconocido"
+                sname = j.get("summonerName", "???") or "???"
+                lvl = j.get("level", 1) or 1
+                k = j.get("kills", 0) or 0
+                d = j.get("deaths", 0) or 0
+                a = j.get("assists", 0) or 0
+                cs = j.get("creepScore", 0) or 0
                 is_dead = j.get("isDead", False)
                 
-                # Stats desde BD local (WR, racha)
-                wr, kda_hist, streak, total_g = self._stats_jugador_champ(cname)
+                # Stats desde BD local (WR, racha) - con proteccion
+                try:
+                    wr, kda_hist, streak, total_g = self._stats_jugador_champ(cname)
+                except Exception:
+                    wr, kda_hist, streak, total_g = "--", "--", "--", 0
                 
-                stars = self._dificultad_stars(cname) if self.user_settings.get("mostrar_dificultad", True) else ""
-                spike = self._power_spike_champ(cname) if self.user_settings.get("mostrar_power_spikes", True) else ""
-                tips = self._tips_principiante(cname) if self.user_settings.get("modo_principiante", False) else ""
+                try:
+                    stars = self._dificultad_stars(cname) if self.user_settings.get("mostrar_dificultad", True) else ""
+                except Exception:
+                    stars = ""
+                try:
+                    spike = self._power_spike_champ(cname) if self.user_settings.get("mostrar_power_spikes", True) else ""
+                except Exception:
+                    spike = ""
+                try:
+                    tips = self._tips_principiante(cname) if self.user_settings.get("modo_principiante", False) else ""
+                except Exception:
+                    tips = ""
                 
                 row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
                 
@@ -2154,12 +2671,19 @@ class LoLRecommenderApp(QMainWindow):
                 elif "❄️" in streak: item_streak.setForeground(QColor(RED_WR))
                 self.tb_ingame.setItem(row, 4, item_streak)
                 
-                # Col 5: Power Spike
-                self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
+                # Col 5: Fatiga del jugador
+                fatiga_emoji, fatiga_tooltip = self._fatiga_jugador(k, d, a, streak)
+                item_fatiga = QTableWidgetItem(fatiga_emoji)
+                item_fatiga.setToolTip(fatiga_tooltip)
+                item_fatiga.setTextAlignment(Qt.AlignCenter)
+                self.tb_ingame.setItem(row, 5, item_fatiga)
                 
-                # Col 6: Tips
+                # Col 6: Power Spike
+                self.tb_ingame.setItem(row, 6, QTableWidgetItem(spike))
+                
+                # Col 7: Tips
                 item_tips = QTableWidgetItem(tips); item_tips.setForeground(QColor("#8fa3b8"))
-                self.tb_ingame.setItem(row, 6, item_tips)
+                self.tb_ingame.setItem(row, 7, item_tips)
         self._actualizar_recordatorios()
         self.lbl_ingame_comp.setText(f"⏱️ {game_info.get('gameTime', 0):.0f}s de partida")
         if self.user_settings.get("modo_profesional", False):
@@ -2250,13 +2774,20 @@ class LoLRecommenderApp(QMainWindow):
                 elif "❄️" in streak: item_streak.setForeground(QColor(RED_WR))
                 self.tb_ingame.setItem(row, 4, item_streak)
 
+                # Fatiga (sin KDA en vivo, usamos solo racha historica)
+                fatiga_emoji, fatiga_tooltip = self._fatiga_jugador(0, 0, 0, streak)
+                item_fatiga = QTableWidgetItem(fatiga_emoji)
+                item_fatiga.setToolTip(fatiga_tooltip)
+                item_fatiga.setTextAlignment(Qt.AlignCenter)
+                self.tb_ingame.setItem(row, 5, item_fatiga)
+
                 # Power Spike
-                self.tb_ingame.setItem(row, 5, QTableWidgetItem(spike))
+                self.tb_ingame.setItem(row, 6, QTableWidgetItem(spike))
 
                 # Tips principiante
                 item_tips = QTableWidgetItem(tips)
                 item_tips.setForeground(QColor("#8fa3b8"))
-                self.tb_ingame.setItem(row, 6, item_tips)
+                self.tb_ingame.setItem(row, 7, item_tips)
 
         # Recordatorios de partida para principiantes
         self._actualizar_recordatorios()
@@ -2319,6 +2850,27 @@ class LoLRecommenderApp(QMainWindow):
         except:
             return "--", "--", "--", 0
 
+    def _fatiga_jugador(self, kills, deaths, assists, streak_text):
+        """Analiza fatiga por jugador combinando KDA actual y racha historica.
+        Retorna (emoji, tooltip)."""
+        kda = (kills + assists) / max(1, deaths)
+        is_feeding = deaths >= 5 and kda < 1.0
+        is_losing_streak = "❄️" in streak_text
+        is_winning = "🔥" in streak_text
+        
+        if is_feeding:
+            return "💢", "Tilteado: está feedeando (muchas muertes, bajo impacto)"
+        elif is_losing_streak and kda < 1.5:
+            return "🥱", "Cansado: racha de derrotas + KDA bajo"
+        elif deaths >= 4 and kda < 2.0:
+            return "🥱", "Posible fatiga: muertes elevadas esta partida"
+        elif is_winning or kda >= 4.0:
+            return "🔥", "Fresco: alto rendimiento, racha positiva"
+        elif kda >= 2.5:
+            return "⚖️", "Neutral: rendimiento estable"
+        else:
+            return "⚖️", "Neutral: sin datos suficientes"
+
     def _power_spike_champ(self, champion):
         """Devuelve info de power spike basada en niveles clave (conocimiento publico del juego, no viola TOS)."""
         spikes = {
@@ -2346,12 +2898,19 @@ class LoLRecommenderApp(QMainWindow):
         return spikes.get(champion, f"Nv.6 Spike")
 
     def _dificultad_stars(self, champion):
-        """Devuelve estrellas de dificultad (1-3) basadas en tags del campeon."""
+        """Devuelve estrellas de dificultad (1-3) basadas en tags del campeon.
+        Sanitiza el nombre usando mapeos internos para garantizar coincidencia con claves de BD."""
         try:
-            tag = obtener_tag(champion)
+            # Sanitizar: quitar espacios, apostrofes, puntos
+            champ_key = champion.replace(" ", "").replace("'", "").replace(".", "").replace("&", "")
+            # Usar mapeo interno si existe (ej: "MaestroYi" -> "MasterYi")
+            champ_key = self.nombre_interno.get(champ_key, champ_key)
+            # Intentar con el nombre sanitizado
+            tag = obtener_tag(champ_key)
             d = tag.get("difficulty", 2)
             return "⭐" * d
-        except: return "⭐⭐"
+        except:
+            return "⭐⭐"
 
     def _nombre_con_dificultad(self, champion):
         """Nombre del campeon con estrellas si mostrar_dificultad esta activo."""
@@ -2623,47 +3182,129 @@ class LoLRecommenderApp(QMainWindow):
         l_ia.addLayout(ctrls)
         layout.addWidget(panel_ia)
         
+        # ===== HUD DE RESULTADO (3 COLUMNAS) =====
         hud_panel, l_hud = self.crear_panel("Resultado Predictivo (AI)")
-        l_hud.setAlignment(Qt.AlignCenter)
-        batalla_layout = QHBoxLayout()
-        batalla_layout.setSpacing(20)
+        l_hud.setAlignment(Qt.AlignTop)
         
+        # ─── 3 Columnas: Aliado | Centro (WR + Barras) | Enemigo ───
+        batalla_layout = QHBoxLayout()
+        batalla_layout.setSpacing(16)
+        
+        # Columna 1: Aliado
+        col_aliado = QVBoxLayout()
+        col_aliado.setAlignment(Qt.AlignCenter)
         self.img_aliado_1v1 = QLabel()
         self.img_aliado_1v1.setAlignment(Qt.AlignCenter)
-        batalla_layout.addWidget(self.img_aliado_1v1)
+        self.img_aliado_1v1.setFixedSize(120, 120)
+        col_aliado.addWidget(self.img_aliado_1v1, alignment=Qt.AlignCenter)
+        self.lbl_nombre_aliado_1v1 = QLabel("--")
+        self.lbl_nombre_aliado_1v1.setAlignment(Qt.AlignCenter)
+        self.lbl_nombre_aliado_1v1.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 13px;")
+        col_aliado.addWidget(self.lbl_nombre_aliado_1v1)
+        batalla_layout.addLayout(col_aliado, 1)
         
-        centro_layout = QVBoxLayout()
-        lbl_vs_grande = QLabel("VS")
-        lbl_vs_grande.setStyleSheet(f"color: {BORDER_ACCENT}; font-family: Impact; font-size: 50px;")
-        lbl_vs_grande.setAlignment(Qt.AlignCenter)
-        centro_layout.addWidget(lbl_vs_grande)
+        # Columna 2: Centro (WR + Barras comparativas)
+        col_centro = QVBoxLayout()
+        col_centro.setSpacing(8)
+        col_centro.setAlignment(Qt.AlignCenter)
         
-        self.barra_wr = QProgressBar()
-        self.barra_wr.setRange(0, 100)
-        self.barra_wr.setValue(50)
-        self.barra_wr.setTextVisible(True)
-        self.barra_wr.setFormat("%p% Winrate para tu Pick")
-        self.barra_wr.setFixedHeight(30)
-        centro_layout.addWidget(self.barra_wr)
+        # Winrate global amplificado (texto grande)
+        self.lbl_wr_1v1 = QLabel("50.0%")
+        self.lbl_wr_1v1.setAlignment(Qt.AlignCenter)
+        self.lbl_wr_1v1.setStyleSheet(f"font-family: Impact; font-size: 38px; color: {YELLOW_WR};")
+        col_centro.addWidget(self.lbl_wr_1v1)
         
-        batalla_layout.addLayout(centro_layout)
+        # Etiqueta de nivel (HARD COUNTER, etc.)
+        self.lbl_nivel_1v1 = QLabel("Selecciona campeones")
+        self.lbl_nivel_1v1.setAlignment(Qt.AlignCenter)
+        self.lbl_nivel_1v1.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; font-weight: bold;")
+        col_centro.addWidget(self.lbl_nivel_1v1)
         
+        # WR Real desde DB
+        self.lbl_wr_real_1v1 = QLabel("")
+        self.lbl_wr_real_1v1.setAlignment(Qt.AlignCenter)
+        self.lbl_wr_real_1v1.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        col_centro.addWidget(self.lbl_wr_real_1v1)
+        
+        # Barras comparativas (Tira y afloja)
+        barras_layout = QVBoxLayout()
+        barras_layout.setSpacing(4)
+        
+        # Barra CC
+        lbl_cc = QLabel("Control de Masas (CC)")
+        lbl_cc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; font-weight: bold;")
+        lbl_cc.setAlignment(Qt.AlignCenter)
+        barras_layout.addWidget(lbl_cc)
+        self.barra_cc = QProgressBar()
+        self.barra_cc.setRange(0, 100); self.barra_cc.setValue(50)
+        self.barra_cc.setTextVisible(False); self.barra_cc.setFixedHeight(12)
+        self.barra_cc.setStyleSheet(self._estilo_barra_comparativa(50))
+        barras_layout.addWidget(self.barra_cc)
+        
+        # Barra Movilidad
+        lbl_mob = QLabel("Movilidad")
+        lbl_mob.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; font-weight: bold;")
+        lbl_mob.setAlignment(Qt.AlignCenter)
+        barras_layout.addWidget(lbl_mob)
+        self.barra_movilidad = QProgressBar()
+        self.barra_movilidad.setRange(0, 100); self.barra_movilidad.setValue(50)
+        self.barra_movilidad.setTextVisible(False); self.barra_movilidad.setFixedHeight(12)
+        self.barra_movilidad.setStyleSheet(self._estilo_barra_comparativa(50))
+        barras_layout.addWidget(self.barra_movilidad)
+        
+        # Barra Poder Temprano
+        lbl_early = QLabel("Poder Temprano (Early)")
+        lbl_early.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; font-weight: bold;")
+        lbl_early.setAlignment(Qt.AlignCenter)
+        barras_layout.addWidget(lbl_early)
+        self.barra_early = QProgressBar()
+        self.barra_early.setRange(0, 100); self.barra_early.setValue(50)
+        self.barra_early.setTextVisible(False); self.barra_early.setFixedHeight(12)
+        self.barra_early.setStyleSheet(self._estilo_barra_comparativa(50))
+        barras_layout.addWidget(self.barra_early)
+        
+        col_centro.addLayout(barras_layout)
+        batalla_layout.addLayout(col_centro, 2)
+        
+        # Columna 3: Enemigo
+        col_enemigo = QVBoxLayout()
+        col_enemigo.setAlignment(Qt.AlignCenter)
         self.img_enemigo_1v1 = QLabel()
         self.img_enemigo_1v1.setAlignment(Qt.AlignCenter)
-        batalla_layout.addWidget(self.img_enemigo_1v1)
+        self.img_enemigo_1v1.setFixedSize(120, 120)
+        col_enemigo.addWidget(self.img_enemigo_1v1, alignment=Qt.AlignCenter)
+        self.lbl_nombre_enemigo_1v1 = QLabel("--")
+        self.lbl_nombre_enemigo_1v1.setAlignment(Qt.AlignCenter)
+        self.lbl_nombre_enemigo_1v1.setStyleSheet(f"color: {RED_WR}; font-weight: bold; font-size: 13px;")
+        col_enemigo.addWidget(self.lbl_nombre_enemigo_1v1)
+        batalla_layout.addLayout(col_enemigo, 1)
         
         l_hud.addLayout(batalla_layout)
         
+        # Análisis de la IA (debajo)
         self.lbl_analisis_ia = QLabel("Selecciona los campeones y presiona Simular.")
         self.lbl_analisis_ia.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px; padding: 16px;")
         self.lbl_analisis_ia.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.lbl_analisis_ia.setWordWrap(True)
         self.lbl_analisis_ia.setTextFormat(Qt.RichText)
-        self.lbl_analisis_ia.setMinimumHeight(400)
+        self.lbl_analisis_ia.setMinimumHeight(250)
         l_hud.addWidget(self.lbl_analisis_ia)
-        layout.addWidget(hud_panel, 1)  # El panel de resultados ocupa el espacio restante
+        layout.addWidget(hud_panel, 1)
 
         self.actualizar_listas_ia(UI_ROLES[0])
+
+    def _estilo_barra_comparativa(self, valor):
+        """Estilo para barras de tira y afloja: >50 verde (aliado gana), <50 rojo (enemigo gana)."""
+        if valor >= 50:
+            return f"""
+                QProgressBar {{ background-color: #3b1018; border: 1px solid #5a1a28; border-radius: 4px; }}
+                QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 3px; }}
+            """
+        else:
+            return f"""
+                QProgressBar {{ background-color: #0f172a; border: 1px solid #1a2744; border-radius: 4px; }}
+                QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 3px; }}
+            """
 
     def actualizar_listas_counter(self, value):
         champs = obtener_campeones_por_rol(ROL_TO_API[value], min_partidas=20)
@@ -2685,34 +3326,29 @@ class LoLRecommenderApp(QMainWindow):
         
         if not aliado or not enemigo or not modelo_1v1.get(rol_api): return
         
+        # ─── Imagenes y nombres ───
         ruta_al = self.descargar_imagen(aliado, "champ")
         ruta_en = self.descargar_imagen(enemigo, "champ")
         if ruta_al: self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         if ruta_en: self.img_enemigo_1v1.setPixmap(QPixmap(ruta_en).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.lbl_nombre_aliado_1v1.setText(self._nombre_display(aliado))
+        self.lbl_nombre_enemigo_1v1.setText(self._nombre_display(enemigo))
         
         # === FEATURE ENGINEERING: mismo vector que en entrenamiento ===
         n = len(self.nombres_campeones_global)
-        N_COMP = 15  # features comparativas
+        N_COMP = 15
         X = np.zeros(n * 2 + N_COMP)
         if aliado in self.nombres_campeones_global: 
             X[self.nombres_campeones_global.index(aliado)] = 1
         if enemigo in self.nombres_campeones_global: 
             X[n + self.nombres_campeones_global.index(enemigo)] = 1
-        
-        # Añadir features comparativas (mismas que usa el modelo entrenado)
         try:
             feats = extraer_features_comparativas(aliado, enemigo)
             X[n * 2:] = feats
-        except Exception:
-            pass
+        except Exception: pass
         
-        # Predicción IA
+        # Prediccion IA cruda
         prob = modelo_1v1[rol_api].predict_proba(X.reshape(1, -1))[0][1] * 100
-        self.barra_wr.setValue(int(prob))
-        if prob >= 50: 
-            self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_ACCENT}; border-radius: 5px; text-align: center; background-color: {RED_WR}; color: {BG_DARK}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 5px; }}")
-        else: 
-            self.barra_wr.setStyleSheet(f"QProgressBar {{ border: 1px solid {BORDER_ACCENT}; border-radius: 5px; text-align: center; background-color: {GREEN_WR}; color: {TEXT_WHITE}; font-weight: bold; font-size: 14px;}} QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 5px; }}")
         
         # === DATOS REALES DE LA DB ===
         counters = obtener_counters(rol_api, enemigo, min_partidas=10)
@@ -2724,23 +3360,93 @@ class LoLRecommenderApp(QMainWindow):
                 partidas_real = p
                 break
         
-        # === RADAR DE ESTADÍSTICAS COMPARATIVAS (VISUAL MEJORADO) ===
-        from src.tags_champions import obtener_tag
-        t_a = obtener_tag(aliado)
-        t_e = obtener_tag(enemigo)
+        # === FASE 2: FUSION Y AMPLIFICACION MATEMATICA ===
+        if wr_real is not None:
+            # Promedio ponderado: 40% IA + 60% datos reales
+            prob_base = (prob * 0.4) + (wr_real * 0.6)
+        else:
+            prob_base = prob
         
-        mob_a = t_a.get("mobility", 2)
-        mob_e = t_e.get("mobility", 2)
-        cc_a = t_a.get("cc_level", 1)
-        cc_e = t_e.get("cc_level", 1)
-        _EM = {"weak": 1, "neutral": 2, "strong": 3}
+        # Amplificar varianza para UI: alejar del 50%
+        prob_final = 50 + ((prob_base - 50) * 1.8)
+        prob_final = max(0, min(100, prob_final))
+        
+        # === NIVEL DE MATCHUP (umbrales calibrados) ===
+        if prob_final > 54:
+            nivel_color = GREEN_WR
+            nivel_icono = "🔥"
+            nivel_texto = "HARD COUNTER (Ventaja Absoluta)"
+        elif prob_final >= 51.5:
+            nivel_color = GREEN_WR
+            nivel_icono = "✅"
+            nivel_texto = "VENTAJA LIGERA"
+        elif prob_final >= 48.5:
+            nivel_color = YELLOW_WR
+            nivel_icono = "⚔️"
+            nivel_texto = "MATCHUP DE HABILIDAD (50/50)"
+        else:
+            nivel_color = RED_WR
+            nivel_icono = "⚠️"
+            nivel_texto = "MATCHUP DESFAVORABLE"
+        
+        # === ACTUALIZAR UI CENTRAL ===
+        self.lbl_wr_1v1.setText(f"{prob_final:.1f}%")
+        self.lbl_wr_1v1.setStyleSheet(f"font-family: Impact; font-size: 38px; color: {nivel_color};")
+        self.lbl_nivel_1v1.setText(f"{nivel_icono} {nivel_texto}")
+        self.lbl_nivel_1v1.setStyleSheet(f"color: {nivel_color}; font-size: 12px; font-weight: bold;")
+        
+        if wr_real is not None:
+            real_color = GREEN_WR if wr_real >= 50 else RED_WR
+            self.lbl_wr_real_1v1.setText(f"WR Real: {wr_real}% ({partidas_real} partidas)")
+            self.lbl_wr_real_1v1.setStyleSheet(f"color: {real_color}; font-size: 10px;")
+        else:
+            self.lbl_wr_real_1v1.setText("(sin datos reales en BD)")
+            self.lbl_wr_real_1v1.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        
+        # === FASE 3: BARRAS COMPARATIVAS (TIRA Y AFLOJA) ===
+        # NOTA: obtener_tag, obtener_nivel_cc ya importados a nivel modulo (linea 23)
+        # NO usar import local dentro de la funcion (causa NameError en runtime)
+        try:
+            t_a = obtener_tag(aliado)
+            t_e = obtener_tag(enemigo)
+            
+            # CC
+            cc_a = obtener_nivel_cc(aliado)
+            cc_e = obtener_nivel_cc(enemigo)
+            val_cc = round((cc_a / max(0.1, cc_a + cc_e)) * 100)
+            self.barra_cc.setValue(val_cc)
+            self.barra_cc.setStyleSheet(self._estilo_barra_comparativa(val_cc))
+            self.barra_cc.setToolTip(f"{aliado}: CC {cc_a}/5  |  {enemigo}: CC {cc_e}/5")
+            
+            # Movilidad
+            mob_a = t_a.get("mobility", 2)
+            mob_e = t_e.get("mobility", 2)
+            val_mob = round((mob_a / max(0.1, mob_a + mob_e)) * 100)
+            self.barra_movilidad.setValue(val_mob)
+            self.barra_movilidad.setStyleSheet(self._estilo_barra_comparativa(val_mob))
+            self.barra_movilidad.setToolTip(f"{aliado}: Movilidad {mob_a}/5  |  {enemigo}: Movilidad {mob_e}/5")
+            
+            # Early
+            _EM = {"weak": 1, "neutral": 2, "strong": 3}
+            early_a = _EM.get(t_a.get("early_power", "neutral"), 2)
+            early_e = _EM.get(t_e.get("early_power", "neutral"), 2)
+            val_early = round((early_a / max(0.1, early_a + early_e)) * 100)
+            self.barra_early.setValue(val_early)
+            self.barra_early.setStyleSheet(self._estilo_barra_comparativa(val_early))
+            self.barra_early.setToolTip(f"{aliado}: Early {t_a.get('early_power','?')}  |  {enemigo}: Early {t_e.get('early_power','?')}")
+            
+        except Exception as e:
+            print(f"[predecir_ia] Error en barras comparativas: {e}")
+            # Fallback: barras a 50 (neutral) para no crashear
+            for bar in [self.barra_cc, self.barra_movilidad, self.barra_early]:
+                bar.setValue(50)
+                bar.setStyleSheet(self._estilo_barra_comparativa(50))
+        
+        # === ANALISIS HTML (mantener el detalle abajo) ===
         _SM = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
-        early_a = _EM.get(t_a.get("early_power", "neutral"), 2)
-        early_e = _EM.get(t_e.get("early_power", "neutral"), 2)
         scale_a = _SM.get(t_a.get("scaling", "mid"), 2)
         scale_e = _SM.get(t_e.get("scaling", "mid"), 2)
         
-        # ─── Helper: HTML barra de comparación ───
         def _barra_html(val_a, val_e, max_v, label):
             pct_a = min(100, int(val_a / max_v * 100))
             pct_e = min(100, int(val_e / max_v * 100))
@@ -2764,31 +3470,8 @@ class LoLRecommenderApp(QMainWindow):
                 f'</tr>'
             )
         
-        # ─── Cabecera con color ───
-        if prob > 55:
-            nivel_color = GREEN_WR
-            nivel_icono = "&#9989;"
-            nivel_texto = "VENTAJA CLARA"
-        elif prob >= 45:
-            nivel_color = YELLOW_WR
-            nivel_icono = "&#9876;&#65039;"
-            nivel_texto = "MATCHUP DE HABILIDAD"
-        else:
-            nivel_color = RED_WR
-            nivel_icono = "&#9888;&#65039;"
-            nivel_texto = "MATCHUP DESFAVORABLE"
-        
         html = f"""
         <div style="font-family:{FONT_FAMILY};font-size:12px;">
-        <p style="font-size:18px;font-weight:700;color:{nivel_color};margin:4px 0;">
-            {nivel_icono} {nivel_texto} <span style="font-size:14px;">({prob:.1f}% WR IA)</span>
-        </p>"""
-        
-        if wr_real is not None:
-            real_color = GREEN_WR if wr_real >= 50 else RED_WR
-            html += f'<p style="color:{TEXT_MUTED};font-size:11px;margin:2px 0;">WR Real: <b style="color:{real_color};">{wr_real}%</b> ({partidas_real} partidas)</p>'
-        
-        html += f"""
         <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:10px 0;">
         <p style="color:{ACCENT_RED};font-weight:700;font-size:13px;letter-spacing:1px;margin:6px 0;">
             &#9889; STATS COMPARATIVAS
@@ -2820,7 +3503,6 @@ class LoLRecommenderApp(QMainWindow):
         try:
             insights = interpretar_features(aliado, enemigo)
             for ins in insights:
-                # Colorear según tipo de insight
                 if "Desventaja" in ins or "Déficit" in ins or "contra" in ins:
                     color = RED_WR
                 elif "Ventaja" in ins or "Dominio" in ins or "mejor" in ins or "dicta" in ins:

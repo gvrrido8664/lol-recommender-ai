@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QGridLayout, QLabel, QPushButton, 
                                QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar, QCheckBox, QDialog, QDialogButtonBox, QSlider, QSpinBox, QScrollArea, QSizePolicy)
-from PySide6.QtGui import QPixmap, QFont, QColor, QIcon
+from PySide6.QtGui import QPixmap, QFont, QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtCore import Qt, QTimer, QSize, Signal
 
 from src.db_manager import DATA_DIR, obtener_conexion
@@ -96,6 +96,53 @@ STAT_SHARDS = {
     "5013": ("Tenacidad", "#34495e"),
     "5002": ("Armadura", "#e67e22"),
     "5003": ("Res. Mágica", "#3498db"),
+}
+
+# ─── RUTAS DE HABILIDADES (skill order) ───
+# Formato: "Q>W>E" = maxear Q primero, luego W, luego E. R siempre al 6/11/16.
+SKILL_ORDERS = {
+    "Aatrox": "Q>E>W", "Ahri": "Q>W>E", "Akali": "Q>E>W", "Akshan": "Q>E>W",
+    "Alistar": "Q>W>E", "Amumu": "E>Q>W", "Anivia": "E>Q>W", "Annie": "Q>W>E",
+    "Aphelios": "Q>W>E", "Ashe": "W>Q>E", "AurelionSol": "Q>W>E", "Azir": "Q>W>E",
+    "Bardo": "Q>W>E", "Blitzcrank": "Q>E>W", "Brand": "W>Q>E", "Braum": "Q>E>W",
+    "Caitlyn": "Q>W>E", "Camille": "Q>E>W", "Chogath": "Q>W>E", "Corki": "Q>E>W",
+    "Darius": "Q>E>W", "Diana": "Q>W>E", "Draven": "Q>W>E", "DrMundo": "Q>E>W",
+    "Ekko": "Q>E>W", "Elise": "Q>W>E", "Evelynn": "Q>E>W", "Ezreal": "Q>E>W",
+    "Fiora": "Q>E>W", "Fizz": "E>W>Q", "Galio": "Q>W>E", "Garen": "E>Q>W",
+    "Gnar": "Q>W>E", "Gragas": "Q>E>W", "Graves": "Q>E>W", "Gwen": "Q>E>W",
+    "Hecarim": "Q>E>W", "Illaoi": "E>Q>W", "Irelia": "Q>E>W", "Janna": "E>W>Q",
+    "JarvanIV": "Q>E>W", "Jax": "W>Q>E", "Jayce": "Q>W>E", "Jhin": "Q>W>E",
+    "Jinx": "Q>W>E", "Kaisa": "Q>E>W", "Kalista": "E>Q>W", "Karma": "Q>E>W",
+    "Karthus": "Q>E>W", "Kassadin": "Q>W>E", "Katarina": "Q>E>W", "Kayle": "Q>E>W",
+    "Kayn": "Q>W>E", "Kennen": "Q>W>E", "Khazix": "Q>W>E", "Kindred": "Q>W>E",
+    "Kled": "Q>W>E", "Leblanc": "W>Q>E", "LeeSin": "Q>W>E", "Leona": "W>E>Q",
+    "Lillia": "Q>W>E", "Lissandra": "Q>W>E", "Lucian": "Q>E>W", "Lulu": "E>W>Q",
+    "Lux": "E>Q>W", "Malphite": "Q>E>W", "Malzahar": "E>Q>W", "Maokai": "Q>W>E",
+    "MasterYi": "Q>E>W", "MissFortune": "Q>W>E", "Mordekaiser": "Q>E>W",
+    "Morgana": "Q>W>E", "Nami": "W>E>Q", "Nasus": "Q>W>E", "Nautilus": "Q>W>E",
+    "Neeko": "Q>E>W", "Nidalee": "Q>E>W", "Nocturne": "Q>E>W", "Olaf": "Q>E>W",
+    "Orianna": "Q>W>E", "Ornn": "W>Q>E", "Pantheon": "Q>E>W", "Poppy": "Q>E>W",
+    "Pyke": "Q>E>W", "Qiyana": "Q>E>W", "Quinn": "W>Q>E", "Rakan": "W>E>Q",
+    "Rammus": "Q>E>W", "RekSai": "Q>W>E", "Rell": "W>E>Q", "Renata": "E>W>Q",
+    "Renekton": "Q>E>W", "Rengar": "Q>E>W", "Riven": "Q>E>W", "Rumble": "Q>E>W",
+    "Ryze": "Q>E>W", "Samira": "Q>E>W", "Sejuani": "W>Q>E", "Senna": "Q>W>E",
+    "Seraphine": "Q>E>W", "Sett": "Q>W>E", "Shaco": "E>Q>W", "Shen": "Q>E>W",
+    "Shyvana": "W>Q>E", "Singed": "Q>E>W", "Sion": "Q>W>E", "Sivir": "Q>W>E",
+    "Skarner": "Q>W>E", "Sona": "Q>W>E", "Soraka": "W>Q>E", "Swain": "Q>W>E",
+    "Sylas": "W>E>Q", "Syndra": "Q>E>W", "TahmKench": "Q>W>E", "Taliyah": "Q>E>W",
+    "Talon": "W>Q>E", "Taric": "E>Q>W", "Teemo": "E>Q>W", "Thresh": "Q>W>E",
+    "Tristana": "Q>E>W", "Trundle": "Q>W>E", "Tryndamere": "Q>E>W",
+    "TwistedFate": "Q>W>E", "Twitch": "E>Q>W", "Udyr": "Q>E>W", "Urgot": "W>Q>E",
+    "Varus": "Q>W>E", "Vayne": "Q>W>E", "Veigar": "Q>E>W", "Velkoz": "Q>W>E",
+    "Vex": "Q>E>W", "Vi": "Q>E>W", "Viego": "Q>E>W", "Viktor": "E>Q>W",
+    "Vladimir": "Q>E>W", "Volibear": "W>Q>E", "Warwick": "Q>W>E",
+    "Wukong": "Q>E>W", "Xayah": "E>W>Q", "Xerath": "Q>W>E",
+    "Yasuo": "Q>E>W", "Yone": "Q>E>W", "Yorick": "Q>E>W", "Yuumi": "E>Q>W",
+    "Zac": "E>W>Q", "Zed": "Q>E>W", "Zeri": "Q>W>E", "Ziggs": "Q>E>W",
+    "Zilean": "Q>E>W", "Zoe": "Q>E>W", "Zyra": "E>Q>W",
+    "Naafiri": "Q>E>W", "Belveth": "Q>E>W", "Briar": "Q>E>W",
+    "Milio": "E>W>Q", "Smolder": "Q>W>E", "Hwei": "Q>E>W", "Aurora": "Q>E>W",
+    "Mel": "Q>E>W", "Ambessa": "Q>E>W",
 }
 
 def clear_layout(layout):
@@ -454,6 +501,21 @@ class LoLRecommenderApp(QMainWindow):
         self.timer_ingame = QTimer(self)
         self.timer_ingame.timeout.connect(self.actualizar_ingame)
         self.timer_ingame.start(5000)
+        
+        # Hotkey Ctrl+G para mostrar/ocultar IN-GAME durante la partida
+        QShortcut(QKeySequence("Ctrl+G"), self, activated=self._toggle_ingame_visibility)
+
+    def _toggle_ingame_visibility(self):
+        """Muestra u oculta la pestaña IN-GAME con Ctrl+G."""
+        # Buscar el indice de la pestaña IN-GAME (es la 3ra: 0=Perfil, 1=Coaching, 2=Radar, 3=InGame)
+        for i in range(self.tabview.count()):
+            if "IN-GAME" in self.tabview.tabText(i):
+                if self.tabview.currentIndex() == i:
+                    # Si ya estamos en IN-GAME, volver a la pestaña anterior
+                    self.tabview.setCurrentIndex(max(0, i - 1))
+                else:
+                    self.tabview.setCurrentIndex(i)
+                break
 
     def aplicar_estilos(self):
         self.setStyleSheet(f"""
@@ -2030,6 +2092,14 @@ class LoLRecommenderApp(QMainWindow):
         self.l_runas_vivo.addLayout(self.fr_runas_icons_vivo)
         l_center.addWidget(self.panel_runas_vivo, 2)
         self.inicializar_panel_setup(self.fr_runas_icons_vivo)
+        
+        # Skill Order
+        self.panel_skills, self.l_skills = self.crear_panel("📖 RUTA DE HABILIDADES")
+        self.lbl_skill_order = QLabel("Selecciona un campeón")
+        self.lbl_skill_order.setAlignment(Qt.AlignCenter)
+        self.lbl_skill_order.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 16px; font-weight: bold; padding: 8px;")
+        self.l_skills.addWidget(self.lbl_skill_order)
+        l_center.addWidget(self.panel_skills)
         draft_layout.addWidget(col_center, 3)
 
         self.col_ally, l_ally = self.crear_panel("Aliados")
@@ -2106,6 +2176,13 @@ class LoLRecommenderApp(QMainWindow):
         if not self._actualizando_radar:
             self._actualizando_radar = True
             threading.Thread(target=self._fetch_radar, daemon=True).start()
+        
+        # Auto-switch de pestañas segun fase del juego
+        fase = self.lcu.obtener_fase_juego()
+        if fase == "ChampSelect" and self.tabview.currentIndex() != 2:
+            self.tabview.setCurrentIndex(2)  # RADAR EN VIVO
+        elif fase == "InProgress" and self.tabview.currentIndex() not in (2, 3):
+            self.tabview.setCurrentIndex(3)  # IN-GAME
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)
@@ -2323,8 +2400,15 @@ class LoLRecommenderApp(QMainWindow):
                     ids_spells = obtener_top_hechizos(mi_campeon, rol_api)
                     ids_start, ids_core = obtener_top_items(mi_campeon, rol_api, enemigos=self.last_enemigos)
                     self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo)
+                    
+                    # Ruta de habilidades
+                    skill_key = self._nombre_db(mi_campeon) or mi_campeon
+                    skill_key_sanitized = skill_key.replace(" ", "").replace("'", "").replace(".", "")
+                    skill_order = SKILL_ORDERS.get(skill_key_sanitized, SKILL_ORDERS.get(skill_key, "Q>W>E"))
+                    self.lbl_skill_order.setText(f"Max: {skill_order}  (R al 6/11/16)")
                 else: 
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)
+                    self.lbl_skill_order.setText("Selecciona un campeón")
         except Exception as e:
             pass
 

@@ -1,26 +1,45 @@
 # Entornos virtuales
 venv/
+.venv/
 env/
 
-# Archivos compilados de Python
+# Cache de Python
 __pycache__/
 *.pyc
+*.pyo
+*.spec
 
-# Archivos de datos pesados y cachés
-data/lol_data.db
-data/modelo_ia.pkl
-data/champion.json
-data/item_data.json
-assets/items/*.png
-data/modelo_1v1.pkl
+# Datos descargados por setup.py
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.pkl
+data/*.json
+
+# Configuracion local (API keys, preferencias de usuario)
 config.json
-prueba.py
 
-# Archivos del sistema operativo
+# Assets descargados por Data Dragon
+assets/items/*.png
+assets/champs/*.png
+assets/spells/*.png
+assets/runas/*.png
+assets/profile_icons/*.png
+
+# Builds de PyInstaller
+distribucion/
+build_temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operativo
 .DS_Store
 Thumbs.db
 
-# Build PyInstaller
-distribucion/
-build_temp/
-*.spec
+# Cache de linting
+.mypy_cache/
+.ruff_cache/

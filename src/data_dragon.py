@@ -27,8 +27,8 @@ class DataDragonAPI:
         version = self.obtener_version_actual()
         print(f"🌐 Contactando a Data Dragon (Parche {version})...")
         
-        # Pedimos los datos en español latino (es_MX)
-        url_campeones = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/es_MX/champion.json"
+        # Pedimos los datos en español de España (es_ES) — consistente con riot_api.py
+        url_campeones = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/es_ES/champion.json"
         
         try:
             response = requests.get(url_campeones)

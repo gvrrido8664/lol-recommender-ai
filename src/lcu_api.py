@@ -4,21 +4,54 @@ import requests
 import urllib3
 import sys
 import time
+import winreg
 from base64 import b64encode
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class LCUConnector:
-    def __init__(self, lol_path=r"C:\Riot Games\League of Legends"):
+    def __init__(self, lol_path=None):
+        if lol_path is None:
+            lol_path = self._detectar_lol_path()
         self.lol_path = lol_path
-        self.lockfile_path = os.path.join(self.lol_path, "lockfile")
+        self.lockfile_path = os.path.join(self.lol_path, "lockfile") if lol_path else ""
         self.port = None
         self.password = None
         self.protocol = None
         self.headers = {}
-        
+
+    @staticmethod
+    def _detectar_lol_path():
+        """Detecta la instalación de League of Legends vía registro o rutas comunes."""
+        rutas = [
+            r"C:\Riot Games\League of Legends",
+            r"C:\Program Files\Riot Games\League of Legends",
+            r"D:\Riot Games\League of Legends",
+            r"D:\Program Files\Riot Games\League of Legends",
+        ]
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Riot Games\RADS") as key:
+                path = winreg.QueryValueEx(key, "LocalRootFolder")[0]
+                lol_client = os.path.join(path, "RADS", "solutions", "lol_game_client_sln")
+                for f in os.listdir(lol_client):
+                    if f.startswith("releases"):
+                        rutas.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(lol_client))))
+                        break
+        except (FileNotFoundError, OSError):
+            pass
+
+        for r in rutas:
+            if os.path.exists(os.path.join(r, "lockfile")):
+                return r
+        return rutas[0]
+
     def conectar(self):
-        if not os.path.exists(self.lockfile_path): return False
+        if not self.lol_path or not os.path.exists(self.lockfile_path):
+            # Intentar redetectar si el lockfile no existe
+            self.lol_path = self._detectar_lol_path()
+            self.lockfile_path = os.path.join(self.lol_path, "lockfile")
+            if not os.path.exists(self.lockfile_path):
+                return False
         try:
             with open(self.lockfile_path, 'r') as file:
                 data = file.read().split(':')
@@ -29,36 +62,34 @@ class LCUConnector:
                 auth_base64 = b64encode(auth_string.encode('ascii')).decode('ascii')
                 self.headers = {"Authorization": f"Basic {auth_base64}", "Accept": "application/json"}
                 return True
-        except Exception: return False
-    
-    def obtener_ranked_stats(self, puuid=None):
-        """
-        Obtiene las estadísticas de clasificatorias del jugador.
-        Si la API falla, retorna una estructura base para no romper la UI.
-        """
+        except Exception:
+            return False
+
+    def reconnect(self):
+        self.port = None
+        self.password = None
+        self.protocol = None
+        self.headers = {}
+        return self.conectar()
+
+    def request(self, method, endpoint, **kwargs):
+        if not self.port:
+            if not self.conectar():
+                return None
+        url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
+        kwargs.setdefault("headers", self.headers)
+        kwargs.setdefault("verify", False)
+        kwargs.setdefault("timeout", 3)
         try:
-            # Aquí va tu endpoint real, por ejemplo:
-            # response = self.request('GET', f'/lol-ranked/v1/ranked-stats/{puuid}')
-            # return response.json()
-            
-            # Retorno simulado para evitar crasheo IN-GAME:
-            return {
-                "queues": [
-                    {"queueType": "RANKED_SOLO_5x5", "tier": "MASTER", "wins": 178, "losses": 181},
-                    {"queueType": "RANKED_FLEX_SR", "tier": "EMERALD", "division": "III", "wins": 4, "losses": 1}
-                ]
-            }
-        except Exception as e:
-            print(f"Error obteniendo ranked stats: {e}")
+            res = requests.request(method, url, **kwargs)
+            return res
+        except requests.RequestException:
             return None
 
     def obtener_sesion_draft(self):
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champ-select/v1/session"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200: return res.json()
-        except: pass
+        res = self.request('GET', '/lol-champ-select/v1/session')
+        if res and res.status_code == 200:
+            return res.json()
         return None
 
     def obtener_mi_rol(self, draft_data):
@@ -74,69 +105,57 @@ class LCUConnector:
 
     def obtener_fase_juego(self):
         """Devuelve la fase actual: None, Lobby, Matchmaking, ReadyCheck, ChampSelect, GameStart, InProgress, WaitingForStats, PreEndOfGame, EndOfGame"""
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("phase")
-        except: pass
+        res = self.request('GET', '/lol-gameflow/v1/session')
+        if res and res.status_code == 200:
+            return res.json().get("phase")
         return None
 
     def obtener_summoners_partida(self):
         """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName.
         Usa playerChampionSelections (champ select) o teamOne/teamTwo (in-game).
         Durante InProgress tambien busca en el objeto 'gameData' completo como fallback."""
-        if not self.port: return []
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-gameflow/v1/session"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code != 200: return []
-            data = res.json()
-            game_data = data.get("gameData", {})
-            players = []
+        res = self.request('GET', '/lol-gameflow/v1/session')
+        if not res or res.status_code != 200:
+            return []
+        data = res.json()
+        game_data = data.get("gameData", {})
+        players = []
 
-            # Metodo 1: playerChampionSelections (funciona en champ select y a veces in-game)
-            selections = game_data.get("playerChampionSelections", [])
-            if selections:
-                for sel in selections:
-                    players.append({
-                        "summonerId": sel.get("summonerInternalName", ""),
-                        "championId": sel.get("championId", 0),
-                        "spell1Id": sel.get("spell1Id", 0),
-                        "spell2Id": sel.get("spell2Id", 0),
-                        "team": sel.get("team", ""),
-                        "skinIndex": sel.get("skinIndex", 0),
-                        "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
-                    })
-                if players:
-                    print(f"[LCU] {len(players)} jugadores via playerChampionSelections")
-                    return players
-
-            # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
-            players = self._extraer_de_team(game_data, "teamOne", "ORDER")
-            if not players:
-                players = self._extraer_de_team(game_data, "teamTwo", "CHAOS")
-            # Si teamOne encontro jugadores, añadir teamTwo tambien
-            players += self._extraer_de_team(game_data, "teamTwo", "CHAOS")
-            
-            # Si encontro jugadores de los dos equipos, devolver
-            if len(players) >= 2:
-                print(f"[LCU] {len(players)} jugadores via teamOne/teamTwo")
+        # Metodo 1: playerChampionSelections (funciona en champ select y a veces in-game)
+        selections = game_data.get("playerChampionSelections", [])
+        if selections:
+            for sel in selections:
+                players.append({
+                    "summonerId": sel.get("summonerInternalName", ""),
+                    "championId": sel.get("championId", 0),
+                    "spell1Id": sel.get("spell1Id", 0),
+                    "spell2Id": sel.get("spell2Id", 0),
+                    "team": sel.get("team", ""),
+                    "skinIndex": sel.get("skinIndex", 0),
+                    "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
+                })
+            if players:
+                print(f"[LCU] {len(players)} jugadores via playerChampionSelections")
                 return players
 
-            # Metodo 3: Buscar en todo gameData recursivamente objetos con championId
-            players_fallback = self._buscar_jugadores_en_dict(game_data)
-            if players_fallback:
-                print(f"[LCU] {len(players_fallback)} jugadores via busqueda profunda en gameData")
-                return players_fallback
+        # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
+        players = self._extraer_de_team(game_data, "teamOne", "ORDER")
+        if not players:
+            players = self._extraer_de_team(game_data, "teamTwo", "CHAOS")
+        players += self._extraer_de_team(game_data, "teamTwo", "CHAOS")
+        
+        if len(players) >= 2:
+            print(f"[LCU] {len(players)} jugadores via teamOne/teamTwo")
+            return players
 
-            print(f"[LCU] gameData keys: {list(game_data.keys()) if game_data else 'vacio'}")
-            return players if players else []
-        except Exception as e:
-            print(f"[LCU] Error en obtener_summoners_partida: {e}")
-            return []
+        # Metodo 3: Buscar en todo gameData recursivamente objetos con championId
+        players_fallback = self._buscar_jugadores_en_dict(game_data)
+        if players_fallback:
+            print(f"[LCU] {len(players_fallback)} jugadores via busqueda profunda en gameData")
+            return players_fallback
+
+        print(f"[LCU] gameData keys: {list(game_data.keys()) if game_data else 'vacio'}")
+        return players if players else []
 
     def _extraer_de_team(self, game_data, team_key, team_name):
         """Extrae jugadores de teamOne/teamTwo del gameData."""
@@ -204,38 +223,26 @@ class LCUConnector:
 
     def obtener_maestria_champ(self, champion_id):
         """Obtiene la maestria del jugador actual con un campeon especifico."""
-        if not self.port: return 0
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champions/v1/inventories/CHAMPION/champions-minimal"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200:
-                for champ in res.json():
-                    if champ.get("id") == champion_id:
-                        return champ.get("masteryLevel", 0)
-        except: pass
+        res = self.request('GET', '/lol-champions/v1/inventories/CHAMPION/champions-minimal')
+        if res and res.status_code == 200:
+            for champ in res.json():
+                if champ.get("id") == champion_id:
+                    return champ.get("masteryLevel", 0)
         return 0
 
     def obtener_nombre_invocador(self):
         """Obtiene el nombre del invocador actual."""
-        if not self.port: return ""
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-summoner/v1/current-summoner"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("displayName", data.get("gameName", ""))
-        except: pass
+        res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        if res and res.status_code == 200:
+            return res.json().get("displayName", res.json().get("gameName", ""))
         return ""
 
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
     
     def obtener_perfil(self):
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-summoner/v1/current-summoner"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200: return res.json()
-        except: pass
+        res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        if res and res.status_code == 200:
+            return res.json()
         return None
 
     def obtener_region_local(self):
@@ -251,18 +258,24 @@ class LCUConnector:
         return None
 
     def obtener_api_key_local(self):
+        # Primero buscar en directorio escribible (donde el usuario guarda config)
         if getattr(sys, 'frozen', False):
-            root_path = sys._MEIPASS
+            writable_root = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
         else:
-            root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(root_path, "config.json")
+            writable_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(writable_root, "config.json")
         if not os.path.exists(config_path):
-            return None
+            # Fallback: directorio del bundle
+            if getattr(sys, 'frozen', False):
+                config_path = os.path.join(sys._MEIPASS, "config.json")
+            else:
+                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 return config.get("API_KEY")
-        except: pass
+        except:
+            pass
         return None
 
     def obtener_encrypted_summoner_id(self, puuid, region):
@@ -281,55 +294,49 @@ class LCUConnector:
         """Obtiene datos de ranked desde LCU, con fallback a Riot API.
         Normaliza la respuesta a: {"queues": [{"tier":..., "division":..., "leaguePoints":..., "wins":..., "losses":..., "queueType":...}]}
         """
-        if self.port:
-            for endpoint in [
-                "/lol-ranked/v1/current-ranked-stats",
-                "/lol-ranked/v1/current-ranks",
-            ]:
-                try:
-                    url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
-                    res = requests.get(url, headers=self.headers, verify=False, timeout=3)
-                    if res.status_code != 200:
-                        continue
-                    data = res.json()
-
-                    queues = []
-
-                    if isinstance(data, list):
-                        # Riot-style: lista de entries [{tier, rank, leaguePoints, ...}, ...]
-                        for entry in data:
-                            entry["division"] = entry.get("division") or entry.get("rank") or ""
-                            queues.append(entry)
-
-                    elif isinstance(data, dict):
-                        # --- queueMap ---
-                        qmap = data.get("queueMap", {})
-                        if isinstance(qmap, dict):
-                            for qtype, qdata in qmap.items():
-                                if isinstance(qdata, dict) and qdata.get("tier"):
-                                    qdata["division"] = qdata.get("division") or qdata.get("rank") or ""
-                                    queues.append({**qdata, "queueType": qtype})
-
-                        # --- queues (dentro del dict, si queueMap no encontró nada) ---
-                        if not queues:
-                            qlist = data.get("queues", [])
-                            if isinstance(qlist, list):
-                                for entry in qlist:
-                                    if isinstance(entry, dict):
-                                        entry["division"] = entry.get("division") or entry.get("rank") or ""
-                                        queues.append(entry)
-
-                        # --- La raíz misma tiene tier (raro pero posible) ---
-                        if not queues and data.get("tier"):
-                            data["division"] = data.get("division") or data.get("rank") or ""
-                            queues.append(data)
-
-                    if queues:
-                        print(f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType','?'), q.get('tier','?')) for q in queues]}")
-                        return {"queues": queues}
-                except Exception as e:
-                    print(f"[LCU] Error en {endpoint}: {e}")
+        for endpoint in [
+            "/lol-ranked/v1/current-ranked-stats",
+            "/lol-ranked/v1/current-ranks",
+        ]:
+            try:
+                res = self.request('GET', endpoint, timeout=3)
+                if not res or res.status_code != 200:
                     continue
+                data = res.json()
+
+                queues = []
+
+                if isinstance(data, list):
+                    for entry in data:
+                        entry["division"] = entry.get("division") or entry.get("rank") or ""
+                        queues.append(entry)
+
+                elif isinstance(data, dict):
+                    qmap = data.get("queueMap", {})
+                    if isinstance(qmap, dict):
+                        for qtype, qdata in qmap.items():
+                            if isinstance(qdata, dict) and qdata.get("tier"):
+                                qdata["division"] = qdata.get("division") or qdata.get("rank") or ""
+                                queues.append({**qdata, "queueType": qtype})
+
+                    if not queues:
+                        qlist = data.get("queues", [])
+                        if isinstance(qlist, list):
+                            for entry in qlist:
+                                if isinstance(entry, dict):
+                                    entry["division"] = entry.get("division") or entry.get("rank") or ""
+                                    queues.append(entry)
+
+                    if not queues and data.get("tier"):
+                        data["division"] = data.get("division") or data.get("rank") or ""
+                        queues.append(data)
+
+                if queues:
+                    print(f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType','?'), q.get('tier','?')) for q in queues]}")
+                    return {"queues": queues}
+            except Exception as e:
+                print(f"[LCU] Error en {endpoint}: {e}")
+                continue
 
         # ===== FALLBACK: Riot API =====
         region = self.obtener_region_local()
@@ -358,28 +365,23 @@ class LCUConnector:
 
     def obtener_maestrias(self, count=3):
         # FIX: Este endpoint de Local-Player NUNCA falla si estás logueado en LoL
-        if not self.port: return []
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champion-mastery/v1/local-player/champion-mastery"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=2)
-            if res.status_code == 200: return res.json()[:count]
-        except: pass
+        res = self.request('GET', '/lol-champion-mastery/v1/local-player/champion-mastery')
+        if res and res.status_code == 200:
+            return res.json()[:count]
         return []
 
     def obtener_historial(self, puuid, count=20):
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex={count}"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=3)
-            if res.status_code == 200: return res.json()
-        except: pass
+        if not puuid:
+            return None
+        res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex={count}')
+        if res and res.status_code == 200:
+            return res.json()
         return None
 
     def obtener_liveclient_data(self):
         """Obtiene datos en vivo de la partida via Live Client Data API (puerto 2999).
-        Solo disponible cuando la partida esta corriendo (InProgress).
-        NOTA: Esta API debe estar activada en LoL: Ajustes > Juego > Live Client Data API.
-        Retorna ([], {'status': 'loading'}) si la partida esta en pantalla de carga."""
+        Esta API se activa automáticamente al entrar a la Grieta — no requiere configuración.
+        Retorna ([], {'status': 'loading'}) si todavía está en pantalla de carga."""
         try:
             url = "https://127.0.0.1:2999/liveclientdata/allgamedata"
             res = requests.get(url, verify=False, timeout=2)
@@ -422,158 +424,182 @@ class LCUConnector:
                         "isDead": p.get("isDead", False),
                         "championId": 0,
                     })
-                print(f"[LiveClient] Jugadores obtenidos: {len(players)} (ORDER={sum(1 for p in players if p['team']=='ORDER')}, CHAOS={sum(1 for p in players if p['team']=='CHAOS')})")
                 return players, data.get("gameData", {})
             else:
-                print(f"[LiveClient] API no disponible (status={res.status_code}). ¿Activada en ajustes de LoL?")
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            # Rate-limit: solo avisar cada 60 segundos para no spamear
-            try:
+                # Rate-limit logs
                 now = time.time()
                 if not hasattr(self, '_last_liveclient_warn') or now - self._last_liveclient_warn > 60:
-                    print("[LiveClient] Puerto 2999 no accesible (pantalla de carga o API no activada).")
+                    print(f"[LiveClient] Puerto 2999 respondió con status={res.status_code}")
                     self._last_liveclient_warn = now
-            except Exception:
-                pass
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            # Normal: el juego todavía está en pantalla de carga o acaba de empezar
+            now = time.time()
+            if not hasattr(self, '_last_liveclient_warn') or now - self._last_liveclient_warn > 60:
+                print("[LiveClient] Puerto 2999 no disponible aún (pantalla de carga). Reintentando...")
+                self._last_liveclient_warn = now
             return [], {"status": "loading"}
         except Exception as e:
-            print(f"[LiveClient] Error: {e}")
+            print(f"[LiveClient] Error inesperado: {e}")
         return [], {}
 
     def obtener_ranked_stats(self):
         """Obtiene estadisticas completas de ranked (season actual) desde LCU."""
-        if not self.port: return None
-        try:
-            url = f"{self.protocol}://127.0.0.1:{self.port}/lol-ranked/v1/current-ranked-stats"
-            res = requests.get(url, headers=self.headers, verify=False, timeout=3)
-            if res.status_code == 200:
-                data = res.json()
-                result = {"queues": {}, "seasons": data.get("seasons", {})}
-                qmap = data.get("queueMap", {})
-                for qtype, qdata in qmap.items():
-                    if isinstance(qdata, dict) and qdata.get("tier"):
-                        result["queues"][qtype] = qdata
-                return result
-        except: pass
+        res = self.request('GET', '/lol-ranked/v1/current-ranked-stats')
+        if res and res.status_code == 200:
+            data = res.json()
+            result = {"queues": {}, "seasons": data.get("seasons", {})}
+            qmap = data.get("queueMap", {})
+            for qtype, qdata in qmap.items():
+                if isinstance(qdata, dict) and qdata.get("tier"):
+                    result["queues"][qtype] = qdata
+            return result
         return None
 
     def obtener_historial_extendido(self, puuid: str = None, inicio: int = 0, cantidad: int = 100):
         """Obtiene historial de partidas via LCU (hasta 100)."""
-        if not self.port: return []
-        try:
-            if not puuid:
-                perfil = self.obtener_perfil()
-                if perfil: puuid = perfil.get("puuid", "")
-            if not puuid: return []
-            url = (f"{self.protocol}://127.0.0.1:{self.port}"
-                   f"/lol-match-history/v1/products/lol/{puuid}/matches"
-                   f"?begIndex={inicio}&endIndex={inicio + cantidad}")
-            res = requests.get(url, headers=self.headers, verify=False, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("games", {}).get("games", [])
-        except: pass
+        if not puuid:
+            perfil = self.obtener_perfil()
+            if perfil:
+                puuid = perfil.get("puuid", "")
+        if not puuid:
+            return []
+        res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={inicio}&endIndex={inicio + cantidad}')
+        if res and res.status_code == 200:
+            data = res.json()
+            return data.get("games", {}).get("games", [])
         return []
 
     # ================= FUNCIONES DE AUTO-IMPORTACIÓN =================
     def importar_hechizos(self, spell1, spell2):
-        if not self.port: return False
-        url = f"{self.protocol}://127.0.0.1:{self.port}/lol-champ-select/v1/session/my-selection"
-        try:
-            res = requests.patch(url, headers=self.headers, json={"spell1Id": int(spell1), "spell2Id": int(spell2)}, verify=False, timeout=3)
-            return res.status_code in [200, 204]
-        except: return False
+        res = self.request('PATCH', '/lol-champ-select/v1/session/my-selection',
+                          json={"spell1Id": int(spell1), "spell2Id": int(spell2)}, timeout=3)
+        return res is not None and res.status_code in [200, 204]
+
+    def importar_skill_order(self, skill_order_str):
+        """Exporta la ruta de habilidades al cliente (formato 'Q>E>W').
+        Intenta múltiples formatos y endpoints porque la API varía entre parches."""
+        skills = [s.strip().upper() for s in skill_order_str.replace(">", ",").split(",") if s.strip()]
+        if len(skills) < 3:
+            return False
+
+        # Formato 1: lista de strings ["Q","E","W",...]
+        # Formato 2: lista de enteros [1,2,3,...]  (Q=1,W=2,E=3,R=4)
+        map_skill_int = {"Q": 1, "W": 2, "E": 3, "R": 4}
+        skills_int = [map_skill_int.get(s, 1) for s in skills]
+        # Formato 3: string plano "QEQWQQ..."
+        skills_str = "".join(skills)
+
+        payloads = [
+            {"skillOrder": skills, "championSkillOrder": skills, "abilityOrder": skills},
+            {"skillOrder": skills_int, "championSkillOrder": skills_int, "abilityOrder": skills_int},
+            {"skillOrder": skills_str, "championSkillOrder": skills_str, "abilityOrder": skills_str},
+            {"championSkillOrder": skills},
+            {"championSkillOrder": skills_str},
+            {"championSkillOrder": skills_int},
+        ]
+
+        # Intento 1: PATCH my-selection con diversos formatos
+        for payload in payloads:
+            res = self.request('PATCH', '/lol-champ-select/v1/session/my-selection', json=payload, timeout=3)
+            if res and res.status_code in [200, 204]:
+                return True
+
+        # Intento 2: PATCH a actions (algunas versiones del cliente lo requieren)
+        session = self.obtener_sesion_draft()
+        if session:
+            actions = session.get("actions", [[]])
+            local_cell = session.get("localPlayerCellId")
+            for action_group in actions:
+                for action in action_group:
+                    if action.get("actorCellId") == local_cell and action.get("type") == "pick":
+                        action_id = action.get("id")
+                        if action_id:
+                            for fmt in [skills, skills_str, skills_int]:
+                                res2 = self.request('PATCH', f'/lol-champ-select/v1/session/actions/{action_id}',
+                                                  json={"championSkillOrder": fmt}, timeout=3)
+                                if res2 and res2.status_code in [200, 204]:
+                                    return True
+        return False
 
     def importar_runas(self, ids_runas, nombre="Analytics Build"):
-        if not self.port or len(ids_runas) < 11: return False
-        try:
-            url_pages = f"{self.protocol}://127.0.0.1:{self.port}/lol-perks/v1/pages"
-            res = requests.get(url_pages, headers=self.headers, verify=False, timeout=3)
-            if res.status_code == 200:
-                editables = [p for p in res.json() if p.get('isEditable', True)]
-                if editables:
-                    requests.delete(f"{url_pages}/{editables[0]['id']}", headers=self.headers, verify=False, timeout=3)
-            
-            data = {
-                "name": nombre, "primaryStyleId": int(ids_runas[0]), "subStyleId": int(ids_runas[5]),
-                "selectedPerkIds": [int(x) for x in ids_runas[1:5] + ids_runas[6:8] + ids_runas[8:11]], "current": True
-            }
-            res_post = requests.post(url_pages, headers=self.headers, json=data, verify=False, timeout=3)
-            return res_post.status_code == 200
-        except: return False
+        if not ids_runas or len(ids_runas) < 11:
+            return False
+
+        res = self.request('GET', '/lol-perks/v1/pages')
+        if res and res.status_code == 200:
+            editables = [p for p in res.json() if p.get('isEditable', True)]
+            if editables:
+                self.request('DELETE', f'/lol-perks/v1/pages/{editables[0]["id"]}')
+
+        data = {
+            "name": nombre, "primaryStyleId": int(ids_runas[0]), "subStyleId": int(ids_runas[5]),
+            "selectedPerkIds": [int(x) for x in ids_runas[1:5] + ids_runas[6:8] + ids_runas[8:11]], "current": True
+        }
+        res_post = self.request('POST', '/lol-perks/v1/pages', json=data, timeout=3)
+        return res_post is not None and res_post.status_code == 200
 
     def importar_item_set(self, campeon, champ_id_int, ids_start, ids_core):
         """Fix definitivo: Requiere champ_id_int (el id numérico) para asociarlo correctamente en la tienda de LoL"""
-        if not self.port: 
-            if not self.conectar(): return "Cliente de LoL no encontrado"
-            
+        sum_res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        if not sum_res or sum_res.status_code != 200:
+            return "No se pudo obtener el invocador"
+        summoner_id = sum_res.json().get('summonerId')
+        if not summoner_id:
+            return False
+
+        url_sets_base = f'/lol-item-sets/v1/item-sets'
+        url_sets_with_id = f'{url_sets_base}/{summoner_id}/sets'
+
+        item_sets_data = {"accountId": summoner_id, "itemSets": []}
+        items_res = self.request('GET', url_sets_base)
+        if items_res and items_res.status_code == 200:
+            item_sets_data = items_res.json()
+        else:
+            items_res2 = self.request('GET', url_sets_with_id)
+            if items_res2 and items_res2.status_code == 200:
+                item_sets_data = items_res2.json()
+
+        clean_start = [{"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"]
+        clean_core = [{"id": str(i).strip(), "count": 1} for i in ids_core if str(i).strip() and str(i).strip() != "0"]
+
+        nuevo_set = {
+            "associatedChampions": [champ_id_int] if champ_id_int > 0 else [],
+            "associatedMaps": [11],
+            "blocks": [
+                {"type": "Start & Early Game", "items": clean_start},
+                {"type": "Core Build", "items": clean_core}
+            ],
+            "title": f"LEA - {campeon}",
+            "uid": f"lea_custom_build_{campeon.lower()}",
+            "type": "custom",
+            "map": "any",
+            "mode": "any",
+            "preferredItemSlots": [],
+            "sortrank": 0,
+            "startedFrom": "blank"
+        }
+
+        lista_sets = item_sets_data.get("itemSets", [])
+        reemplazado = False
+        for i, s in enumerate(lista_sets):
+            if s.get("uid") == nuevo_set["uid"]:
+                lista_sets[i] = nuevo_set
+                reemplazado = True
+                break
+        if not reemplazado:
+            lista_sets.append(nuevo_set)
+
         try:
-            url_sum = f"{self.protocol}://127.0.0.1:{self.port}/lol-summoner/v1/current-summoner"
-            sum_res = requests.get(url_sum, headers=self.headers, verify=False, timeout=3)
-            if sum_res.status_code != 200: return False
-            summoner_id = sum_res.json().get('summonerId')
-            if not summoner_id: return False
-
-            url_sets_base = f"{self.protocol}://127.0.0.1:{self.port}/lol-item-sets/v1/item-sets"
-            url_sets_with_id = f"{url_sets_base}/{summoner_id}/sets"
-
-            item_sets_data = {"accountId": summoner_id, "itemSets": []}
-            try:
-                items_res = requests.get(url_sets_base, headers=self.headers, verify=False, timeout=3)
-                if items_res.status_code == 200:
-                    item_sets_data = items_res.json()
-                else:
-                    items_res = requests.get(url_sets_with_id, headers=self.headers, verify=False, timeout=3)
-                    if items_res.status_code == 200:
-                        item_sets_data = items_res.json()
-            except (ValueError, requests.exceptions.RequestException):
-                item_sets_data = {"accountId": summoner_id, "itemSets": []}
-
-            clean_start = [{"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"]
-            clean_core = [{"id": str(i).strip(), "count": 1} for i in ids_core if str(i).strip() and str(i).strip() != "0"]
-
-            nuevo_set = {
-                "associatedChampions": [champ_id_int] if champ_id_int > 0 else [], # CLAVE PARA QUE FUNCIONE EN PARTIDA
-                "associatedMaps": [11],
-                "blocks": [
-                    {"type": "Start & Early Game", "items": clean_start},
-                    {"type": "Core Build", "items": clean_core}
-                ],
-                "title": f"LEA - {campeon}",
-                "uid": f"lea_custom_build_{campeon.lower()}",
-                "type": "custom",
-                "map": "any",
-                "mode": "any",
-                "preferredItemSlots": [],
-                "sortrank": 0,
-                "startedFrom": "blank"
-            }
-
-            lista_sets = item_sets_data.get("itemSets", [])
-            reemplazado = False
-            for i, s in enumerate(lista_sets):
-                if s.get("uid") == nuevo_set["uid"]:
-                    lista_sets[i] = nuevo_set
-                    reemplazado = True
-                    break
-            if not reemplazado: lista_sets.append(nuevo_set)
-            
-            item_sets_data = {"accountId": summoner_id, "itemSets": lista_sets}
-            try:
-                put_res = requests.put(url_sets_base, headers=self.headers, json=item_sets_data, verify=False, timeout=30)
-                if put_res.status_code in [200, 201, 204]:
-                    return True
-
-                put_res2 = requests.put(url_sets_with_id, headers=self.headers, json={"itemSets": lista_sets}, verify=False, timeout=30)
-                if put_res2.status_code in [200, 201, 204]:
-                    return True
-
-                if put_res.status_code == 404 or put_res2.status_code == 404:
-                    return "Endpoint inválido. No se pudo guardar el item set en el cliente de LoL."
-                return f"Error al guardar item set: {put_res.status_code} / {put_res2.status_code}"
-            except requests.exceptions.ReadTimeout:
-                return "Tiempo de espera agotado al guardar el item set. El set puede haberse creado; verifica en el cliente."
-            except requests.exceptions.RequestException as exc:
-                return f"Error de conexión al guardar item set: {exc}"
-        except Exception as e:
-            return f"Excepción fatal: {str(e)}"
+            put_res = self.request('PUT', url_sets_base, json={"accountId": summoner_id, "itemSets": lista_sets}, timeout=30)
+            if put_res and put_res.status_code in [200, 201, 204]:
+                return True
+            put_res2 = self.request('PUT', url_sets_with_id, json={"itemSets": lista_sets}, timeout=30)
+            if put_res2 and put_res2.status_code in [200, 201, 204]:
+                return True
+            if (put_res and put_res.status_code == 404) or (put_res2 and put_res2.status_code == 404):
+                return "Endpoint inválido. No se pudo guardar el item set en el cliente de LoL."
+            return f"Error al guardar item set: {put_res.status_code if put_res else 'N/A'} / {put_res2.status_code if put_res2 else 'N/A'}"
+        except requests.exceptions.ReadTimeout:
+            return "Tiempo de espera agotado al guardar el item set. El set puede haberse creado; verifica en el cliente."
+        except requests.exceptions.RequestException as exc:
+            return f"Error de conexión al guardar item set: {exc}"

@@ -1,5 +1,5 @@
 """
-GVRRIDO — Analizador de Perfil de Jugador
+NEXUS — Analizador de Perfil de Jugador
 ═══════════════════════════════════════════════════════
 Analiza el historial de partidas (LCU) y la base de datos
 para generar:
@@ -7,7 +7,7 @@ para generar:
   2. Detección de Hábitos y Fortalezas
   3. Objetivos Semanales personalizados
 
-Autor: Sello Gvrrido
+Autor: Sello Nexus
 """
 from collections import defaultdict
 from .tags_champions import (

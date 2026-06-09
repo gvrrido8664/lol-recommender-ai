@@ -8,8 +8,20 @@ def _get_base_dir():
         return sys._MEIPASS
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+def _get_data_dir():
+    """Devuelve un directorio de datos escribible.
+    En desarrollo: data/ junto al código.
+    En .exe frozen: %APPDATA%/LoLRecommender/data para que sea escribible."""
+    if getattr(sys, 'frozen', False):
+        base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
+    else:
+        base = _get_base_dir()
+    d = os.path.join(base, "data")
+    os.makedirs(d, exist_ok=True)
+    return d
+
 BASE_DIR = _get_base_dir()
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = _get_data_dir()
 DB_PATH = os.path.join(DATA_DIR, "lol_data.db")
 
 def obtener_conexion():
@@ -86,7 +98,7 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_win ON participantes(win);")
 
-    # ─── TABLA DE ESTADO EMOCIONAL (GVRRIDO) ───
+    # ─── TABLA DE ESTADO EMOCIONAL (NEXUS) ───
     cur.execute("""
         CREATE TABLE IF NOT EXISTS estado_emocional (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,7 +231,7 @@ def compactar_base_de_datos():
     print(f"✅ Base de datos compactada: {tamaño_mb:.2f} MB")
 
 # ═══════════════════════════════════════════════════════════════
-# MOTOR EMOCIONAL (GVRRIDO)
+# MOTOR EMOCIONAL (NEXUS)
 # ═══════════════════════════════════════════════════════════════
 
 def etiquetar_estado_emocional(game_id: str, estado: str, puuid: str = "", champion: str = ""):
@@ -252,7 +264,7 @@ def obtener_estadisticas_emocionales() -> dict:
         SELECT ee.estado, COUNT(*) as partidas,
                SUM(CASE WHEN p.win=1 THEN 1 ELSE 0 END) as wins
         FROM estado_emocional ee
-        JOIN participantes p ON p.champion = ee.champion
+        JOIN participantes p ON p.match_id = ee.game_id AND p.champion = ee.champion
         GROUP BY ee.estado
     """)
     stats = {}

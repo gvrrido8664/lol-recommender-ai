@@ -63,7 +63,7 @@ def analizar_fatiga(historial_games):
     partidas.sort(key=lambda p: p["fecha"])
 
     if not partidas:
-        return {"estado": "sin_datos", "mensaje": "No se pudieron procesar las partidas", "recomendacion": "Verificá que el cliente de LoL esté funcionando correctamente."}
+        return {"estado": "sin_datos", "mensaje": "No se pudieron procesar las partidas", "recomendacion": "Verifica que el cliente de LoL esté funcionando correctamente."}
 
     # ── Detectar sesiones: 3h entre fin de partida e inicio de la siguiente = nueva sesión ──
     sesiones = []
@@ -107,34 +107,34 @@ def analizar_fatiga(historial_games):
         if wins_sesion <= total_sesion * 0.3:
             estado = "tilted"
             mensaje = f"😤 {total_sesion} partidas seguidas y bajo WR. Estás tilted."
-            recomendacion = "Cierra LoL, descansa al menos 1 hora. Tu WR cae en picada con la fatiga."
+            recomendacion = "Cierra LoL, descansa al menos 1 hora. Tu WR cae en picada con la fatiga. No uses el juego como escape: juega solo cuando tengas la cabeza limpia."
         else:
             estado = "tired"
             mensaje = f"😴 Llevas {total_sesion} partidas seguidas. Tu rendimiento puede bajar."
-            recomendacion = "Considera una pausa de 30 min antes de la siguiente."
+            recomendacion = "Tómate 30 min de descanso. Recuerda: el disfrute viene del proceso, no solo del resultado."
     elif total_sesion >= 3:
         wr_sesion = round(wins_sesion / total_sesion * 100) if total_sesion > 0 else 0
         if wr_sesion < 40:
             estado = "tilted"
             mensaje = f"⚠️ {total_sesion} partidas con bajo WR ({wr_sesion}%). Posible tilt."
-            recomendacion = "Levántate, toma agua, vuelve en 20 min."
+            recomendacion = "Levántate, toma agua, vuelve en 20 min. La mala suerte existe, pero jugar tilted la empeora. Enfócate en lo que puedes controlar."
         else:
             estado = "tired"
             mensaje = f"🎯 {total_sesion} partidas en esta sesión. Rendimiento estable."
-            recomendacion = "Si te sientes bien, sigue. Si no, una pausa nunca sobra."
+            recomendacion = "Si te sientes bien, sigue. Pero recuerda: incluso en sesiones buenas, tu cerebro necesita pausas. Programa un descanso pronto."
     elif total_sesion == 1:
         if es_primera_del_dia:
             estado = "fresh"
             mensaje = "🌅 ¡Es tu primera partida del día! Estás en tu mejor momento."
-            recomendacion = "Juega tu mejor campeón. Calienta en práctica de herramientas si quieres antes de jugar ranked."
+            recomendacion = "Juega tu mejor campeón. Calienta en práctica de herramientas si quieres. Con la cabeza limpia, tu rendimiento es óptimo."
         else:
             estado = "fresh"
             mensaje = "🌟 Primera partida de la sesión. Estás fresco."
-            recomendacion = "Buen momento para jugar tu mejor campeón."
+            recomendacion = "Buen momento para jugar. Recuerda: tú eres el factor constante en tu progreso. Cada partida suma."
     else:
         estado = "neutral"
         mensaje = "👌 Sesión corta. Todo bien por ahora."
-        recomendacion = "Mantén el ritmo."
+        recomendacion = "Mantén el ritmo. Ajusta tus expectativas: el entorno es competitivo, no te frustres por cosas que no puedes controlar."
 
     return {
         "estado": estado,

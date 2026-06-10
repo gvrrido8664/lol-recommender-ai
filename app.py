@@ -3190,7 +3190,7 @@ class LoLRecommenderApp(QMainWindow):
             if puuid:
                 for intento in range(3):
                     try:
-                        historial = self.lcu.obtener_historial_extendido(inicio=0, cantidad=100)
+                        historial = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=0, cantidad=100)
                         if historial:
                             break
                     except Exception as e:
@@ -3410,8 +3410,7 @@ class LoLRecommenderApp(QMainWindow):
             if icon_p: item_c.setIcon(QIcon(icon_p))
             item_w = QTableWidgetItem("VICTORIA" if win else "DERROTA")
             item_w.setForeground(QColor(GREEN_WR if win else RED_WR))
-            modo_juego = g.get("gameMode", "Draft")
-            if modo_juego == "CLASSIC": modo_juego = "Ranked"
+            modo_juego = self._clasificar_modo_juego(g)
             
             self.tb_historial.setItem(row, 0, item_c)
             self.tb_historial.setItem(row, 1, item_w)
@@ -3525,7 +3524,7 @@ class LoLRecommenderApp(QMainWindow):
         self.cb_filtro_champ.blockSignals(False)
         
         modos_usados = sorted(set(
-            "Ranked" if g.get("gameMode", "") == "CLASSIC" else g.get("gameMode", "Normal")
+            self._clasificar_modo_juego(g)
             for g in self.historial_games
         ))
         self.cb_filtro_modo.blockSignals(True)
@@ -3735,8 +3734,7 @@ class LoLRecommenderApp(QMainWindow):
             else:
                 fecha = "?"
             
-            modo_juego = g.get("gameMode", "Draft")
-            if modo_juego == "CLASSIC": modo_juego = "Ranked"
+            modo_juego = self._clasificar_modo_juego(g)
             
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
@@ -4159,6 +4157,26 @@ class LoLRecommenderApp(QMainWindow):
         elif fase in ("GameStart", "InProgress"):
             if self.tabview.currentIndex() != 3 and self.user_settings.get("auto_switch_radar", True):
                 self.tabview.setCurrentIndex(3)  # PARTIDA EN VIVO
+
+    def _clasificar_modo_juego(self, g):
+        game_type = g.get("gameType", "")
+        game_mode = g.get("gameMode", "")
+        queue_id = g.get("queueId", 0)
+        if game_type == "CUSTOM_GAME":
+            return "Custom"
+        if game_type == "PRACTICE_GAME":
+            return "vs IA"
+        if queue_id == 420:
+            return "SoloQ"
+        if queue_id == 440:
+            return "Flex"
+        if queue_id in (400, 430):
+            return "Normal"
+        if game_mode == "ARAM":
+            return "ARAM"
+        if game_mode == "CLASSIC":
+            return "Normal"
+        return game_mode or "Normal"
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)

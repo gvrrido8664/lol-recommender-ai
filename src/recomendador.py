@@ -100,9 +100,17 @@ def obtener_campeones_por_rol(rol_api, min_partidas=20):
         LIMIT 45
     """, (rol_api, min_partidas))
 
-    resultados = [row["champion"] for row in cur.fetchall()]
+    con_datos = [row["champion"] for row in cur.fetchall()]
     conn.close()
-    return resultados
+
+    # Fallback: incluir campeones del rol sin datos suficientes al final de la lista
+    try:
+        from .tags_champions import obtener_champs_rol_base
+        con_datos_set = set(con_datos)
+        sin_datos = [c for c in obtener_champs_rol_base(rol_api) if c not in con_datos_set]
+        return con_datos + sin_datos
+    except Exception:
+        return con_datos
 
 def obtener_counters(carril, enemigo, min_partidas=20):
     conn = obtener_conexion()

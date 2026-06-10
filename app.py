@@ -1636,8 +1636,6 @@ class LoLRecommenderApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        # Fijar fuente por defecto para evitar el warning "QFont::setPointSize: Point size <= 0 (-1)"
-        QApplication.setFont(QFont("Segoe UI", 10))
         self.setWindowTitle("NEXUS // LoL Performance Engine")
         icon_path = os.path.join(BASE_DIR, "icono_app.ico")
         if os.path.exists(icon_path):
@@ -5945,6 +5943,7 @@ if __name__ == "__main__":
     import signal
     app = QApplication(sys.argv)
     app.setApplicationName("NEXUS")
+    app.setFont(QFont("Segoe UI", 10))
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 

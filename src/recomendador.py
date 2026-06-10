@@ -2,28 +2,21 @@ import sqlite3
 import os
 import json
 from .db_manager import obtener_conexion, DATA_DIR
-from .riot_api import cargar_objetos, cargar_runas, cargar_campeones
+from .riot_api import cargar_objetos, cargar_campeones
 from .tags_champions import (
     obtener_dano, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte,
     obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica
 )
-from .itemizador_dinamico import recomendar_bota, recomendar_item_defensivo
+from .itemizador_dinamico import recomendar_bota, recomendar_items_situacionales
 from .razonador import razonar_pick, razonar_hechizos, razonar_botas, razonar_runas, razonar_objeto
 
 _ITEMS_DATA = None
-_RUNAS_DATA = None
 
 def _get_items_data():
     global _ITEMS_DATA
     if _ITEMS_DATA is None:
         _ITEMS_DATA = cargar_objetos() or {}
     return _ITEMS_DATA
-
-def _get_runas_data():
-    global _RUNAS_DATA
-    if _RUNAS_DATA is None:
-        _RUNAS_DATA = cargar_runas() or {}
-    return _RUNAS_DATA
 
 # Ítems especiales por rol
 ITEMS_JUNGLA = ["1101", "1102", "1103"]
@@ -35,6 +28,47 @@ BOTASREALES = {
     3111, 3117, 3158, 3301, 3302, 3303,
     3156, 3173, 3174
 }
+_BOTASREALES_STR = {str(b) for b in BOTASREALES}
+
+# Ítems de soporte base/quest (van siempre en primer slot para UTILITY)
+_SOPORTE_QUEST = {str(i) for i in ITEMS_SUPP_FINAL} | {"3865","3850","3851","3854","3855"}
+
+
+def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
+    """Reordena el build en el orden real de compra:
+      1. Ítem de soporte quest (si existe) — siempre primero para UTILITY
+      2. Ítem más caro del core (primer power-spike)
+      3. Botas
+      4. Resto del core por coste descendente
+      5. Ítems baratos (< 2000g) al final
+    """
+    if not build_final:
+        return build_final
+
+    def costo(iid) -> int:
+        iid_s = str(iid)
+        info = items_data.get(iid_s, {})
+        if not info and iid_s.isdigit():
+            info = items_data.get(int(iid_s), {})
+        return (info.get("oro", 0) or 0) if isinstance(info, dict) else 0
+
+    soporte_q  = [i for i in build_final if str(i) in _SOPORTE_QUEST]
+    botas      = [i for i in build_final if str(i) in _BOTASREALES_STR and str(i) not in _SOPORTE_QUEST]
+    core       = [i for i in build_final if str(i) not in _BOTASREALES_STR and str(i) not in _SOPORTE_QUEST]
+
+    core_caro   = sorted([i for i in core if costo(i) >= 2000], key=costo, reverse=True)
+    core_barato = sorted([i for i in core if costo(i) <  2000], key=costo, reverse=True)
+
+    resultado = list(soporte_q)
+    if core_caro:
+        resultado.append(core_caro[0])
+        resultado.extend(botas)
+        resultado.extend(core_caro[1:])
+    else:
+        resultado.extend(botas)
+    resultado.extend(core_barato)
+
+    return resultado
 
 # FIX: Diccionario de excepciones para el cálculo AD/AP perfecto
 AP_EXCEPTIONS = {"Sylas", "Akali", "Diana", "Ekko", "Evelynn", "Fizz", "Gwen", "Katarina", 
@@ -131,8 +165,10 @@ def _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril):
     return max(botas_count, key=botas_count.get) if botas_count else None
 
 
-def obtener_top_items(campeon, carril, enemigos=None):
-    conn = obtener_conexion()
+def obtener_top_items(campeon, carril, enemigos=None, conn=None):
+    conn_owned = conn is None
+    if conn_owned:
+        conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND team_position = ? AND items != ''", (campeon, carril))
     filas = cur.fetchall()
@@ -142,7 +178,8 @@ def obtener_top_items(campeon, carril, enemigos=None):
         filas = cur.fetchall()
 
     if not filas:
-        conn.close()
+        if conn_owned:
+            conn.close()
         return ["1055", "2003", "2003"], []
 
     core_count, botas_count, supp_final_count, starters_count = {}, {}, {}, {}
@@ -213,18 +250,60 @@ def obtener_top_items(campeon, carril, enemigos=None):
         core_ordenado = sorted(core_count, key=core_count.get, reverse=True)[:espacios_restantes]
         build_final.extend(core_ordenado)
 
-    conn.close()
+    # Reordenar en secuencia de compra real: item de poder → botas → resto
+    build_final = _ordenar_build_por_timing(build_final, items_data)
+
+    if conn_owned:
+        conn.close()
     return combo_starters, build_final
 
-def obtener_top_runas(campeon, carril):
-    conn = obtener_conexion()
+
+def obtener_items_situacionales(campeon: str, carril: str, enemigos: list,
+                                excluir: list = None) -> list:
+    """Devuelve lista de ítems situacionales enriquecidos con nombre y coste.
+
+    Cada elemento: {id, nombre, coste, razon, categoria, prioridad}
+    categorias: anti_heal | anti_shield | anti_cc | anti_ap |
+                anti_ad   | anti_tank   | penetracion | supervivencia
+    prioridad:  1=CRÍTICO, 2=RECOMENDADO, 3=OPCIONAL
+    """
+    if not enemigos or not campeon:
+        return []
+    try:
+        items_sit = recomendar_items_situacionales(campeon, carril, enemigos)
+        items_data = _get_items_data()
+        excluir_str = {str(e) for e in (excluir or [])}
+        resultado = []
+        vistos = set()
+        for sit in items_sit:
+            iid = str(sit["id"])
+            if iid in vistos or iid in excluir_str:
+                continue
+            vistos.add(iid)
+            info = items_data.get(iid, {})
+            resultado.append({
+                **sit,
+                "id": iid,
+                "nombre": info.get("nombre", f"Ítem {iid}"),
+                "coste": info.get("oro", 0) or 0,
+            })
+        return resultado
+    except Exception as e:
+        print(f"[ItemSit] Error: {e}")
+        return []
+
+def obtener_top_runas(campeon, carril, conn=None):
+    conn_owned = conn is None
+    if conn_owned:
+        conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("SELECT runes FROM participantes WHERE champion = ? AND team_position = ? AND runes != ''", (campeon, carril))
     filas = cur.fetchall()
     if not filas:
         cur.execute("SELECT runes FROM participantes WHERE champion = ? AND runes != ''", (campeon,))
         filas = cur.fetchall()
-    conn.close()
+    if conn_owned:
+        conn.close()
     if not filas: return []
 
     conteo_principal, conteo_shard_ofensivo, conteo_shard_flex, conteo_shard_defensivo = {}, {}, {}, {}
@@ -243,8 +322,10 @@ def obtener_top_runas(campeon, carril):
     runas_finales.append(max(conteo_shard_defensivo, key=conteo_shard_defensivo.get) if conteo_shard_defensivo else "5011") 
     return runas_finales
 
-def obtener_top_hechizos(campeon, carril):
-    conn = obtener_conexion()
+def obtener_top_hechizos(campeon, carril, conn=None):
+    conn_owned = conn is None
+    if conn_owned:
+        conn = obtener_conexion()
     cur = conn.cursor()
     try:
         cur.execute("SELECT spells FROM participantes WHERE champion = ? AND team_position = ? AND spells != ''", (campeon, carril))
@@ -253,9 +334,11 @@ def obtener_top_hechizos(campeon, carril):
             cur.execute("SELECT spells FROM participantes WHERE champion = ? AND spells != ''", (campeon,))
             filas = cur.fetchall()
     except:
-        conn.close()
+        if conn_owned:
+            conn.close()
         return ["4", "14"]
-    conn.close()
+    if conn_owned:
+        conn.close()
 
     conteo = {}
     for row in filas:
@@ -317,28 +400,28 @@ def analizar_composicion(aliados):
     return pct_ad, pct_ap, tank_count
 
 def _score_pick(wr, es_ap, es_ad, es_tank, pct_ad, pct_ap, tank_count):
-    """Convierte winrate y sinergia en una puntuación 0.0–5.0.
+    """Convierte winrate y sinergia en una puntuacion 1.0-10.0.
     
-    Base: WR mapeada al rango 0-5 (escala comprimida para el rango 40-60% típico).
-    Bonus: +0.3 si cubre una necesidad urgente del equipo (falta AP, AD, o tank).
+    Base: WR mapeada al rango 1-10 (centrada en 50% = 5.0, minima 1.0).
+    Bonus: hasta +1.0 si cubre una necesidad urgente del equipo.
     """
-    # Mapeo WR → score base: 40% → 0.0, 50% → 2.5, 60%+ → 5.0
-    base = max(0.0, min(5.0, (wr - 40.0) / 4.0))
+    # Mapeo WR -> score base: 30% -> 1.0, 50% -> 5.0, 70% -> 10.0
+    base = max(1.0, min(10.0, 1.0 + (wr - 30.0) / 4.0))
     
-    # Bonus de sinergia: cubrir lo que le falta al equipo
+    # Bonus de sinergia: cubrir lo que le falta al equipo (proporcional a la escala)
     bonus = 0.0
     if pct_ad >= 60 and es_ap:
-        bonus = 0.4  # El equipo necesita AP urgente
+        bonus = 0.8  # El equipo necesita AP urgente
     elif pct_ap >= 60 and es_ad:
-        bonus = 0.4  # El equipo necesita AD urgente
+        bonus = 0.8  # El equipo necesita AD urgente
     elif tank_count == 0 and es_tank:
-        bonus = 0.5  # El equipo necesita frontlane urgente
+        bonus = 1.0  # El equipo necesita frontlane urgente
     elif es_ap and pct_ad >= 50:
-        bonus = 0.15  # Buen balance con AP extra
+        bonus = 0.3  # Buen balance con AP extra
     elif es_ad and pct_ap >= 50:
-        bonus = 0.15  # Buen balance con AD extra
+        bonus = 0.3  # Buen balance con AD extra
     elif es_tank and tank_count <= 1:
-        bonus = 0.2  # Refuerzo de frontlane
+        bonus = 0.4  # Refuerzo de frontlane
     
     return round(base + bonus, 1)
 
@@ -402,10 +485,10 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
                 else:
                     wr = wr_raw
         
-        # Calcular puntuación 0.0–5.0
+        # Calcular puntuacion 1.0–10.0
         puntuacion = _score_pick(wr, es_ap, es_ad, es_tank, pct_ad, pct_ap, tank_count)
         
-        # Determinar categoría y razón
+        # Determinar categoria y razon
         if pct_ad >= 60 and es_ap:
             candidatos["🔮 Falta Daño Mágico (AP)"].append((c, puntuacion, f"AP — {wr}% WR"))
         elif pct_ap >= 60 and es_ad:
@@ -414,11 +497,11 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
             candidatos["🛡️ Falta Tanque/Engage"].append((c, puntuacion, f"Front — {wr}% WR"))
         else:
             razon = "Fuerte en Meta"
-            if puntuacion >= 4.0:
+            if puntuacion >= 8.0:
                 razon = "🔥 Dominante"
-            elif puntuacion >= 3.0:
+            elif puntuacion >= 6.0:
                 razon = "✅ Sólido"
-            elif puntuacion >= 2.0:
+            elif puntuacion >= 4.0:
                 razon = "⚖️ Decente"
             candidatos["⭐ Sinergia/Balance"].append((c, puntuacion, f"{razon} — {wr}% WR"))
 
@@ -437,57 +520,60 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
         return 50.0
     
     conn = obtener_conexion()
-    cur = conn.cursor()
-    
-    # Asignar posiciones por defecto si no vienen del draft
-    if not pos_aliados:
-        pos_aliados = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-    if not pos_enemigos:
-        pos_enemigos = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
-    
-    # Crear diccionario aliado → posición
-    al_pos = dict(zip(aliados, pos_aliados))
-    en_pos = dict(zip(enemigos, pos_enemigos))
-    
-    # Mapa de posiciones equivalentes para emparejar
-    pos_equivalentes = {
-        "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
-        "MIDDLE": "MIDDLE", "MID": "MIDDLE",
-        "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
-        "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
-    }
-    
-    wr_por_lane = []
-    
-    for aliado, pos_al in al_pos.items():
-        # Buscar enemigo en la misma posición
-        pos_norm = pos_equivalentes.get(pos_al.upper(), pos_al.upper())
-        enemigo_lane = None
-        for en, pos_en in en_pos.items():
-            if pos_equivalentes.get(pos_en.upper(), pos_en.upper()) == pos_norm:
-                enemigo_lane = en
-                break
+    try:
+        cur = conn.cursor()
         
-        if enemigo_lane:
-            cur.execute("""
-                SELECT ROUND(SUM(p1.win)*100.0/COUNT(*), 1) as wr, COUNT(*) as partidas
-                FROM participantes p1
-                JOIN participantes p2 ON p1.match_id = p2.match_id
-                WHERE p1.champion = ? AND p1.team_position = ?
-                  AND p2.champion = ? AND p2.team_position = ?
-                  AND p1.team != p2.team
-            """, (aliado, pos_al, enemigo_lane, pos_norm))
-            row = cur.fetchone()
-            if row and row["wr"] is not None:
-                n = row["partidas"]
-                wr = (row["wr"] * n + 50.0 * max(0, 5 - n)) / max(5, n)
-                wr_por_lane.append(wr)
+        # Asignar posiciones por defecto si no vienen del draft
+        if not pos_aliados:
+            pos_aliados = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+        if not pos_enemigos:
+            pos_enemigos = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+        
+        # Crear diccionario aliado → posición
+        al_pos = dict(zip(aliados, pos_aliados))
+        en_pos = dict(zip(enemigos, pos_enemigos))
+        
+        # Mapa de posiciones equivalentes para emparejar
+        pos_equivalentes = {
+            "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
+            "MIDDLE": "MIDDLE", "MID": "MIDDLE",
+            "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
+            "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
+        }
+        
+        wr_por_lane = []
+        
+        for aliado, pos_al in al_pos.items():
+            # Buscar enemigo en la misma posición
+            pos_norm = pos_equivalentes.get(pos_al.upper(), pos_al.upper())
+            enemigo_lane = None
+            for en, pos_en in en_pos.items():
+                if pos_equivalentes.get(pos_en.upper(), pos_en.upper()) == pos_norm:
+                    enemigo_lane = en
+                    break
+            
+            if enemigo_lane:
+                cur.execute("""
+                    SELECT ROUND(SUM(p1.win)*100.0/COUNT(*), 1) as wr, COUNT(*) as partidas
+                    FROM participantes p1
+                    JOIN participantes p2 ON p1.match_id = p2.match_id
+                    WHERE p1.champion = ? AND p1.team_position = ?
+                      AND p2.champion = ? AND p2.team_position = ?
+                      AND p1.team != p2.team
+                """, (aliado, pos_al, enemigo_lane, pos_norm))
+                row = cur.fetchone()
+                if row and row["wr"] is not None:
+                    n = row["partidas"]
+                    if n >= 50:
+                        wr_por_lane.append(row["wr"])
+                    elif n >= 10:
+                        wr_por_lane.append(row["wr"] * 0.7 + 50 * 0.3)
+                else:
+                    wr_por_lane.append(50.0)
             else:
                 wr_por_lane.append(50.0)
-        else:
-            wr_por_lane.append(50.0)
-    
-    conn.close()
+    finally:
+        conn.close()
     
     # ═══════ FEATURE ENGINEERING 5v5: stats de composición ═══════
     try:

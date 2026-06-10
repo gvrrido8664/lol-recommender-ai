@@ -140,8 +140,6 @@ class LCUConnector:
 
         # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
         players = self._extraer_de_team(game_data, "teamOne", "ORDER")
-        if not players:
-            players = self._extraer_de_team(game_data, "teamTwo", "CHAOS")
         players += self._extraer_de_team(game_data, "teamTwo", "CHAOS")
         
         if len(players) >= 2:

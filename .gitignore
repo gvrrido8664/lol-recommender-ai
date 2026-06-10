@@ -43,3 +43,19 @@ Thumbs.db
 # Cache de linting
 .mypy_cache/
 .ruff_cache/
+
+# Builds de PyInstaller (onedir)
+build_onedir/
+dist/
+
+# Instalador
+installer_output/
+test_install/
+installer.iss
+
+# Iconos / assets fuente
+Icono_app.jpg
+icono_app.ico
+
+# Version
+version.txt

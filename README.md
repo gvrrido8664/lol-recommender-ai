@@ -65,6 +65,15 @@ python app.py
 | Ctrl+Shift+H | Mostrar/ocultar overlay |
 | Ctrl+Shift+G | Ir a IN-GAME (global) |
 
+## v2.1 — Correcciones de rendimiento y bugs (Junio 2026)
+
+- **Bug fix:** Jugadores duplicados en `obtener_summoners_partida` (teamTwo se concatenaba 2 veces)
+- **Rendimiento:** 1 conexion SQLite compartida por poll en lugar de 1 por jugador
+- **Rendimiento:** Cache en memoria para `tags_campeones.json`
+- **DB:** Indice unico en `lp_history(fecha, queue_type)` para evitar duplicados
+- **Overlay:** Correccion de DPI scaling en monitores 4K con escalado
+- **Limpieza:** Codigo muerto eliminado en `recomendador.py`, `itemizador_dinamico.py`, `app.py`
+
 ## Notas
 
 - La primera ejecucion descarga automaticamente los iconos de Data Dragon

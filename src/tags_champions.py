@@ -18,8 +18,16 @@ Cada campeón se define por:
 """
 import json
 import os
+import sys
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+_TAGS_CACHE = None
+
+def _get_base_dir():
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATA_DIR = os.path.join(_get_base_dir(), "data")
 TAGS_PATH = os.path.join(DATA_DIR, "tags_campeones.json")
 
 # ─── PLANTILLA POR DEFECTO ───────────────────────────────────────────
@@ -600,10 +608,15 @@ MANUAL_TAGS = {
 
 def cargar_tags():
     """Carga los tags desde el JSON. Si no existe, lo genera desde los datos de Riot."""
+    global _TAGS_CACHE
+    if _TAGS_CACHE is not None:
+        return _TAGS_CACHE
     if os.path.exists(TAGS_PATH):
         with open(TAGS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return _generar_tags()
+            _TAGS_CACHE = json.load(f)
+        return _TAGS_CACHE
+    _TAGS_CACHE = _generar_tags()
+    return _TAGS_CACHE
 
 
 def _generar_tags():
@@ -682,7 +695,7 @@ def _generar_tags():
         tags_final[nombre] = tag
 
     # ── Añadir aliases de campeones.json para cubrir variantes de nombre ──
-    ruta_campeones = os.path.join(DATA_DIR, "..", "assets", "campeones.json")
+    ruta_campeones = os.path.join(_get_base_dir(), "assets", "campeones.json")
     if os.path.exists(ruta_campeones):
         with open(ruta_campeones, "r", encoding="utf-8") as f:
             campeones = json.load(f)

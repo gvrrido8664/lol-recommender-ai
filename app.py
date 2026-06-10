@@ -14,16 +14,18 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QGridLayout, QLabel, QPushButton, 
                                QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QFrame, QMessageBox, QAbstractItemView, QProgressBar, QCheckBox, QRadioButton, QDialog, QDialogButtonBox, QButtonGroup, QSlider, QSpinBox, QScrollArea, QSizePolicy, QSystemTrayIcon, QMenu, QStackedLayout, QGroupBox)
-from PySide6.QtGui import QPixmap, QFont, QColor, QIcon, QKeySequence, QShortcut, QAction, QPainter, QPen, QBrush
+from PySide6.QtGui import QPixmap, QFont, QColor, QIcon, QAction, QPainter, QPen, QBrush
 from PySide6.QtCore import Qt, QTimer, QSize, Signal, QPointF
 
-from src.db_manager import DATA_DIR, obtener_conexion
+from src.db_manager import DATA_DIR, obtener_conexion, inicializar_db
 from src.db_manager import etiquetar_estado_emocional, obtener_estado_emocional, obtener_estadisticas_emocionales
+from src.db_manager import registrar_lp, obtener_historial_lp
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.tags_champions import obtener_tag, obtener_nivel_cc, es_soporte, obtener_dano, es_tanque
-from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol, 
-                              obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups, 
-                              recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion)
+from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol,
+                              obtener_top_runas, obtener_top_hechizos, obtenermejoresbaneos, obtener_peores_matchups,
+                              recomendar_picks_vivo, calcular_winrate_5v5, analizar_composicion,
+                              obtener_items_situacionales)
 from src.lcu_api import LCUConnector
 from src.analizador_fatiga import analizar_fatiga
 from src.perfil_jugador import analizar_personalidad, detectar_habitos, generar_objetivos_semanales, analizar_emocional_vs_wr
@@ -48,14 +50,27 @@ def _get_writable_dir():
     return d
 
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-ITEMS_DIR = os.path.join(ASSETS_DIR, "items")
-RUNAS_DIR = os.path.join(ASSETS_DIR, "runas")
-CHAMPS_DIR = os.path.join(ASSETS_DIR, "champs")
-SPELLS_DIR = os.path.join(ASSETS_DIR, "spells")
-PROFILE_ICONS_DIR = os.path.join(ASSETS_DIR, "profile_icons")
+
+# Cuando es .exe, los directorios de caché van a %APPDATA% (Program Files es solo lectura)
+if getattr(sys, 'frozen', False):
+    _CACHE_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender', 'assets')
+else:
+    _CACHE_DIR = ASSETS_DIR
+
+ITEMS_DIR = os.path.join(_CACHE_DIR, "items")
+RUNAS_DIR = os.path.join(_CACHE_DIR, "runas")
+CHAMPS_DIR = os.path.join(_CACHE_DIR, "champs")
+SPELLS_DIR = os.path.join(_CACHE_DIR, "spells")
+PROFILE_ICONS_DIR = os.path.join(_CACHE_DIR, "profile_icons")
 
 for d in [ITEMS_DIR, RUNAS_DIR, CHAMPS_DIR, SPELLS_DIR, PROFILE_ICONS_DIR]:
     os.makedirs(d, exist_ok=True)
+
+# Safe stdout/stderr for GUI mode (--windowed, sin consola) y encoding cp1252 en Windows
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
 
 modelo_1v1 = {}
 ruta_modelo = os.path.join(BASE_DIR, "data", "modelo_1v1.pkl")
@@ -157,6 +172,253 @@ SKILL_ORDERS = {
     "Mel": "Q>E>W", "Ambessa": "Q>E>W",
 }
 
+# ─── PATHING DE JUNGLA ──────────────────────────────────────────
+JUNGLA_ESTILO = {
+    "early_gank": {
+        "champs": {"Amumu", "Vi", "JarvanIV", "Sejuani", "Zac", "Rell", "Nocturne",
+                   "Rammus", "Volibear", "Warwick", "Hecarim", "Nunu", "Skarner",
+                   "Pantheon", "Briar", "Trundle", "Udyr"},
+        "label": "⚡ GANKERO TEMPRANO",
+        "color": "#22c55e",
+        "inicio": "Empieza en el buff más cercano a la línea aliada con más CC.",
+        "ruta": "3 campamentos → gank a nivel 3 → continúa clear y repite.",
+        "prioridad_gank": "Busca carriles donde tu aliado tenga CC o una ventaja de level.",
+    },
+    "farm": {
+        "champs": {"MasterYi", "Karthus", "Lillia", "Kindred", "Nasus", "Shyvana",
+                   "DrMundo", "Viego", "BelVeth", "Belveth", "Mordekaiser"},
+        "label": "🌾 FARMEADOR / ESCALADA",
+        "color": "#2dd4bf",
+        "inicio": "Empieza en el buff que te permita full-clear más rápido.",
+        "ruta": "Full clear de la jungla → nivel 6 con ult → ganks selectivos.",
+        "prioridad_gank": "Evita ganks tempranos si van mal. Llega al 6 y entonces actúa.",
+    },
+    "invade": {
+        "champs": {"LeeSin", "Graves", "Shaco", "Rengar", "Khazix", "KhaZix",
+                   "Nidalee", "Elise", "Ekko", "Kayn", "Evelynn", "Talon",
+                   "Qiyana", "RekSai"},
+        "label": "🗡️ CONTRA-JUNGLA / DUELISTA",
+        "color": "#e63946",
+        "inicio": "Empieza en el lado OPUESTO al buff de inicio del rival para invadir a nivel 2.",
+        "ruta": "3 campamentos → roba campamento enemigo → gank o continue invadiendo.",
+        "prioridad_gank": "Rastrear al jungla rival y tomar sus campamentos vale más que gankar ciegamente.",
+    },
+}
+
+def _jungla_estilo(champ_name: str) -> dict:
+    """Devuelve el dict de estilo de jungla para el campeón dado."""
+    sanitized = (champ_name or "").replace(" ", "").replace("'", "")
+    for estilo, data in JUNGLA_ESTILO.items():
+        if sanitized in data["champs"] or champ_name in data["champs"]:
+            return data
+    # Inferencia por tags si el campeón no está en ningún set
+    from src.tags_champions import es_asesino, obtener_nivel_cc
+    if es_asesino(sanitized):
+        return JUNGLA_ESTILO["invade"]
+    if obtener_nivel_cc(sanitized) >= 2:
+        return JUNGLA_ESTILO["early_gank"]
+    return JUNGLA_ESTILO["farm"]
+
+
+def sugerir_pathing_jungla(mi_champ: str, enemy_jungler: str, aliados: list, enemigos: list) -> dict:
+    """Genera recomendación de pathing para jungla.
+    Returns dict con: label, color, inicio, ruta, prioridad_gank, vs_jungla."""
+    from src.tags_champions import obtener_nivel_cc
+    mi_estilo = _jungla_estilo(mi_champ)
+    enemy_estilo = _jungla_estilo(enemy_jungler) if enemy_jungler else None
+
+    # Prioridad de gank según CC aliado por carril (posición 0=top,1=jg,2=mid,3=bot,4=sup)
+    gank_tips = []
+    for nombre in aliados:
+        cc = obtener_nivel_cc(nombre.replace(" ", "").replace("'", ""))
+        if cc >= 3:
+            gank_tips.append(f"Tu aliado {nombre} tiene mucho CC — gankea su carril primero.")
+            break
+
+    # Consejo contra el jungla rival
+    vs_tip = ""
+    if enemy_jungler:
+        emy = enemy_estilo or {}
+        if emy.get("label", "").startswith("⚡"):
+            vs_tip = f"⚠️ {enemy_jungler} es agresivo temprano — wards en entradas de jungla y juega seguro en nivel 1-3."
+        elif emy.get("label", "").startswith("🌾"):
+            vs_tip = f"✅ {enemy_jungler} farmea. Toma ventaja gankeando antes de que llegue al 6."
+        elif emy.get("label", "").startswith("🗡️"):
+            vs_tip = f"⚠️ {enemy_jungler} puede invadir. Pon ward en tus buffs y juega lejos de su lado de inicio."
+
+    resultado = dict(mi_estilo)
+    if gank_tips:
+        resultado["prioridad_gank"] = gank_tips[0]
+    resultado["vs_jungla"] = vs_tip
+    resultado["enemy_jungler"] = enemy_jungler or ""
+    return resultado
+
+
+# ─── RUNAS ADAPTATIVAS ──────────────────────────────────────────
+# Shards: slot 8 = row 1 (adaptive/att speed/haste), slot 9 = row 2 (adaptive/armor/mr), slot 10 = row 3 (health/tenacity/haste)
+_SHARD_ADAPTIVE   = "5008"  # Fuerza Adaptativa
+_SHARD_ATT_SPEED  = "5005"  # Velocidad de Ataque
+_SHARD_HASTE      = "5007"  # Aceleración de Habilidades
+_SHARD_ARMOR      = "5002"  # Armadura
+_SHARD_MR         = "5003"  # Resistencia Mágica
+_SHARD_HEALTH     = "5001"  # Prog. Vida
+_SHARD_TENACITY   = "5013"  # Tenacidad
+
+# Campeones que se benefician de Velocidad de Ataque (slot 8) — AA-heavy pero no ADC
+_AA_HEAVY = {"Jax", "Tryndamere", "MasterYi", "Kayle", "Warwick", "Volibear",
+             "Shyvana", "Udyr", "Garen", "Hecarim", "Viego", "Kalista",
+             "Vayne", "Draven", "Jinx", "Caitlyn", "Ashe", "Ezreal", "Tristana"}
+# Campeones que prefieren Haste (slot 8) — casters sin AA
+_HASTE_PREF = {"Karthus", "Lux", "Xerath", "Ziggs", "Syndra", "Cassiopeia",
+               "Anivia", "Viktor", "Swain", "Malzahar", "Azir", "Brand",
+               "Veigar", "Velkoz", "Hwei", "Seraphine"}
+
+
+def ajustar_shards_adaptativos(ids_runas: list, mi_champ: str, enemigo_lane: str, picks_en: list) -> list:
+    """Reemplaza los 3 shards (índices 8-10) con elecciones adaptativas.
+    No modifica el resto de las runas. Si no hay suficientes datos, devuelve la lista sin cambios."""
+    if not ids_runas or len(ids_runas) < 11:
+        return ids_runas
+
+    from src.tags_champions import obtener_dano, obtener_nivel_cc, es_mago, es_tirador
+
+    champ_sanitized = (mi_champ or "").replace(" ", "").replace("'", "")
+    enemy_sanitized = (enemigo_lane or "").replace(" ", "").replace("'", "")
+
+    result = list(ids_runas)
+
+    # Shard 8 (row 1): adaptive / att speed / haste
+    if champ_sanitized in _HASTE_PREF or es_mago(champ_sanitized):
+        result[8] = _SHARD_HASTE
+    elif champ_sanitized in _AA_HEAVY or es_tirador(champ_sanitized):
+        result[8] = _SHARD_ATT_SPEED
+    else:
+        result[8] = _SHARD_ADAPTIVE
+
+    # Shard 9 (row 2): adaptive / armor / MR según daño del rival de línea
+    if enemy_sanitized:
+        dmg = obtener_dano(enemy_sanitized)
+        if dmg == "AP":
+            result[9] = _SHARD_MR
+        elif dmg == "AD":
+            result[9] = _SHARD_ARMOR
+        else:
+            result[9] = _SHARD_ADAPTIVE
+    # Si no hay rival conocido, mantener el shard original
+
+    # Shard 10 (row 3): tenacity si hay mucho CC enemigo, si no salud
+    total_cc = sum(obtener_nivel_cc((c or "").replace(" ", "").replace("'", "")) for c in picks_en)
+    result[10] = _SHARD_TENACITY if total_cc >= 8 else _SHARD_HEALTH
+
+    return result
+
+
+# ─── TIPS DE MATCHUP ────────────────────────────────────────────
+MATCHUP_TIPS = {
+    "Zed":        ["Guarda tu dash/CC para después de su R — actúa cuando sale del shadow.",
+                   "Warda el arbusto lateral antes del nivel 6 para evitar all-ins ciegos.",
+                   "Itemiza Sello del Celemí o Temprana Hourglass si llegas al 10% vida."],
+    "Darius":     ["No tradees cuando falle su Q — el borde cura y recarga rápido.",
+                   "Matchup de desgaste: poke desde lejos y evita su E (gancho).",
+                   "Bajo torre es donde más pierde; hazle llegar ahí con 2 torres restantes."],
+    "Yasuo":      ["Los champions con mucho poke pasan el early; evita caminar hacia él.",
+                   "Su barrera de viento dura 4s — espérala antes de usar proyectiles CC.",
+                   "Cuida su EQ (Q + empuje) que resetea; aléjate después de cada wave."],
+    "Yone":       ["Su R te ancla al suelo — usa flash antes de que caiga, no después.",
+                   "Cuando entra en soul form pierde rango; kítele en esas ventanas.",
+                   "Nivel 6 es su pico; juega defensivo sin ult propio."],
+    "Lux":        ["Predice su Q en línea recta; los side-steps eliminan el 80% de su daño.",
+                   "Cuando waste Q, entra y all-in — tiene la re-cast de E pero no Q.",
+                   "Su ult tiene CD muy bajo con haste; no te confíes después de verlo una vez."],
+    "Thresh":     ["Su Q (gancho) tiene 2 partes — dodge la primera con lateral.",
+                   "No te arrimes a compañeros aturdidos; Thresh hace cadena de CC.",
+                   "Su E empuja/hala según el lado que impacta; aprende el ángulo correcto."],
+    "Blitzcrank": ["Camina detrás de minions en el carril — bloquean el gancho.",
+                   "Si te hookea, flash inmediato antes del Q para romper la combinación.",
+                   "Su R silencia un área grande; ten cuidado de no estar agrupado."],
+    "Zac":        ["Sus blobs (e-s) en el suelo le curan; destruyelos pisándolos antes.",
+                   "Su E (salto) anuncia antes de saltar — escúchalo y escapa lateral.",
+                   "Nivel 3 y 6 son sus picos de gank; wardea trinomio."],
+    "Irelia":     ["No la dejes stackear pasiva — ataca minions para resetearla.",
+                   "Q resetea si mata — aléjate de minions bajos de vida en tu zona.",
+                   "Su R bloquea proyectiles; usa tu CC durante las pausas de la ult."],
+    "Lee Sin":    ["Wardea tus entradas de jungla nivel 2 — puede invadir muy pronto.",
+                   "Su Q necesita segundo click — si no lo confirma, pierde la carga.",
+                   "Post-6, no te pongas cerca de aliados o te usará de insec."],
+    "Graves":     ["Sus perdigones hacen daño en cono — aléjate en diagonal, no en línea.",
+                   "Su dash no funciona hacia obstáculos (muros) — úsalos para cortarle.",
+                   "Evita el humo de E (W); reduce rango de vision y ralentiza."],
+    "Kha'Zix":    ["Separarse del equipo lo hace más peligroso — mantente agrupado.",
+                   "Cada evo le da herramientas distintas; aprende qué evolucionó primero.",
+                   "Su W (salto largo) está disponible sin minions cerca — no te confíes en lane."],
+    "Nasus":      ["Ralentizale el farmeo de Q con poke constante los primeros 10 min.",
+                   "Post-15 min no pelee con él en un duel — escala infinitamente.",
+                   "Su R tiene una duración corta — kítalo o manda CC hasta que expire."],
+    "Tryndamere": ["Su R dura 5s — CC y corre, no lo termines dentro de ult.",
+                   "Nivel 11 (ult 2 veces) es su pico — juega cerca de tower.",
+                   "Su furia (barrita) aumenta su CR; no lo dejes acumular sin pegarle."],
+    "Fiora":      ["Sus Vitals cambian de lado 4 veces; aprende su patrón para quitarlos.",
+                   "Su R requiere golpear los 4 vitals — bórdalo con cuerpo a cuerpo."],
+    "Camille":    ["Su E (gancho + dash) tiene un gap de 0.75s entre las dos partes — evade el segundo.",
+                   "Su R la encierra contigo sola — flash por la pared antes de que caiga."],
+    "Renekton":   ["Matchup de rabia: cuando tenga barra llena (50+) no tradees.",
+                   "Su W (combo de aturdimiento) requiere un hit previo — aléjate cuando se active."],
+    "Gangplank":  ["Sus barriles tienen 2 cargas por defecto — elimina el primero antes de que encadene.",
+                   "Su E le quita CC activos — úsalos durante su ult para el mínimo daño."],
+    "Malphite":   ["Full AP Malphite: trátalo como un mago disfrazado de tanque.",
+                   "Su R tiene CC de área — no estés agrupado contra él en teamfights."],
+    "Morgana":    ["Su W tiene un delay de 0.5s — side-step apenas lo empiece a lanzar.",
+                   "Su escudo (E) bloquea CCs; no gastes tu CC hard mientras esté activo."],
+    "Leona":      ["No pelear cuando su Eclipse (W) está activo — dura 3s.",
+                   "Su Q (stun) requiere que su E haya llegado primero — ve el orden."],
+    "Nautilus":   ["Su gancho Q marca — si falla, tiene un gran cooldown.",
+                   "Su auto-ataque ancla (pasiva) — no autoataquees en trades cortos si son malos."],
+    "Jinx":       ["Sin cargas de pasiva es un objetivo fácil — mátala antes de que empiece a resetear.",
+                   "Sus minas (E) duran 5s en el suelo — camina por los lados de la wave."],
+    "Caitlyn":    ["Sus trampas (W) se colocan tras stuns — ward los arbustos y no pases sobre ellas.",
+                   "Su ult puede ser bloqueada por un aliado entre tú y ella."],
+    "Ezreal":     ["Su E es su único escape — fórzalo con CC y luego all-in.",
+                   "Su Q tiene rango muy largo — no hagas línea recta en poke wars."],
+    "Orianna":    ["La pelota está siempre en algún lugar — saber dónde es el 80% del matchup.",
+                   "Su R en pelota lanzada — alejarse del centro es la defensa más efectiva."],
+    "Syndra":     ["Sus bolas permanecen en el mapa — su R hace más daño cuantas más tenga.",
+                   "Su E aturde si una bola está detrás del target — no te pongas entre bolas y ella."],
+    "Ahri":       ["Puede hacer charm en W; el Q pasa dos veces — la vuelta hace más daño.",
+                   "Sin R (3 dashes) es muy vulnerable — countergankea post ult."],
+    "Leblanc":    ["Su W deja un espejo — si no pone puntos en W empuja, si no regresa.",
+                   "Con silencio le cortas la cadena de burst — úsalo antes de su Q."],
+    "Katarina":   ["Sus daggers en el suelo la resetean — evita quedarte cerca de ellas.",
+                   "CC en el momento del dash la interrumpe completamente."],
+    "Akali":      ["Su campo de humo (W) la hace invisible — usa AoE para forzarla a salir.",
+                   "Su R primer dash no hace daño — el segundo sí; flash tras el primero."],
+    "Qiyana":     ["Sus elementos cambian su kit — el Q con río aturde, con árbol hace daño extra.",
+                   "Su R explota con colisión de estructuras y ríos; cuida los bordes del mapa."],
+    "Rengar":     ["Ward los arbustos antes de que llegue al 6; predice de qué arbusto sale.",
+                   "Su pasiva (stack) aumenta su kit — hazle usar habilidades sin stacks completos."],
+    "Evelynn":    ["Invisible post-6 salvo anti-invis — itemiza Oráculo de la Trampa (pink ward).",
+                   "Su alurt aturde si la segunda parte impacta — sal del área con flash."],
+    "Shaco":      ["Sus cajas (W) se activan por aparición repentina — no entres en arbustos sin ward.",
+                   "Puede clonar con R — el real tiene HP diferente en el número del score."],
+    "Nidalee":    ["Sus javelinas hacen más daño a distancia — ángulate para reducir la distancia.",
+                   "En forma de puma su Q cura — actívala cuando tenga vida baja."],
+    "Hecarim":    ["Su fantasma de invocador sube su movespeed para E — no lo persiga en línea recta.",
+                   "Su R tiene fear de área — agrúpate lejos de walls para evitar el empuje."],
+    "Warwick":    ["Su W (rastrear heridos) se activa en <50% HP — juega conservador en esa zona.",
+                   "Su R es suppressión de canal — QSS lo rompe o flash pre-R."],
+}
+
+
+def obtener_tip_matchup(enemigo: str) -> str:
+    """Devuelve el primer tip relevante para el matchup dado, o cadena vacía si no hay."""
+    tips = MATCHUP_TIPS.get(enemigo, [])
+    return tips[0] if tips else ""
+
+
+def obtener_tips_matchup(enemigo: str) -> list:
+    """Devuelve todos los tips para el matchup dado."""
+    return MATCHUP_TIPS.get(enemigo, [])
+
+
 def clear_layout(layout):
     if layout is not None:
         while layout.count():
@@ -171,7 +433,6 @@ DEFAULT_SETTINGS = {
     "mostrar_power_spikes": True,
     "mostrar_explicaciones": True,
     "frecuencia_radar": 1500,
-    "frecuencia_ingame": 5000,
     "sonidos": False,
     "modo_principiante": False,
     "modo_profesional": False,
@@ -183,9 +444,8 @@ DEFAULT_SETTINGS = {
     "auto_hechizos": False,
     "auto_habilidades": False,
     "auto_items": False,
-    "overlay_auto": True,
-    "overlay_compacto": False,
     "auto_switch_radar": True,
+    "overlay_ingame": False,
 }
 
 CONFIG_DIR = _get_writable_dir()
@@ -342,21 +602,11 @@ class SettingsDialog(QDialog):
         g_auto.addWidget(self.cb_auto_items)
 
         # ── 4. OVERLAY ──
-        g_over = _seccion("🖥️ OVERLAY EN PARTIDA")
-        g_over.addWidget(_desc(
-            "El overlay se superpone al juego en pantalla completa "
-            "con datos en vivo (KDA, CS, temporizadores, alertas)."
-        ))
-        self.cb_overlay_auto = QCheckBox("👁️ Mostrar overlay automáticamente al entrar a partida")
-        self.cb_overlay_auto.setChecked(self.settings.get("overlay_auto", True))
-        self.cb_overlay_auto.setToolTip("El overlay aparecerá solo cuando la partida inicie.")
-        g_over.addWidget(self.cb_overlay_auto)
-
-        self.cb_overlay_compacto = QCheckBox("📏 Overlay compacto (menos espacio, más datos)")
-        self.cb_overlay_compacto.setChecked(self.settings.get("overlay_compacto", False))
-        self.cb_overlay_compacto.setToolTip("Reduce el tamaño del overlay para no obstruir la interfaz del juego.")
-        g_over.addWidget(self.cb_overlay_compacto)
-        g_over.addWidget(_desc("💡 Atajo global: Ctrl+Shift+H para mostrar/ocultar el overlay."))
+        g_overlay = _seccion("🖥️ OVERLAY IN-GAME")
+        self.cb_overlay = QCheckBox("📡 Mostrar overlay flotante durante la partida (KDA, CS, jugadores)")
+        self.cb_overlay.setChecked(self.settings.get("overlay_ingame", False))
+        self.cb_overlay.setToolTip("Ventana flotante sobre el juego con tu KDA, CS y estado de todos los jugadores.\nAtajo: Ctrl+Shift+I para mostrar/ocultar.")
+        g_overlay.addWidget(self.cb_overlay)
 
         # ── 5. COMPORTAMIENTO ──
         g_comp = _seccion("🎮 COMPORTAMIENTO")
@@ -393,7 +643,7 @@ class SettingsDialog(QDialog):
                 "mostrar_power_spikes": self._modo != "avanzado",
                 "mostrar_explicaciones": self._modo == "basico",
                 "sonidos": self.cb_sonido.isChecked(),
-                "frecuencia_radar": 1500, "frecuencia_ingame": 5000,
+                "frecuencia_radar": 1500,
                 "modo_principiante": self._modo == "basico",
                 "modo_profesional": self._modo == "avanzado",
                 "recordatorios_partida": self.cb_recordatorios.isChecked(),
@@ -404,9 +654,8 @@ class SettingsDialog(QDialog):
                 "auto_hechizos": self.cb_auto_hechizos.isChecked(),
                 "auto_habilidades": self.cb_auto_habilidades.isChecked(),
                 "auto_items": self.cb_auto_items.isChecked(),
-                "overlay_auto": self.cb_overlay_auto.isChecked(),
-                "overlay_compacto": self.cb_overlay_compacto.isChecked(),
                 "auto_switch_radar": self.cb_auto_switch.isChecked(),
+                "overlay_ingame": self.cb_overlay.isChecked(),
                 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -681,7 +930,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     filo_html = _generar_filosofia_juego(nombre, nivel, wr, avg_d, total)
     secciones.append({
-        "titulo": "🧘 FILOSOFÍA DE JUEGO — Tu Mentalidad",
+        "titulo": "FILOSOFÍA DE JUEGO — Tu Mentalidad",
         "icono": "🧘",
         "color": "#c084fc",
         "html": filo_html,
@@ -737,7 +986,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     cp_html += '</div>'
     
     secciones.append({
-        "titulo": "📋 AUDITORÍA DE CHAMPION POOL",
+        "titulo": "AUDITORÍA DE CHAMPION POOL",
         "icono": "📋",
         "color": "#f59e0b" if is_too_wide else "#22c55e",
         "html": cp_html,
@@ -795,7 +1044,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     cs_html += '</div>'
     
     secciones.append({
-        "titulo": "⚔️ RENDIMIENTO EN FASE DE LÍNEAS",
+        "titulo": "RENDIMIENTO EN FASE DE LÍNEAS",
         "icono": "⚔️",
         "color": "#ef4444" if avg_cs < 5 else "#f59e0b" if avg_cs < 6.5 else "#22c55e",
         "html": cs_html,
@@ -848,7 +1097,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     sv_html += '</div>'
     
     secciones.append({
-        "titulo": "🛡️ TOMA DE DECISIONES Y SUPERVIVENCIA",
+        "titulo": "TOMA DE DECISIONES Y SUPERVIVENCIA",
         "icono": "🛡️",
         "color": "#ef4444" if avg_d > 7 else "#f59e0b" if avg_d > 5 else "#22c55e",
         "html": sv_html,
@@ -892,7 +1141,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         vis_html += '</div>'
         
         secciones.append({
-            "titulo": "👁️ CONTROL DE VISIÓN",
+            "titulo": "CONTROL DE VISIÓN",
             "icono": "👁️",
             "color": "#ef4444" if avg_vision < 0.5 else "#f59e0b" if avg_vision < 1.0 else "#22c55e",
             "html": vis_html,
@@ -958,7 +1207,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
                 fat_html += '</div>'
                 
                 secciones.append({
-                    "titulo": "🧠 GESTIÓN DE SESIONES Y FATIGA",
+                    "titulo": "GESTIÓN DE SESIONES Y FATIGA",
                     "icono": "🧠",
                     "color": "#ef4444" if wr_sesion < 40 else "#22c55e" if wr_sesion >= 60 else "#f59e0b",
                     "html": fat_html,
@@ -1010,7 +1259,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         racha_html += '</div>'
         
         secciones.append({
-            "titulo": "📈 RACHA Y RESILIENCIA",
+            "titulo": "RACHA Y RESILIENCIA",
             "icono": "📈",
             "color": "#ef4444" if racha_tipo == 'L' else "#22c55e",
             "html": racha_html,
@@ -1042,7 +1291,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     bloques_html += '</div>'
     
     secciones.append({
-        "titulo": "🧊 JUGAR POR BLOQUES (3 partidas)",
+        "titulo": "JUGAR POR BLOQUES (3 partidas)",
         "icono": "🧊",
         "color": "#818cf8",
         "html": bloques_html,
@@ -1054,7 +1303,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     practica_html = _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision)
     secciones.append({
-        "titulo": "🦾 PRÁCTICA DELIBERADA",
+        "titulo": "PRÁCTICA DELIBERADA",
         "icono": "🦾",
         "color": "#a78bfa",
         "html": practica_html,
@@ -1066,7 +1315,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     salud_html = _generar_tips_salud()
     secciones.append({
-        "titulo": "💚 SALUD MENTAL Y FISIOLOGÍA",
+        "titulo": "SALUD MENTAL Y FISIOLOGÍA",
         "icono": "💚",
         "color": "#34d399",
         "html": salud_html,
@@ -1099,17 +1348,260 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     }
 
 
+class LPGraphWidget(QWidget):
+    """Gráfica de línea LP/MMR usando QPainter nativo — sin dependencias externas."""
+
+    TIER_LABELS = [
+        (0,    "Iron"),   (400,  "Bronze"), (800,  "Silver"), (1200, "Gold"),
+        (1600, "Plat"),   (2000, "Emerald"),(2400, "Diamond"),(2800, "Master+"),
+    ]
+    TIER_COLORS = {
+        "Iron": "#6b7280", "Bronze": "#b45309", "Silver": "#94a3b8",
+        "Gold": "#f59e0b", "Plat": "#14b8a6", "Emerald": "#22c55e",
+        "Diamond": "#818cf8", "Master+": "#e879f9",
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._data = []
+        self.setMinimumHeight(120)
+
+    def set_data(self, history: list):
+        self._data = history
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        pad_l, pad_r, pad_t, pad_b = 48, 12, 10, 24
+
+        # Fondo
+        p.fillRect(0, 0, w, h, QColor(BG_CARD))
+
+        if not self._data or len(self._data) < 2:
+            p.setPen(QColor(TEXT_MUTED))
+            p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos suficientes (mín. 2 días)")
+            p.end()
+            return
+
+        values = [d["lp_total"] for d in self._data]
+        mn, mx = min(values), max(values)
+        rng = max(mx - mn, 200)
+
+        def to_px(val):
+            return pad_l + int((val - mn) / rng * (w - pad_l - pad_r))
+
+        def to_py(val):
+            return h - pad_b - int((val - mn) / rng * (h - pad_t - pad_b))
+
+        # Líneas de tier en gris sutil
+        p.setFont(QFont("Segoe UI", 7))
+        for base, name in self.TIER_LABELS:
+            if mn - 100 <= base <= mx + 100:
+                py = to_py(base)
+                if pad_t <= py <= h - pad_b:
+                    p.setPen(QPen(QColor("#1e293b"), 1, Qt.DashLine))
+                    p.drawLine(pad_l, py, w - pad_r, py)
+                    p.setPen(QColor(self.TIER_COLORS.get(name, "#64748b")))
+                    p.drawText(2, py - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
+
+        # Línea de LP
+        points = [(to_px(self._data[i]["lp_total"]), to_py(self._data[i]["lp_total"]))
+                  for i in range(len(self._data))]
+
+        pen = QPen(QColor(ACCENT_TEAL), 2)
+        p.setPen(pen)
+        for i in range(1, len(points)):
+            p.drawLine(points[i-1][0], points[i-1][1], points[i][0], points[i][1])
+
+        # Puntos
+        p.setPen(Qt.NoPen)
+        for i, (px, py) in enumerate(points):
+            p.setBrush(QBrush(QColor(ACCENT_TEAL)))
+            p.drawEllipse(px - 3, py - 3, 6, 6)
+
+        # Fechas en el eje X (cada ~5 puntos o primero/último)
+        p.setFont(QFont("Segoe UI", 7))
+        p.setPen(QColor(TEXT_MUTED))
+        n = len(self._data)
+        indices = [0, n - 1] if n <= 4 else list(range(0, n, max(1, n // 4))) + [n - 1]
+        for i in set(indices):
+            px, _ = points[i]
+            fecha_str = self._data[i]["fecha"][5:]  # MM-DD
+            p.drawText(px - 18, h - pad_b + 4, 36, 14, Qt.AlignCenter, fecha_str)
+
+        # LP actual en esquina superior derecha
+        last = self._data[-1]
+        label = f"{last['tier'].title()} {last['division']} {last['lp']} LP"
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.setPen(QColor(ACCENT_TEAL))
+        p.drawText(w - 140, pad_t, 136, 16, Qt.AlignRight | Qt.AlignVCenter, label)
+
+        p.end()
+
+
+class PostGameDialog(QDialog):
+    """Resumen rápido al terminar partida: KDA, CS/min, comparativa y consejo del coach."""
+
+    coaching_requested = Signal()
+
+    def __init__(self, stats: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Resumen de Partida")
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFixedWidth(420)
+        self._build_ui(stats)
+        if parent:
+            pr = parent.frameGeometry()
+            self.move(pr.center().x() - self.width() // 2, pr.top() + 80)
+
+    def _build_ui(self, s):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        card = QWidget()
+        card.setObjectName("pgCard")
+        card.setStyleSheet(f"""
+            QWidget#pgCard {{
+                background: {BG_PANEL};
+                border: 2px solid {BORDER_ACCENT};
+                border-radius: 10px;
+            }}
+            QLabel {{ color: {TEXT_WHITE}; background: transparent; }}
+        """)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 14, 18, 14)
+        lay.setSpacing(8)
+
+        # Título + resultado
+        hdr = QHBoxLayout()
+        lbl_title = QLabel("🏁  RESUMEN DE PARTIDA")
+        lbl_title.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px; font-weight: bold; letter-spacing: 1px;")
+        hdr.addWidget(lbl_title)
+        hdr.addStretch()
+        resultado = s.get("resultado", "")
+        if resultado == "Victoria":
+            lbl_res = QLabel("  VICTORIA  ")
+            lbl_res.setStyleSheet(f"background: {GREEN_WR}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
+        elif resultado == "Derrota":
+            lbl_res = QLabel("  DERROTA  ")
+            lbl_res.setStyleSheet(f"background: {RED_WR}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
+        else:
+            lbl_res = QLabel("")
+        hdr.addWidget(lbl_res)
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(20, 20)
+        btn_close.setStyleSheet(f"background: transparent; border: none; color: {TEXT_MUTED}; font-size: 12px;")
+        btn_close.clicked.connect(self.close)
+        hdr.addWidget(btn_close)
+        lay.addLayout(hdr)
+
+        sep = QLabel(); sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
+        lay.addWidget(sep)
+
+        # Campeón
+        champ = s.get("champion", "?")
+        lbl_champ = QLabel(f"🎮  {champ}")
+        lbl_champ.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ACCENT_TEAL};")
+        lay.addWidget(lbl_champ)
+
+        # KDA
+        k, d, a = s.get("kills", 0), s.get("deaths", 0), s.get("assists", 0)
+        avg_k = s.get("avg_k", 0)
+        avg_d = s.get("avg_d", 1)
+        avg_a = s.get("avg_a", 0)
+
+        kda_row = QHBoxLayout()
+        kda_row.setSpacing(4)
+        for val, ref, label, good_high in [(k, avg_k, "K", True), (d, avg_d, "D", False), (a, avg_a, "A", True)]:
+            col = GREEN_WR if (val >= ref if good_high else val <= ref) else RED_WR
+            lbl = QLabel(f"<b style='color:{col};font-size:22px;'>{val}</b><span style='color:{TEXT_MUTED};font-size:10px;'> {label}</span>")
+            lbl.setAlignment(Qt.AlignCenter)
+            kda_row.addWidget(lbl)
+            if label != "A":
+                kda_row.addWidget(QLabel("/"))
+        kda_row.addStretch()
+
+        avg_kda_str = f"Tu media: {avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f}"
+        lbl_avg = QLabel(avg_kda_str)
+        lbl_avg.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+        lbl_avg.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        kda_row.addWidget(lbl_avg)
+        lay.addLayout(kda_row)
+
+        # CS/min
+        cs = s.get("cs", 0)
+        game_time = s.get("game_time", 1)
+        cs_min = cs / max(1, game_time / 60)
+        cs_ref = 6.5
+        cs_color = GREEN_WR if cs_min >= cs_ref else (YELLOW_WR if cs_min >= 5.0 else RED_WR)
+        lbl_cs = QLabel(f"🌾  CS: {cs}  ({cs_min:.1f}/min)  — ref. {cs_ref}/min")
+        lbl_cs.setStyleSheet(f"color: {cs_color}; font-size: 11px;")
+        lay.addWidget(lbl_cs)
+
+        # Coaching tip
+        tip = s.get("tip", "")
+        if tip:
+            sep2 = QLabel(); sep2.setFixedHeight(1)
+            sep2.setStyleSheet(f"background: {BORDER_SUBTLE};")
+            lay.addWidget(sep2)
+            lbl_tip = QLabel(tip)
+            lbl_tip.setWordWrap(True)
+            lbl_tip.setStyleSheet(f"color: {YELLOW_WR}; font-size: 10px; padding: 4px 0;")
+            lay.addWidget(lbl_tip)
+
+        # Botones
+        btn_row = QHBoxLayout()
+        btn_coach = QPushButton("📖 Ver Coaching")
+        btn_coach.setStyleSheet(f"""
+            QPushButton {{
+                background: {BG_CARD}; color: {ACCENT_TEAL};
+                border: 1px solid {ACCENT_TEAL}; border-radius: 5px;
+                padding: 5px 12px; font-size: 11px;
+            }}
+            QPushButton:hover {{ background: {ACCENT_TEAL}; color: #000; }}
+        """)
+        btn_coach.clicked.connect(self._on_coaching)
+        btn_row.addWidget(btn_coach)
+        btn_row.addStretch()
+        btn_ok = QPushButton("Cerrar")
+        btn_ok.setStyleSheet(f"""
+            QPushButton {{
+                background: {BG_CARD}; color: {TEXT_MUTED};
+                border: 1px solid {BORDER_SUBTLE}; border-radius: 5px;
+                padding: 5px 12px; font-size: 11px;
+            }}
+            QPushButton:hover {{ color: {TEXT_WHITE}; border-color: {TEXT_WHITE}; }}
+        """)
+        btn_ok.clicked.connect(self.close)
+        btn_row.addWidget(btn_ok)
+        lay.addLayout(btn_row)
+
+        outer.addWidget(card)
+
+    def _on_coaching(self):
+        self.coaching_requested.emit()
+        self.close()
+
+
 class LoLRecommenderApp(QMainWindow):
     lcu_task_finished = Signal(object, object, str, str)
     perfil_listo = Signal(dict)
     radar_listo = Signal(object)
-    meta_builds_listo = Signal(list, str, str)  # (resultados, rol_api, enemigo)
+    meta_builds_listo = Signal(list, dict, str, str)  # (resultados, builds_data, rol_api, enemigo)
+    postgame_ready = Signal(dict)
 
     def __init__(self):
         super().__init__()
         # Fijar fuente por defecto para evitar el warning "QFont::setPointSize: Point size <= 0 (-1)"
         QApplication.setFont(QFont("Segoe UI", 10))
         self.setWindowTitle("NEXUS // LoL Performance Engine")
+        icon_path = os.path.join(BASE_DIR, "icono_app.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1500, 950)
         self.aplicar_estilos()
 
@@ -1148,6 +1640,7 @@ class LoLRecommenderApp(QMainWindow):
         self.perfil_listo.connect(self._on_perfil_listo)
         self.radar_listo.connect(self._on_radar_listo)
         self.meta_builds_listo.connect(self._on_meta_builds_listo)
+        self.postgame_ready.connect(self._on_postgame_ready)
         
         self.last_aliados = []
         self.last_enemigos = []
@@ -1159,11 +1652,18 @@ class LoLRecommenderApp(QMainWindow):
         
         # Cache de imágenes descargadas para evitar HTTP repetidos
         self._cache_imagenes = {}
+
+        # Post-game: caché de stats en vivo y control de fase
+        self._last_game_stats = {}
+        self._postgame_shown = False
+        self._last_fase = None
         
         # Flags anti-freeze
         self._cargando_perfil = False
         self._actualizando_radar = False
         self._cargando_meta = False
+
+        inicializar_db()
 
         self.crear_interfaz()
         
@@ -1171,72 +1671,24 @@ class LoLRecommenderApp(QMainWindow):
         self.timer_lcu.timeout.connect(self.auto_detectar_lcu)
         self.timer_lcu.start(1500)
         
-        # Timer para detectar partida en vivo (cada 5s)
-        self.timer_ingame = QTimer(self)
-        self.timer_ingame.timeout.connect(self.actualizar_ingame)
-        self.timer_ingame.start(5000)
+        # Timer para partida en vivo (cada 4s)
+        self.timer_partida = QTimer(self)
+        self.timer_partida.timeout.connect(self.actualizar_partida_vivo)
+        self.timer_partida.start(4000)
         
-        # Hotkeys locales
-        QShortcut(QKeySequence("Ctrl+G"), self, activated=self._toggle_ingame_visibility)
-        QShortcut(QKeySequence("Ctrl+Shift+H"), self, activated=self._toggle_overlay)
-        self._tab_antes_ingame = 0
-        self._ingame_auto_switched = False
-
-        # (sin timer led — los botones se removieron, solo quedan hotkeys)
+        # In-game timer and hotkeys removed — feature was too buggy
         
         # ─── SYSTEM TRAY + GLOBAL HOTKEYS ───
         self._setup_tray()
-        # Hotkeys globales se registran en showEvent (cuando el HWND ya es válido)
-        self._hotkeys_registered = False
-        self._hotkey_retries = 0
         
-        # Cache para post-game
-        self._postgame_data = None
-        self._last_game_id = None
+        # Cache para post-game (eliminado — feature de in-game removida)
 
-        # ─── IN-GAME OVERLAY ───
+        # Overlay in-game
         self.overlay = OverlayWindow()
-        self.overlay.closed.connect(self._on_overlay_closed)
-
-    def _on_overlay_closed(self):
-        print("[App] Overlay cerrado")
-
-    def _toggle_overlay(self):
-        self.overlay.toggle_visibility()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self._hotkeys_registered:
-            QTimer.singleShot(500, self._register_global_hotkeys)
-
-    def _toggle_ingame_visibility(self):
-        """Ctrl+G: Alterna entre IN-GAME y la pestaña donde estabas antes."""
-        for i in range(self.tabview.count()):
-            if "IN-GAME" in self.tabview.tabText(i):
-                if self.tabview.currentIndex() == i:
-                    # Volver a la pestaña anterior (la que recordamos)
-                    self.tabview.setCurrentIndex(self._tab_antes_ingame)
-                else:
-                    # Guardar pestaña actual e ir a IN-GAME
-                    self._tab_antes_ingame = self.tabview.currentIndex()
-                    self.tabview.setCurrentIndex(i)
-                break
-
-    def _ir_a_ingame(self):
-        """Ctrl+I: Va directo a IN-GAME (sin toggle, siempre forward)."""
-        for i in range(self.tabview.count()):
-            if "IN-GAME" in self.tabview.tabText(i):
-                if self.tabview.currentIndex() != i:
-                    self._tab_antes_ingame = self.tabview.currentIndex()
-                    self.tabview.setCurrentIndex(i)
-                break
-
-    def _actualizar_led_ingame(self):
-        """Actualiza el color del botón IN-GAME según si hay partida activa."""
-        pass
+        self.overlay.closed.connect(lambda: None)
 
     # ═══════════════════════════════════════════════════════════
-    # SYSTEM TRAY + GLOBAL HOTKEYS
+    # SYSTEM TRAY
     # ═══════════════════════════════════════════════════════════
     
     def _setup_tray(self):
@@ -1253,9 +1705,6 @@ class LoLRecommenderApp(QMainWindow):
         a_show = QAction("📊 Mostrar / Ocultar", self)
         a_show.triggered.connect(self._tray_toggle)
         tray_menu.addAction(a_show)
-        a_ingame = QAction("🎮 Ir a IN-GAME", self)
-        a_ingame.triggered.connect(self._ir_a_ingame)
-        tray_menu.addAction(a_ingame)
         a_radar = QAction("📡 Ir a Radar", self)
         a_radar.triggered.connect(lambda: self.tabview.setCurrentIndex(2))
         tray_menu.addAction(a_radar)
@@ -1266,68 +1715,6 @@ class LoLRecommenderApp(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
-    
-    def _register_global_hotkeys(self):
-        """Registra hotkeys globales usando ctypes (Windows API).
-        Se llama desde showEvent con delay para asegurar HWND válido."""
-        import ctypes
-        from ctypes import wintypes
-        
-        hwnd = int(self.winId())
-        if hwnd == 0:
-            # HWND aún no disponible, reintentar en 1s
-            if self._hotkey_retries < 10:
-                self._hotkey_retries += 1
-                QTimer.singleShot(1000, self._register_global_hotkeys)
-            return
-        
-        try:
-            user32 = ctypes.windll.user32
-            
-            # Intentar desregistrar primero por si ya estaban (evita conflictos)
-            user32.UnregisterHotKey(hwnd, 1)
-            user32.UnregisterHotKey(hwnd, 2)
-            
-            ok1 = user32.RegisterHotKey(hwnd, 1, 0x0002 | 0x0004, ord('G'))  # Ctrl+Shift+G — toggle in-game tab
-            ok2 = user32.RegisterHotKey(hwnd, 2, 0x0002 | 0x0004, ord('H'))  # Ctrl+Shift+H — toggle overlay
-            
-            if ok1 and ok2:
-                self._hotkeys_registered = True
-                print("[Hotkey] Ctrl+Shift+G / Ctrl+Shift+H registrados OK")
-            else:
-                if not ok1:
-                    print("[Hotkey] Ctrl+Shift+G: ERROR (código " + str(ctypes.get_last_error()) + ") - ¿otra app ya lo usa?")
-                if not ok2:
-                    print("[Hotkey] Ctrl+Shift+H: ERROR (código " + str(ctypes.get_last_error()) + ") - ¿otra app ya lo usa?")
-                # Reintentar si es error temporal
-                if self._hotkey_retries < 5:
-                    self._hotkey_retries += 1
-                    QTimer.singleShot(3000, self._register_global_hotkeys)
-        except Exception as e:
-            print(f"[Hotkey] Error: {e}")
-    
-    def nativeEvent(self, eventType, message):
-        """Captura WM_HOTKEY para hotkeys globales (PySide6)."""
-        try:
-            if isinstance(eventType, bytes):
-                eventType = eventType.decode('utf-8', errors='ignore')
-            if eventType == "windows_generic_MSG":
-                import ctypes
-                import ctypes.wintypes
-                # message es un void* empaquetado por PySide6
-                ptr = int(message)
-                if ptr:
-                    msg = ctypes.wintypes.MSG.from_address(ptr)
-                    if msg.message == 0x0312:  # WM_HOTKEY
-                        if msg.wParam == 1:  # Ctrl+Shift+G
-                            self._toggle_ingame_visibility()
-                            return True, 0
-                        elif msg.wParam == 2:  # Ctrl+Shift+H
-                            self._toggle_overlay()
-                            return True, 0
-        except Exception as e:
-            print(f"[nativeEvent] Error: {e}")
-        return super().nativeEvent(eventType, message)
     
     def _tray_toggle(self):
         """Alterna visibilidad de la ventana desde el tray."""
@@ -1344,9 +1731,10 @@ class LoLRecommenderApp(QMainWindow):
             self._tray_toggle()
     
     def _salir_app(self):
-        """Cierra la app limpiando overlay y hotkeys."""
-        self.overlay.cleanup()
+        """Cierra la app."""
         self.tray_icon.hide()
+        if hasattr(self, "overlay"):
+            self.overlay.cleanup()
         QApplication.quit()
 
     def closeEvent(self, event):
@@ -1685,15 +2073,15 @@ class LoLRecommenderApp(QMainWindow):
         self.tab_perfil = QWidget()
         self.tab_coaching = QWidget()
         self.tab_vivo = QWidget()
+        self.tab_partida = QWidget()
         self.tab_counters = QWidget()
         self.tab_ia = QWidget()
         self.tab_bans = QWidget()
-        self.tab_ingame = QWidget()
 
         self.tabview.addTab(self.tab_perfil, "👤 MI PERFIL")
         self.tabview.addTab(self.tab_coaching, "🎓 COACHING PRO")
         self.tabview.addTab(self.tab_vivo, "📡 RADAR EN VIVO")
-        self.tabview.addTab(self.tab_ingame, "🎮 IN-GAME")
+        self.tabview.addTab(self.tab_partida, "🎮 PARTIDA EN VIVO")
         self.tabview.addTab(self.tab_counters, "📊 META & BUILDS")
         self.tabview.addTab(self.tab_ia, "🤖 SIMULADOR 1v1")
         self.tabview.addTab(self.tab_bans, "🚫 TIER LIST DE BANS")
@@ -1701,7 +2089,7 @@ class LoLRecommenderApp(QMainWindow):
         self.armar_tab_perfil()
         self.armar_tab_coaching()
         self.armar_tab_vivo()
-        self.armar_tab_ingame()
+        self.armar_tab_partida()
         self.armar_tab_counters()
         self.armar_tab_ia()
         self.armar_tab_bans()
@@ -1890,7 +2278,7 @@ class LoLRecommenderApp(QMainWindow):
         ).start()
 
     # ================= REDISEÑO DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
-    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout, mostrar_botones=True):
+    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout, mostrar_botones=True, ids_sit=None):
         clear_layout(parent_layout)
 
         main_wrap = QWidget()
@@ -1996,6 +2384,69 @@ class LoLRecommenderApp(QMainWindow):
             btn_items.clicked.connect(lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items))
             l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
         wrap_layout.addWidget(card_items)
+
+        # ── CARD SITUACIONALES ──────────────────────────────────
+        if ids_sit:
+            _PRIO_COLOR   = {1: "#ef4444", 2: "#f59e0b", 3: "#64748b"}
+            _PRIO_LABEL   = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
+            _CAT_LABEL    = {
+                "anti_heal": "Anti-curación",  "anti_cc": "Anti-CC",
+                "anti_ap": "Anti-AP",          "anti_ad": "Anti-AD",
+                "anti_tank": "Anti-tanques",   "penetracion": "Penetración",
+                "supervivencia": "Supervivencia",
+            }
+
+            card_sit = QFrame()
+            card_sit.setObjectName("BuildCard")
+            l_sit = QVBoxLayout(card_sit)
+            l_sit.setSpacing(6)
+
+            lbl_sit_t = QLabel("SITUACIONALES")
+            lbl_sit_t.setStyleSheet(f"color: #f59e0b; font-weight: bold; font-size: 11px;")
+            l_sit.addWidget(lbl_sit_t, alignment=Qt.AlignCenter)
+
+            for sit in ids_sit[:5]:  # max 5 items para no saturar
+                row_w = QWidget()
+                row_l = QHBoxLayout(row_w)
+                row_l.setContentsMargins(2, 2, 2, 2)
+                row_l.setSpacing(6)
+
+                # Icono del ítem
+                self.renderizar_icono(sit["id"], "item", row_l, size=32)
+
+                # Texto: categoría + nombre + razón
+                txt_w = QWidget()
+                txt_l = QVBoxLayout(txt_w)
+                txt_l.setContentsMargins(0, 0, 0, 0)
+                txt_l.setSpacing(1)
+
+                prio_col = _PRIO_COLOR.get(sit["prioridad"], "#64748b")
+                cat_txt  = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
+                lbl_cat = QLabel(f"<span style='color:{prio_col};font-weight:bold;font-size:9px;'>"
+                                 f"{_PRIO_LABEL.get(sit['prioridad'],'')}</span>"
+                                 f"<span style='color:#94a3b8;font-size:9px;'> · {cat_txt}</span>")
+                lbl_cat.setTextFormat(Qt.RichText)
+                txt_l.addWidget(lbl_cat)
+
+                lbl_name = QLabel(f"{sit['nombre']}  <span style='color:#64748b;font-size:9px;'>{sit['coste']}g</span>")
+                lbl_name.setStyleSheet("color: #f1f5f9; font-size: 10px; font-weight: bold;")
+                lbl_name.setTextFormat(Qt.RichText)
+                txt_l.addWidget(lbl_name)
+
+                razon = sit["razon"]
+                if len(razon) > 75:
+                    razon = razon[:72] + "…"
+                lbl_razon = QLabel(razon)
+                lbl_razon.setStyleSheet("color: #94a3b8; font-size: 9px;")
+                lbl_razon.setWordWrap(True)
+                txt_l.addWidget(lbl_razon)
+
+                row_l.addWidget(txt_w)
+                row_l.addStretch()
+                l_sit.addWidget(row_w)
+
+            l_sit.addStretch()
+            wrap_layout.addWidget(card_sit)
 
         parent_layout.addWidget(main_wrap)
 
@@ -2192,7 +2643,23 @@ class LoLRecommenderApp(QMainWindow):
         self.l_fatiga.addWidget(self.lbl_fatiga_consejo)
         
         self.col_id.addWidget(self.pnl_fatiga)
-        
+
+        # ── PANEL LP HISTORY ──
+        self.pnl_lp, self.l_lp = self.crear_panel("📈 EVOLUCIÓN DE LP (30 DÍAS)")
+        lp_header = QHBoxLayout()
+        self.cb_lp_queue = QComboBox()
+        self.cb_lp_queue.addItems(["Solo/Dúo", "Flex"])
+        self.cb_lp_queue.setFixedWidth(90)
+        self.cb_lp_queue.currentIndexChanged.connect(self._actualizar_grafica_lp)
+        lp_header.addWidget(QLabel("Cola:"))
+        lp_header.addWidget(self.cb_lp_queue)
+        lp_header.addStretch()
+        self.l_lp.addLayout(lp_header)
+        self.lp_graph = LPGraphWidget()
+        self.lp_graph.setMinimumHeight(130)
+        self.l_lp.addWidget(self.lp_graph)
+        self.col_id.addWidget(self.pnl_lp)
+
         l_pnl.addLayout(self.col_id, 35)
         
         # ===== COLUMNA DERECHA: ESTADÍSTICAS + PERFIL + HISTORIAL =====
@@ -2722,6 +3189,20 @@ class LoLRecommenderApp(QMainWindow):
             _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats)
             _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats)
 
+            # Registrar LP del día y actualizar gráfica
+            try:
+                if ranked_solo and ranked_solo.get("tier"):
+                    registrar_lp(ranked_solo["tier"], ranked_solo.get("division", ""),
+                                 ranked_solo.get("lp", 0), ranked_solo.get("wins", 0),
+                                 ranked_solo.get("losses", 0), "RANKED_SOLO_5x5")
+                if ranked_flex and ranked_flex.get("tier"):
+                    registrar_lp(ranked_flex["tier"], ranked_flex.get("division", ""),
+                                 ranked_flex.get("lp", 0), ranked_flex.get("wins", 0),
+                                 ranked_flex.get("losses", 0), "RANKED_FLEX_SR")
+                self._actualizar_grafica_lp()
+            except Exception as _e_lp:
+                print(f"[LP] Error registrando: {_e_lp}")
+
             # --- Historial ---
             historial = data.get("historial")
             if not historial:
@@ -2993,6 +3474,18 @@ class LoLRecommenderApp(QMainWindow):
                 self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
+
+    def _actualizar_grafica_lp(self):
+        """Refresca la gráfica de LP con los datos de la cola seleccionada."""
+        if not hasattr(self, "lp_graph"):
+            return
+        queue_map = {"Solo/Dúo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
+        queue = queue_map.get(self.cb_lp_queue.currentText(), "RANKED_SOLO_5x5")
+        try:
+            history = obtener_historial_lp(queue, dias=30)
+            self.lp_graph.set_data(history)
+        except Exception as e:
+            print(f"[LP Graph] Error: {e}")
 
     def _analizar_fatiga(self):
         """Analiza fatiga/tilt desde el historial de la LCU y actualiza el dashboard premium."""
@@ -3298,6 +3791,14 @@ class LoLRecommenderApp(QMainWindow):
         self.lbl_radar_tip.setStyleSheet(f"color: #cbd5e1; font-size: 10px; padding: 6px 10px; background-color: #0f172a; border: 1px solid #1e293b; border-left: 3px solid {ACCENT_TEAL}; border-radius: 4px; margin-bottom: 2px;")
         layout.addWidget(self.lbl_radar_tip)
 
+        # Tips de matchup (ocultos hasta que haya rival detectado)
+        self.lbl_matchup_tips = QLabel("")
+        self.lbl_matchup_tips.setWordWrap(True)
+        self.lbl_matchup_tips.setTextFormat(Qt.RichText)
+        self.lbl_matchup_tips.setStyleSheet(f"color: {YELLOW_WR}; font-size: 10px; padding: 5px 10px; background-color: #1a1200; border: 1px solid #3d2e00; border-left: 3px solid {YELLOW_WR}; border-radius: 4px; margin-bottom: 2px;")
+        self.lbl_matchup_tips.setVisible(False)
+        layout.addWidget(self.lbl_matchup_tips)
+
         draft_layout = QHBoxLayout()
         draft_layout.setAlignment(Qt.AlignTop)
 
@@ -3358,6 +3859,31 @@ class LoLRecommenderApp(QMainWindow):
         self.btn_export_skills.setVisible(False)
         self.l_skills.addWidget(self.btn_export_skills, alignment=Qt.AlignCenter)
         l_center.addWidget(self.panel_skills)
+
+        # ── PANEL PATHING JUNGLA (solo visible cuando rol = JUNGLA) ──
+        self.pnl_pathing, self.l_pathing = self.crear_panel("🗺️ PATHING DE JUNGLA")
+        self.lbl_pathing_estilo = QLabel("")
+        self.lbl_pathing_estilo.setStyleSheet(f"font-size: 12px; font-weight: bold; padding: 2px 0;")
+        self.l_pathing.addWidget(self.lbl_pathing_estilo)
+        self.lbl_pathing_inicio = QLabel("")
+        self.lbl_pathing_inicio.setWordWrap(True)
+        self.lbl_pathing_inicio.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 10px;")
+        self.l_pathing.addWidget(self.lbl_pathing_inicio)
+        self.lbl_pathing_ruta = QLabel("")
+        self.lbl_pathing_ruta.setWordWrap(True)
+        self.lbl_pathing_ruta.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 10px;")
+        self.l_pathing.addWidget(self.lbl_pathing_ruta)
+        self.lbl_pathing_gank = QLabel("")
+        self.lbl_pathing_gank.setWordWrap(True)
+        self.lbl_pathing_gank.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 10px;")
+        self.l_pathing.addWidget(self.lbl_pathing_gank)
+        self.lbl_pathing_vs = QLabel("")
+        self.lbl_pathing_vs.setWordWrap(True)
+        self.lbl_pathing_vs.setStyleSheet(f"color: {YELLOW_WR}; font-size: 10px; padding-top: 2px;")
+        self.l_pathing.addWidget(self.lbl_pathing_vs)
+        self.pnl_pathing.setVisible(False)
+        l_center.addWidget(self.pnl_pathing)
+
         draft_layout.addWidget(col_center, 3)
 
         self.col_ally, l_ally = self.crear_panel("Aliados")
@@ -3381,17 +3907,11 @@ class LoLRecommenderApp(QMainWindow):
     def _aplicar_settings(self):
         """Aplica los settings actuales a los timers y comportamientos."""
         self.timer_lcu.setInterval(self.user_settings.get("frecuencia_radar", 1500))
-        self.timer_ingame.setInterval(self.user_settings.get("frecuencia_ingame", 5000))
         if not self.user_settings.get("auto_deteccion", True):
             self.timer_lcu.stop()
         else:
             if not self.timer_lcu.isActive():
                 self.timer_lcu.start()
-
-        if not self.user_settings.get("overlay_auto", True):
-            self.overlay.hide_overlay()
-        if not self.user_settings.get("auto_switch_radar", True):
-            pass  # no op needed, the switch logic checks this setting elsewhere
 
     def _reproducir_sonido(self, tipo="info"):
         """Reproduce un sonido de alerta si los sonidos estan activados."""
@@ -3444,30 +3964,14 @@ class LoLRecommenderApp(QMainWindow):
             self._actualizando_radar = True
             threading.Thread(target=self._fetch_radar, daemon=True).start()
         
-        # Auto-switch de pestañas segun fase del juego (solo una vez por cambio de fase)
+        # Auto-switch de pestañas segun fase del juego
         fase = self.lcu.obtener_fase_juego()
         if fase == "ChampSelect":
             if self.tabview.currentIndex() != 2 and self.user_settings.get("auto_switch_radar", True):
-                self._tab_antes_ingame = self.tabview.currentIndex()
                 self.tabview.setCurrentIndex(2)  # RADAR EN VIVO
-            self._ingame_auto_switched = False
-            if self.overlay.isVisible():
-                self.overlay.hide_overlay()
         elif fase in ("GameStart", "InProgress"):
-            if not self._ingame_auto_switched:
-                self._tab_antes_ingame = self.tabview.currentIndex()
-                self.tabview.setCurrentIndex(3)  # IN-GAME
-                self._ingame_auto_switched = True
-                self.overlay.update_game_state(True, self.lcu)
-                if self.user_settings.get("overlay_auto", True):
-                    self.overlay.show_overlay()
-        elif fase in ("Lobby", "None", "ReadyCheck", "Matchmaking"):
-            self._ingame_auto_switched = False
-            if self.overlay.isVisible():
-                self.overlay.hide_overlay()
-        elif fase in ("EndOfGame", "PreEndOfGame", "WaitingForStats"):
-            if self.overlay.isVisible():
-                self.overlay.hide_overlay()
+            if self.tabview.currentIndex() != 3 and self.user_settings.get("auto_switch_radar", True):
+                self.tabview.setCurrentIndex(3)  # PARTIDA EN VIVO
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)
@@ -3584,20 +4088,22 @@ class LoLRecommenderApp(QMainWindow):
                 if not enemigo_lane:
                     cache_rol = self._cache_rol_tipico.get(rol_api, set())
                     candidatos_cache = []
-                    for champ, pos, idx in enemigos_procesados:
-                        if champ in cache_rol:
-                            # Obtener frecuencia de este champ en este rol para tiebreaker
-                            try:
-                                conn = obtener_conexion()
-                                cur = conn.cursor()
-                                cur.execute(
-                                    "SELECT COUNT(*) FROM participantes WHERE champion=? AND team_position=?",
-                                    (champ, rol_api))
-                                freq = cur.fetchone()[0]
-                                conn.close()
-                            except Exception:
-                                freq = 0
-                            candidatos_cache.append((champ, freq))
+                    conn_radar = obtener_conexion()
+                    try:
+                        for champ, pos, idx in enemigos_procesados:
+                            if champ in cache_rol:
+                                # Obtener frecuencia de este champ en este rol para tiebreaker
+                                try:
+                                    cur = conn_radar.cursor()
+                                    cur.execute(
+                                        "SELECT COUNT(*) FROM participantes WHERE champion=? AND team_position=?",
+                                        (champ, rol_api))
+                                    freq = cur.fetchone()[0]
+                                except Exception:
+                                    freq = 0
+                                candidatos_cache.append((champ, freq))
+                    finally:
+                        conn_radar.close()
                     if candidatos_cache:
                         # Elegir el campeon mas frecuente en este rol, no el primero de la lista
                         candidatos_cache.sort(key=lambda x: x[1], reverse=True)
@@ -3672,11 +4178,11 @@ class LoLRecommenderApp(QMainWindow):
                     self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
                     bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
 
-                bans_filtrados = [b for b, wr, p in bans_sugeridos if b not in self.last_aliados and b not in self.last_enemigos][:4]
+                bans_filtrados = [(b, wr, p) for b, wr, p in bans_sugeridos if b not in self.last_aliados and b not in self.last_enemigos][:4]
                 if bans_filtrados:
-                    for i, ban in enumerate(bans_filtrados): 
+                    for i, (ban, wr, partidas) in enumerate(bans_filtrados): 
                         self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i,
-                            f"Ban: {self._nombre_display(ban)}\nWR enemigo: consultar DB", size=35)
+                            f"🚫 Baneo sugerido: {self._nombre_display(ban)}\n📊 WR rival: {wr}% en {partidas} partidas", size=35)
                 else: 
                     lbl_noban = QLabel("Sin recomendaciones")
                     lbl_noban.setStyleSheet("color: gray;")
@@ -3687,9 +4193,21 @@ class LoLRecommenderApp(QMainWindow):
 
                 if mi_campeon:
                     ids_runas = obtener_top_runas(mi_campeon, rol_api)
+                    ids_runas = ajustar_shards_adaptativos(
+                        ids_runas,
+                        self._nombre_db(mi_campeon) or mi_campeon,
+                        self._nombre_db(enemigo_lane) or enemigo_lane if enemigo_lane else None,
+                        [self._nombre_db(c) or c for c in picks_en_db],
+                    )
                     ids_spells = obtener_top_hechizos(mi_campeon, rol_api)
                     ids_start, ids_core = obtener_top_items(mi_campeon, rol_api, enemigos=self.last_enemigos)
-                    self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo)
+                    ids_sit = obtener_items_situacionales(
+                        self._nombre_db(mi_campeon) or mi_campeon,
+                        rol_api,
+                        [self._nombre_db(e) or e for e in self.last_enemigos],
+                        excluir=ids_core,
+                    ) if self.last_enemigos else []
+                    self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo, ids_sit=ids_sit)
                     
                     # Ruta de habilidades
                     skill_key = self._nombre_db(mi_campeon) or mi_campeon
@@ -3713,6 +4231,34 @@ class LoLRecommenderApp(QMainWindow):
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)
                     self.lbl_skill_order.setText("Selecciona un campeón")
                     self.btn_export_skills.setVisible(False)
+            # ── PATHING JUNGLA ──
+            if rol_api == "JUNGLE" and mi_campeon:
+                # Buscar jungla enemigo en picks
+                enemy_jg = None
+                for champ, pos, _ in enemigos_procesados:
+                    if pos and pos.upper() == "JUNGLE":
+                        enemy_jg = champ
+                        break
+                pathing = sugerir_pathing_jungla(
+                    self._nombre_db(mi_campeon) or mi_campeon,
+                    self._nombre_db(enemy_jg) or enemy_jg if enemy_jg else None,
+                    [self._nombre_db(c) or c for c in picks_al if c != mi_campeon],
+                    [self._nombre_db(c) or c for c in picks_en],
+                )
+                self.lbl_pathing_estilo.setText(pathing.get("label", ""))
+                self.lbl_pathing_estilo.setStyleSheet(
+                    f"font-size: 12px; font-weight: bold; color: {pathing.get('color', ACCENT_TEAL)};"
+                )
+                self.lbl_pathing_inicio.setText(f"🏁 Inicio: {pathing.get('inicio', '')}")
+                self.lbl_pathing_ruta.setText(f"📍 Ruta: {pathing.get('ruta', '')}")
+                self.lbl_pathing_gank.setText(f"🗡️ Gank: {pathing.get('prioridad_gank', '')}")
+                vs = pathing.get("vs_jungla", "")
+                self.lbl_pathing_vs.setText(vs)
+                self.lbl_pathing_vs.setVisible(bool(vs))
+                self.pnl_pathing.setVisible(True)
+            else:
+                self.pnl_pathing.setVisible(False)
+
             # Actualizar tip según estado del draft
             if mi_campeon and enemigo_lane:
                 self.lbl_radar_tip.setText(
@@ -3734,8 +4280,508 @@ class LoLRecommenderApp(QMainWindow):
                     "💡 <b>Coach:</b> En Champ Select, prioriza counter-pickear a tu rival de línea. "
                     "Revisa runas y hechizos recomendados abajo."
                 )
-        except Exception as e:
+
+            # Tips de matchup específicos
+            if enemigo_lane:
+                enemy_db = self._nombre_db(enemigo_lane) or enemigo_lane
+                tips = obtener_tips_matchup(enemy_db)
+                if tips:
+                    tips_html = "  |  ".join(f"• {t}" for t in tips[:2])
+                    self.lbl_matchup_tips.setText(
+                        f"🗡️ <b>vs {self._nombre_display(enemigo_lane)}:</b>  {tips_html}"
+                    )
+                    self.lbl_matchup_tips.setVisible(True)
+                else:
+                    self.lbl_matchup_tips.setVisible(False)
+            else:
+                self.lbl_matchup_tips.setVisible(False)
+        except Exception:
             pass
+
+    # ═══════════════════════════════════════════════════════════
+    # PARTIDA EN VIVO (Porofessor-style)
+    # ═══════════════════════════════════════════════════════════
+
+    def armar_tab_partida(self):
+        layout = QVBoxLayout(self.tab_partida)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+
+        # Header
+        self.lbl_partida_header = QLabel("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
+        self.lbl_partida_header.setAlignment(Qt.AlignCenter)
+        self.lbl_partida_header.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 16px; padding: 20px;")
+        layout.addWidget(self.lbl_partida_header)
+
+        # Dashboard compacto
+        self.pnl_partida_dash = QFrame()
+        self.pnl_partida_dash.setObjectName("Panel")
+        self.pnl_partida_dash.setVisible(False)
+        dash_layout = QVBoxLayout(self.pnl_partida_dash)
+        dash_layout.setSpacing(6)
+
+        # Fila 1: Tu KDA + tiempo
+        fila1 = QHBoxLayout()
+        self.lbl_partida_kda = QLabel("Tu KDA: --/--/--")
+        self.lbl_partida_kda.setStyleSheet(f"color: {TEXT_GOLD}; font-size: 16px; font-weight: bold;")
+        fila1.addWidget(self.lbl_partida_kda)
+        fila1.addStretch()
+        self.lbl_partida_timer = QLabel("00:00")
+        self.lbl_partida_timer.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 22px; font-weight: bold; font-family: Consolas;")
+        fila1.addWidget(self.lbl_partida_timer)
+        self.lbl_partida_cs = QLabel("CS: --")
+        self.lbl_partida_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 14px; margin-left: 12px;")
+        fila1.addWidget(self.lbl_partida_cs)
+        dash_layout.addLayout(fila1)
+
+        layout.addWidget(self.pnl_partida_dash)
+
+        # Dos tablas lado a lado: aliados y enemigos
+        tablas_layout = QHBoxLayout()
+        tablas_layout.setSpacing(8)
+
+        # ── Aliados ──
+        self.tb_partida_aliados = QTableWidget()
+        self.tb_partida_aliados.setColumnCount(4)
+        self.tb_partida_aliados.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
+        self._estilizar_tabla_partida(self.tb_partida_aliados, "#0f172a")
+        tablas_layout.addWidget(self.tb_partida_aliados)
+
+        # ── Enemigos ──
+        self.tb_partida_enemigos = QTableWidget()
+        self.tb_partida_enemigos.setColumnCount(4)
+        self.tb_partida_enemigos.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
+        self._estilizar_tabla_partida(self.tb_partida_enemigos, "#1a0a0f")
+        tablas_layout.addWidget(self.tb_partida_enemigos)
+
+        layout.addLayout(tablas_layout, 1)
+
+        # Composición
+        self.lbl_partida_comp = QLabel("")
+        self.lbl_partida_comp.setAlignment(Qt.AlignCenter)
+        self.lbl_partida_comp.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(self.lbl_partida_comp)
+
+    def _estilizar_tabla_partida(self, tabla, bg_color):
+        tabla.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        tabla.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        tabla.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        tabla.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tabla.setSelectionMode(QAbstractItemView.NoSelection)
+        tabla.verticalHeader().setDefaultSectionSize(38)
+        tabla.verticalHeader().setVisible(False)
+        tabla.setStyleSheet(f"""
+            QTableWidget {{ background-color: {bg_color}; border: 1px solid {BORDER_SUBTLE}; border-radius: 6px; font-size: 11px; }}
+            QTableWidget::item {{ padding: 2px 6px; border-bottom: 1px solid #1a2236; }}
+            QHeaderView::section {{ background-color: #0f172a; color: {TEXT_MUTED}; font-size: 10px; padding: 3px; border: none; }}
+        """)
+
+    def actualizar_partida_vivo(self):
+        """Actualiza la pestaña de partida en vivo con datos del LiveClient."""
+        if not self.lcu or not self.lcu.port:
+            return
+
+        fase = self.lcu.obtener_fase_juego()
+        if fase not in ("InProgress", "GameStart"):
+            if hasattr(self, "overlay") and self.overlay._visible:
+                self.overlay.hide_overlay()
+            self.pnl_partida_dash.setVisible(False)
+            self.tb_partida_aliados.setVisible(False)
+            self.tb_partida_enemigos.setVisible(False)
+            self.lbl_partida_header.setVisible(True)
+            if fase in ("WaitingForStats", "PreEndOfGame", "EndOfGame"):
+                self.lbl_partida_header.setText("🏁 Partida terminada\n\nRevisa tu perfil para ver el analisis")
+                # Mostrar post-game una sola vez por partida
+                if self._last_game_stats and not self._postgame_shown:
+                    self._postgame_shown = True
+                    threading.Thread(target=self._preparar_postgame, daemon=True).start()
+            else:
+                # Nueva fase de lobby → resetear para la próxima partida
+                self._postgame_shown = False
+                self.lbl_partida_header.setText("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
+            self._last_fase = fase
+            return
+
+        # Entró a una partida nueva → resetear el flag
+        if self._last_fase not in ("InProgress", "GameStart"):
+            self._postgame_shown = False
+            self._last_game_stats = {}
+        self._last_fase = fase
+
+        # Partida en vivo
+        jugadores, game_info = self.lcu.obtener_liveclient_data()
+
+        if jugadores and len(jugadores) >= 2:
+            self._renderizar_partida_live(jugadores, game_info)
+            return
+
+        # Fallback: LCU (solo campeones, sin KDA)
+        jugadores_lcu = self.lcu.obtener_summoners_partida()
+        if jugadores_lcu and len(jugadores_lcu) >= 2:
+            self._renderizar_partida_lcu(jugadores_lcu)
+            return
+
+        # Loading
+        if isinstance(game_info, dict) and game_info.get("status") == "loading":
+            self.lbl_partida_header.setVisible(True)
+            self.pnl_partida_dash.setVisible(False)
+            self.tb_partida_aliados.setVisible(False)
+            self.tb_partida_enemigos.setVisible(False)
+            self.lbl_partida_header.setText("⏳ Entrando a la Grieta...\n\nLos datos apareceran al iniciar la partida")
+
+    def _renderizar_partida_live(self, jugadores, game_info):
+        """Renderiza la partida con datos del LiveClient (KDA, CS, etc.)."""
+        self.lbl_partida_header.setVisible(False)
+        self.pnl_partida_dash.setVisible(True)
+        self.tb_partida_aliados.setVisible(True)
+        self.tb_partida_enemigos.setVisible(True)
+
+        aliados = [j for j in jugadores if j.get("team") == "ORDER"]
+        enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
+
+        # Buscar nuestro jugador
+        mi_nombre_raw = self.lcu.obtener_nombre_invocador() or ""
+        mi_nombre = mi_nombre_raw.split("#")[0].strip().lower()
+        yo = None
+        for j in jugadores:
+            sn = (j.get("summonerName", "") or "").lower()
+            if sn == mi_nombre or mi_nombre in sn or sn in mi_nombre:
+                yo = j
+                break
+
+        # Dashboard personal
+        game_time = game_info.get("gameTime", 0) if isinstance(game_info, dict) else 0
+        mins, secs = int(game_time // 60), int(game_time % 60)
+        self.lbl_partida_timer.setText(f"{mins:02d}:{secs:02d}")
+
+        if yo:
+            k, d, a = yo.get("kills", 0) or 0, yo.get("deaths", 0) or 0, yo.get("assists", 0) or 0
+            cs = yo.get("creepScore", 0) or 0
+            cname = yo.get("championName", "?")
+            cs_min = cs / max(1, game_time / 60)
+            self.lbl_partida_kda.setText(f"🔥 Tu {cname}: {k}/{d}/{a}")
+            self.lbl_partida_cs.setText(f"CS: {cs} ({cs_min:.1f}/min)")
+            # Cachear para post-game (actualizamos siempre para tener el estado más reciente)
+            self._last_game_stats = {
+                "champion": cname, "kills": k, "deaths": d, "assists": a,
+                "cs": cs, "game_time": game_time,
+            }
+        else:
+            self.lbl_partida_kda.setText("🔥 Tu: (buscando...)")
+            self.lbl_partida_cs.setText("CS: --")
+
+        # Tablas aliados/enemigos
+        self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "#0f172a", yo)
+        self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f", yo)
+
+        # Alimentar overlay si está activado
+        if self.user_settings.get("overlay_ingame", False):
+            if not self.overlay._visible:
+                self.overlay.show_overlay()
+            self.overlay.feed_live_data(jugadores, game_info, mi_nombre_raw)
+
+        # Composicion
+        a_nombres = [j.get("championName", "") for j in aliados if j.get("championName")]
+        e_nombres = [j.get("championName", "") for j in enemigos if j.get("championName")]
+        if len(a_nombres) >= 3 and len(e_nombres) >= 3:
+            try:
+                ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
+                ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
+                self.lbl_partida_comp.setText(
+                    f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
+                    f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
+                )
+            except:
+                self.lbl_partida_comp.setText("")
+        else:
+            self.lbl_partida_comp.setText("")
+
+    def _renderizar_partida_lcu(self, jugadores):
+        """Renderiza la partida usando solo datos LCU (campeones, sin KDA)."""
+        self.lbl_partida_header.setVisible(False)
+        self.pnl_partida_dash.setVisible(True)
+        self.tb_partida_aliados.setVisible(True)
+        self.tb_partida_enemigos.setVisible(True)
+
+        self.lbl_partida_kda.setText("🎮 Partida en vivo (datos basicos LCU)")
+        self.lbl_partida_cs.setText("CS: --")
+        self.lbl_partida_timer.setText("--:--")
+
+        aliados = [j for j in jugadores if j.get("team") == "ORDER"]
+        enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
+
+        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "#0f172a")
+        self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f")
+
+        a_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), "0") for j in aliados if self.procesar_nombre_champ(str(j.get("championId", 0)), "0")]
+        e_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), "0") for j in enemigos if self.procesar_nombre_champ(str(j.get("championId", 0)), "0")]
+        if len(a_nombres) >= 3 and len(e_nombres) >= 3:
+            try:
+                ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
+                ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
+                self.lbl_partida_comp.setText(
+                    f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
+                    f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
+                )
+            except:
+                self.lbl_partida_comp.setText("")
+        else:
+            self.lbl_partida_comp.setText("")
+
+    def _preparar_postgame(self):
+        """Ejecutado en thread: reúne datos y emite postgame_ready para mostrar el diálogo."""
+        try:
+            stats = dict(self._last_game_stats)
+
+            # Medias históricas desde BD
+            try:
+                conn = obtener_conexion()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT AVG(COALESCE(kills,0)), AVG(COALESCE(deaths,1)), AVG(COALESCE(assists,0))
+                    FROM participantes
+                    WHERE kills IS NOT NULL
+                """)
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0] is not None:
+                    stats["avg_k"] = round(float(row[0]), 1)
+                    stats["avg_d"] = round(float(row[1]), 1)
+                    stats["avg_a"] = round(float(row[2]), 1)
+                else:
+                    stats.setdefault("avg_k", 5.0)
+                    stats.setdefault("avg_d", 4.0)
+                    stats.setdefault("avg_a", 7.0)
+            except Exception:
+                stats.setdefault("avg_k", 5.0)
+                stats.setdefault("avg_d", 4.0)
+                stats.setdefault("avg_a", 7.0)
+
+            # Resultado desde LCU history
+            try:
+                historial = self.lcu.obtener_historial_extendido(cantidad=1)
+                if historial:
+                    ult = historial[0]
+                    part = ult.get("participants", [{}])[0]
+                    win = part.get("stats", {}).get("win", None)
+                    if win is True:
+                        stats["resultado"] = "Victoria"
+                    elif win is False:
+                        stats["resultado"] = "Derrota"
+            except Exception:
+                pass
+
+            # Tip de coaching
+            tip_partes = []
+            d = stats.get("deaths", 0)
+            k = stats.get("kills", 0)
+            avg_d = stats.get("avg_d", 4.0)
+            if d > avg_d * 1.5 and d >= 5:
+                tip_partes.append(f"⚠️ {d} muertes — muy por encima de tu media ({avg_d:.1f}). Intenta jugar más cerca de tu equipo.")
+            elif d <= 2 and k >= 4:
+                tip_partes.append("✅ Partida limpia — buen control de muertes.")
+            game_time = stats.get("game_time", 0)
+            cs = stats.get("cs", 0)
+            if game_time > 600:
+                cs_min = cs / (game_time / 60)
+                if cs_min < 5.0:
+                    tip_partes.append(f"📈 CS/min bajo ({cs_min:.1f}). Trabaja el farmeo en línea antes de rotar.")
+            stats["tip"] = "  ".join(tip_partes[:2]) if tip_partes else ""
+
+            self.postgame_ready.emit(stats)
+        except Exception as e:
+            print(f"[PostGame] Error preparando resumen: {e}")
+
+    def _on_postgame_ready(self, stats: dict):
+        """Muestra el diálogo de post-game en el hilo principal."""
+        try:
+            dlg = PostGameDialog(stats, parent=self)
+            dlg.coaching_requested.connect(self._ir_a_coaching)
+            dlg.show()
+        except Exception as e:
+            print(f"[PostGame] Error mostrando diálogo: {e}")
+
+    def _ir_a_coaching(self):
+        """Navega a la pestaña de Coaching."""
+        try:
+            for i in range(self.tabview.count()):
+                if "coaching" in self.tabview.tabText(i).lower() or "perfil" in self.tabview.tabText(i).lower():
+                    self.tabview.setCurrentIndex(i)
+                    break
+        except Exception:
+            pass
+
+    def _llenar_tabla_partida(self, tabla, jugadores, team_label, bg, yo):
+        """Llena una tabla con datos de jugadores (LiveClient)."""
+        tabla.setRowCount(0)
+
+        # Header row
+        row = tabla.rowCount(); tabla.insertRow(row)
+        hdr = QTableWidgetItem(team_label)
+        hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
+        f = hdr.font(); f.setBold(True); hdr.setFont(f)
+        tabla.setItem(row, 0, hdr)
+        for c in range(1, 4):
+            e = QTableWidgetItem(""); e.setBackground(QColor(bg)); tabla.setItem(row, c, e)
+
+        conn_db = obtener_conexion()
+        try:
+            for j in jugadores:
+                cname = j.get("championName", "?") or "?"
+                k, d, a_v = j.get("kills", 0) or 0, j.get("deaths", 0) or 0, j.get("assists", 0) or 0
+                cs = j.get("creepScore", 0) or 0
+
+                # Comentario: basado en KDA y WR de BD
+                kda_val = (k + a_v) / max(1, d)
+                comentario, color_com = self._comentar_jugador_partida(cname, k, d, a_v, kda_val, conn=conn_db)
+
+                # WR desde BD
+                wr = "--"
+                try:
+                    cur = conn_db.cursor()
+                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=?", (cname,))
+                    r = cur.fetchone()
+                    if r and r[0]:
+                        wr = f"{r[0]}%"
+                except:
+                    pass
+
+                row = tabla.rowCount(); tabla.insertRow(row)
+                item_c = QTableWidgetItem(f"  {cname}")
+                icon_p = self.descargar_imagen(cname, "champ")
+                if icon_p:
+                    item_c.setIcon(QIcon(icon_p))
+                # Color de nombre segun si es el jugador local
+                item_c.setForeground(QColor(TEXT_GOLD if j == yo else TEXT_WHITE))
+                tabla.setItem(row, 0, item_c)
+
+                item_kda = QTableWidgetItem(f"{k}/{d}/{a_v}")
+                if k + d + a_v > 0:
+                    color_kda = GREEN_WR if kda_val >= 3 else YELLOW_WR if kda_val >= 1.5 else RED_WR
+                    item_kda.setForeground(QColor(color_kda))
+                tabla.setItem(row, 1, item_kda)
+
+                item_cs = QTableWidgetItem(str(cs))
+                item_cs.setForeground(QColor(ACCENT_TEAL))
+                tabla.setItem(row, 2, item_cs)
+
+                item_com = QTableWidgetItem(f"WR:{wr} {comentario}")
+                item_com.setForeground(QColor(color_com))
+                tabla.setItem(row, 3, item_com)
+        finally:
+            conn_db.close()
+
+    def _llenar_tabla_partida_lcu(self, tabla, jugadores, team_label, bg):
+        """Llena una tabla con datos de jugadores (LCU, sin KDA)."""
+        tabla.setRowCount(0)
+
+        row = tabla.rowCount(); tabla.insertRow(row)
+        hdr = QTableWidgetItem(team_label)
+        hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
+        f = hdr.font(); f.setBold(True); hdr.setFont(f)
+        tabla.setItem(row, 0, hdr)
+        for c in range(1, 4):
+            e = QTableWidgetItem(""); e.setBackground(QColor(bg)); tabla.setItem(row, c, e)
+
+        conn_db = obtener_conexion()
+        try:
+            for j in jugadores:
+                cid = int(j.get("championId", 0))
+                cname = self.procesar_nombre_champ(str(cid), "0") or "?"
+
+                # Comentario desde BD
+                comentario, color_com = self._comentar_jugador_partida(cname, 0, 0, 0, 0, conn=conn_db)
+
+                wr = "--"
+                try:
+                    cur = conn_db.cursor()
+                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=?", (cname,))
+                    r = cur.fetchone()
+                    if r and r[0]:
+                        wr = f"{r[0]}%"
+                except:
+                    pass
+
+                row = tabla.rowCount(); tabla.insertRow(row)
+                item_c = QTableWidgetItem(f"  {cname}")
+                icon_p = self.descargar_imagen(cname, "champ")
+                if icon_p:
+                    item_c.setIcon(QIcon(icon_p))
+                tabla.setItem(row, 0, item_c)
+                tabla.setItem(row, 1, QTableWidgetItem("--/--/--"))
+                tabla.setItem(row, 2, QTableWidgetItem("--"))
+                item_com = QTableWidgetItem(f"WR:{wr} {comentario}")
+                item_com.setForeground(QColor(color_com))
+                tabla.setItem(row, 3, item_com)
+        finally:
+            conn_db.close()
+
+    def _comentar_jugador_partida(self, champion, k, d, a, kda_val, conn=None):
+        """Genera un comentario estilo Porofessor sobre un jugador."""
+        close_conn = conn is None
+        try:
+            if conn is None:
+                conn = obtener_conexion()
+            cur = conn.cursor()
+            # WR y partidas totales
+            cur.execute("SELECT COUNT(*), ROUND(AVG(kills),1), ROUND(AVG(deaths),1) FROM participantes WHERE champion=?", (champion,))
+            r = cur.fetchone()
+            total, avg_k, avg_d = r[0] if r else (0, 0, 0)
+
+            comentarios = []
+            color = "#94a3b8"  # default gray
+
+            if total < 5:
+                comentarios.append("1a vez?")
+                color = "#64748b"
+            else:
+                if avg_d and avg_d >= 6:
+                    comentarios.append("Muchas muertes")
+                if avg_k and avg_k >= 7:
+                    comentarios.append("Buenas kills")
+
+            # KDA actual
+            if k + d + a > 0:
+                if kda_val >= 5:
+                    comentarios.append("🔥 En fuego")
+                    color = GREEN_WR
+                elif kda_val >= 3:
+                    comentarios.append("✅ Sólido")
+                    color = GREEN_WR
+                elif kda_val < 1.0:
+                    comentarios.append("💀 Feedeando")
+                    color = RED_WR
+                elif d >= 5:
+                    comentarios.append("⚠️ Frágil")
+                    color = YELLOW_WR
+
+            # Racha reciente
+            if total >= 5:
+                try:
+                    cur.execute("""SELECT p.win FROM participantes p JOIN matches m ON p.match_id=m.match_id 
+                                  WHERE p.champion=? ORDER BY m.fecha_descarga DESC LIMIT 5""", (champion,))
+                    wins = [r2[0] for r2 in cur.fetchall()]
+                    if wins:
+                        w_count = sum(1 for w in wins if w)
+                        if w_count >= 4:
+                            comentarios.append("🔥 Racha buena")
+                            color = GREEN_WR
+                        elif w_count <= 1:
+                            comentarios.append("❄️ Racha mala")
+                            color = RED_WR if total > 10 else color
+                except:
+                    pass
+
+            if not comentarios:
+                comentarios.append("—")
+
+            return " · ".join(comentarios), color
+        except:
+            return "—", "#94a3b8"
+        finally:
+            if close_conn and conn is not None:
+                conn.close()
 
     def _actualizar_counters_vivo(self, rol_api, enemigo_lane):
         """Actualiza la seccion de counter picks contra el rival de linea."""
@@ -3882,22 +4928,22 @@ class LoLRecommenderApp(QMainWindow):
             grid_icons = QGridLayout()
             grid_icons.setAlignment(Qt.AlignCenter)
             for i, (champ, puntuacion, razon) in enumerate(champs[:4]):
-                # Estrellas según puntuación
-                if puntuacion >= 4.5: estrellas = "⭐⭐⭐⭐⭐"
-                elif puntuacion >= 3.5: estrellas = "⭐⭐⭐⭐"
-                elif puntuacion >= 2.5: estrellas = "⭐⭐⭐"
-                elif puntuacion >= 1.5: estrellas = "⭐⭐"
+                # Estrellas segun puntuacion (escala 1.0-10.0)
+                if puntuacion >= 9.0: estrellas = "⭐⭐⭐⭐⭐"
+                elif puntuacion >= 7.0: estrellas = "⭐⭐⭐⭐"
+                elif puntuacion >= 5.0: estrellas = "⭐⭐⭐"
+                elif puntuacion >= 3.0: estrellas = "⭐⭐"
                 else: estrellas = "⭐"
                 
-                # Color según puntuación
-                if puntuacion >= 4.0: color_pts = GREEN_WR
-                elif puntuacion >= 2.5: color_pts = TEXT_GOLD
-                elif puntuacion >= 1.5: color_pts = YELLOW_WR
+                # Color segun puntuacion
+                if puntuacion >= 8.0: color_pts = GREEN_WR
+                elif puntuacion >= 5.0: color_pts = TEXT_GOLD
+                elif puntuacion >= 3.0: color_pts = YELLOW_WR
                 else: color_pts = RED_WR
                 
                 tooltip = (
                     f"{self._nombre_display(champ)}\n"
-                    f"⭐ Puntuación: {puntuacion}/5.0\n"
+                    f"⭐ Puntuacion: {puntuacion}/10.0\n"
                     f"📊 {razon}"
                 )
                 self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2,
@@ -3913,753 +4959,11 @@ class LoLRecommenderApp(QMainWindow):
             self.fr_picks_icons.addLayout(cat_layout, 0, col_idx)
             col_idx += 1
 
-    # ================= IN-GAME (REWORK) =================
-    def armar_tab_ingame(self):
-        layout = QVBoxLayout(self.tab_ingame)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
-
-        # ─── HEADER: Estado + Tiempo ───
-        self.lbl_ingame_status = QLabel("🎮 Esperando partida...\n\nAbre una partida para ver datos en vivo\n\n⌨️ Hotkeys globales: Ctrl+Shift+G / Ctrl+Shift+I")
-        self.lbl_ingame_status.setAlignment(Qt.AlignCenter)
-        self.lbl_ingame_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 16px; padding: 20px;")
-        layout.addWidget(self.lbl_ingame_status)
-
-        # ─── DASHBOARD COMPACTO (visible durante partida) ───
-        self.pnl_ingame_dash = QFrame()
-        self.pnl_ingame_dash.setObjectName("Panel")
-        self.pnl_ingame_dash.setVisible(False)
-        dash_layout = QVBoxLayout(self.pnl_ingame_dash)
-        dash_layout.setSpacing(8)
-
-        # Fila 1: Tu info + Tiempo
-        fila1 = QHBoxLayout()
-        self.lbl_ingame_yo = QLabel("")
-        self.lbl_ingame_yo.setStyleSheet(f"color: {TEXT_GOLD}; font-size: 16px; font-weight: bold;")
-        fila1.addWidget(self.lbl_ingame_yo)
-        fila1.addStretch()
-        self.lbl_ingame_timer = QLabel("00:00")
-        self.lbl_ingame_timer.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 22px; font-weight: bold; font-family: 'Consolas', monospace;")
-        fila1.addWidget(self.lbl_ingame_timer)
-        dash_layout.addLayout(fila1)
-
-        # Fila 2: KDA grande
-        fila2 = QHBoxLayout()
-        fila2.setAlignment(Qt.AlignCenter)
-        self.lbl_kda_k = QLabel("-")
-        self.lbl_kda_k.setStyleSheet(f"color: {GREEN_WR}; font-size: 36px; font-weight: bold; font-family: Impact;")
-        self.lbl_kda_k.setAlignment(Qt.AlignCenter)
-        self.lbl_kda_s = QLabel("/")
-        self.lbl_kda_s.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 28px;")
-        self.lbl_kda_d = QLabel("-")
-        self.lbl_kda_d.setStyleSheet(f"color: {RED_WR}; font-size: 36px; font-weight: bold; font-family: Impact;")
-        self.lbl_kda_d.setAlignment(Qt.AlignCenter)
-        self.lbl_kda_s2 = QLabel("/")
-        self.lbl_kda_s2.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 28px;")
-        self.lbl_kda_a = QLabel("-")
-        self.lbl_kda_a.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 36px; font-weight: bold; font-family: Impact;")
-        self.lbl_kda_a.setAlignment(Qt.AlignCenter)
-        fila2.addStretch()
-        fila2.addWidget(self.lbl_kda_k)
-        fila2.addWidget(self.lbl_kda_s)
-        fila2.addWidget(self.lbl_kda_d)
-        fila2.addWidget(self.lbl_kda_s2)
-        fila2.addWidget(self.lbl_kda_a)
-        self.lbl_kda_cs = QLabel("CS: --")
-        self.lbl_kda_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 14px; margin-left: 20px;")
-        fila2.addWidget(self.lbl_kda_cs)
-        fila2.addStretch()
-        dash_layout.addLayout(fila2)
-
-        # Fila 3: Alerta de peligro
-        self.lbl_ingame_alerta = QLabel("")
-        self.lbl_ingame_alerta.setAlignment(Qt.AlignCenter)
-        self.lbl_ingame_alerta.setStyleSheet(f"color: {YELLOW_WR}; font-size: 12px; font-weight: bold;")
-        self.lbl_ingame_alerta.setVisible(False)
-        dash_layout.addWidget(self.lbl_ingame_alerta)
-        layout.addWidget(self.pnl_ingame_dash)
-
-        # ─── COACH TIPS (visible durante partida) ───
-        self.lbl_coach_tip = QLabel("")
-        self.lbl_coach_tip.setWordWrap(True)
-        self.lbl_coach_tip.setTextFormat(Qt.RichText)
-        self.lbl_coach_tip.setStyleSheet(f"color: #cbd5e1; font-size: 10px; padding: 4px 8px; background-color: #0f172a; border: 1px solid #1e293b; border-left: 3px solid {ACCENT_RED}; border-radius: 4px;")
-        self.lbl_coach_tip.setVisible(False)
-        layout.addWidget(self.lbl_coach_tip)
-
-        # ─── TABLA DE JUGADORES ───
-        self.tb_ingame = QTableWidget()
-        self.tb_ingame.setColumnCount(5)
-        self.tb_ingame.setHorizontalHeaderLabels(["Campeón", "KDA", "CS", "WR", "Peligro"])
-        self.tb_ingame.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.tb_ingame.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.tb_ingame.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.tb_ingame.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.tb_ingame.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
-        self.tb_ingame.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tb_ingame.setSelectionMode(QAbstractItemView.NoSelection)
-        self.tb_ingame.verticalHeader().setDefaultSectionSize(32)
-        self.tb_ingame.verticalHeader().setVisible(False)
-        self.tb_ingame.setVisible(False)
-        self.tb_ingame.setStyleSheet(f"""
-            QTableWidget {{ background-color: {BG_PANEL}; border: 1px solid {BORDER_SUBTLE}; border-radius: 6px; font-size: 11px; }}
-            QTableWidget::item {{ padding: 2px 4px; border-bottom: 1px solid #1a2236; }}
-            QHeaderView::section {{ background-color: #0f172a; color: {TEXT_MUTED}; font-size: 10px; padding: 3px; border: none; }}
-        """)
-        layout.addWidget(self.tb_ingame)
-
-        # ─── PANEL POST-GAME ───
-        self.pnl_postgame = QFrame()
-        self.pnl_postgame.setObjectName("Panel")
-        self.pnl_postgame.setVisible(False)
-        pg_layout = QVBoxLayout(self.pnl_postgame)
-        self.lbl_postgame_title = QLabel("📊 ANÁLISIS POST-PARTIDA")
-        self.lbl_postgame_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 16px;")
-        pg_layout.addWidget(self.lbl_postgame_title)
-        self.lbl_postgame_content = QLabel("")
-        self.lbl_postgame_content.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px; padding: 10px;")
-        self.lbl_postgame_content.setWordWrap(True)
-        self.lbl_postgame_content.setTextFormat(Qt.RichText)
-        pg_layout.addWidget(self.lbl_postgame_content)
-        layout.addWidget(self.pnl_postgame)
-
-        # ─── COMPOSICIÓN ───
-        self.lbl_ingame_comp = QLabel("")
-        self.lbl_ingame_comp.setAlignment(Qt.AlignCenter)
-        self.lbl_ingame_comp.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; margin-top: 4px;")
-        layout.addWidget(self.lbl_ingame_comp)
-
-    def actualizar_ingame(self):
-        """Detecta partida en vivo o fin de partida y actualiza la UI."""
-        if not self.lcu or not self.lcu.port:
-            return
-        
-        if not hasattr(self, '_ingame_fail_count'):
-            self._ingame_fail_count = 0
-            self._ingame_was_active = False
-        
-        fase = self.lcu.obtener_fase_juego()
-        
-        # ── POST-GAME: detectar fin de partida ──
-        if fase in ("WaitingForStats", "PreEndOfGame"):
-            if not hasattr(self, '_postgame_shown_for') or self._postgame_shown_for != self._last_game_id:
-                self._mostrar_postgame()
-            return
-        
-        if fase == "EndOfGame":
-            return  # Ya mostramos post-game en WaitingForStats
-        
-        if fase in (None, "Lobby", "Matchmaking", "ReadyCheck", "None"):
-            if self._ingame_was_active:
-                self._ingame_fail_count += 1
-                if self._ingame_fail_count >= 3:
-                    self._mostrar_espera()
-                    self._ingame_was_active = False
-                    self._ingame_fail_count = 0
-            return
-        
-        if fase == "ChampSelect":
-            return  # El radar lo maneja
-        
-        if fase not in ("InProgress", "GameStart"):
-            self._ingame_fail_count += 1
-            if self._ingame_fail_count >= 3:
-                self._mostrar_espera()
-            return
-        
-        # Partida en vivo
-        self._ingame_fail_count = 0
-        self._ingame_was_active = True
-        
-        # Intentar Live Client Data (puerto 2999 — puede no estar listo aún)
-        jugadores, game_info = self.lcu.obtener_liveclient_data()
-        
-        # Si el LiveClient devuelve datos reales, mostrarlos
-        if jugadores and len(jugadores) >= 2:
-            self._renderizar_ingame_v2(jugadores, game_info)
-            return
-        
-        # Si LiveClient no tiene datos todavía (loading), intentar LCU como fallback
-        # así al menos se ven los campeones mientras carga
-        jugadores_lcu = self.lcu.obtener_summoners_partida()
-        if jugadores_lcu and len(jugadores_lcu) >= 2:
-            self._renderizar_ingame_lcu_v2(jugadores_lcu)
-            return
-        
-        # Ni LiveClient ni LCU tienen datos — seguimos esperando
-        if isinstance(game_info, dict) and game_info.get("status") == "loading":
-            self.lbl_ingame_status.setVisible(True)
-            self.lbl_ingame_status.setText("⏳ Entrando a la Grieta...\n\nLos datos en vivo aparecerán cuando empiece la partida.")
-            self.tb_ingame.setVisible(False)
-            self.pnl_ingame_dash.setVisible(False)
-            self.pnl_postgame.setVisible(False)
-            return
-        
-        self.lbl_ingame_status.setVisible(True)
-        self.lbl_ingame_status.setText("🎮 Conectando a la partida...\n\nSi no ves tus datos, espera unos segundos a que cargue la Grieta.")
-        self.tb_ingame.setVisible(False)
-        self.pnl_ingame_dash.setVisible(False)
-        self.pnl_postgame.setVisible(False)
-
-    def _mostrar_espera(self):
-        self.lbl_ingame_status.setVisible(True)
-        self.lbl_ingame_status.setText("🎮 Esperando partida...\n\n⌨️ Ctrl+Shift+G / Ctrl+Shift+I para abrir IN-GAME")
-        self.tb_ingame.setVisible(False)
-        self.pnl_ingame_dash.setVisible(False)
-        self.pnl_postgame.setVisible(False)
-        self.lbl_ingame_comp.setText("")
-        # Limpiar caches de partida anterior
-        self._last_liveclient_players = None
-        self._last_liveclient_game_info = None
-        self._last_lcu_players = None
-        self._postgame_shown_for = None
-
-    def _renderizar_ingame_v2(self, jugadores, game_info):
-        """Nuevo renderizado: dashboard compacto + tabla de jugadores."""
-        self.lbl_ingame_status.setVisible(False)
-        self.pnl_postgame.setVisible(False)
-        self.pnl_ingame_dash.setVisible(True)
-        self.tb_ingame.setVisible(True)
-        
-        # Cachear datos para post-game (se pierden al terminar la partida)
-        self._last_liveclient_players = jugadores
-        self._last_liveclient_game_info = game_info
-
-        # Mostrar tip de coach según tiempo de partida
-        game_time = game_info.get("gameTime", 0) if isinstance(game_info, dict) else 0
-        mins = int(game_time // 60)
-        tips_tiempo = [
-            (0, "🛡️ <b>Early game:</b> Enfócate en farmear bien. Cada súbdito cuenta. No obligues peleas innecesarias."),
-            (3, "👁️ <b>Visión:</b> Wardea el río. El jungla enemigo ya puede estar cerca de tu línea."),
-            (5, "🐉 <b>Objetivos:</b> Primer dragón pronto. Ayuda a tu jungla con prioridad de línea."),
-            (8, "👢 <b>Botas:</b> Si aún no las compraste, prioriza botas para mejor rotación."),
-            (10, "⚔️ <b>Mid game:</b> Empieza a rotar. No te quedes solo en tu línea toda la partida."),
-            (14, "🦀 <b>Heraldo:</b> Buen momento para heraldo. Empuja torres con él."),
-            (15, "🎯 <b>Teamfights:</b> Agrupa con tu equipo. Las peleas 5v5 definen el mid game."),
-            (20, "🏆 <b>Objetivos mayores:</b> Barón y dragones ancestrales. Visión profunda antes de forzar."),
-            (25, "⚡ <b>Late game:</b> Un error = partida perdida. Juega con el equipo, no te aísles."),
-            (30, "🧠 <b>Macro:</b> Mira el minimapa cada 3 segundos. Una rotación ganadora decide."),
-        ]
-        tip_actual = ""
-        for t_mins, t_text in reversed(tips_tiempo):
-            if mins >= t_mins:
-                tip_actual = t_text
-                break
-        if tip_actual:
-            self.lbl_coach_tip.setText(tip_actual)
-            self.lbl_coach_tip.setVisible(True)
-        else:
-            self.lbl_coach_tip.setVisible(False)
-        
-        aliados = [j for j in jugadores if j.get("team") == "ORDER"]
-        enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
-        
-        # ── Buscar mi jugador con múltiples estrategias ──
-        yo = self._encontrar_mi_jugador(jugadores)
-        
-        # ── Dashboard personal ──
-        if yo:
-            cname = yo.get("championName", "?")
-            k = yo.get("kills", 0) or 0
-            d = yo.get("deaths", 0) or 0
-            a = yo.get("assists", 0) or 0
-            cs = yo.get("creepScore", 0) or 0
-            self.lbl_ingame_yo.setText(f"🔥 Tú: {cname}")
-            self.lbl_kda_k.setText(str(k))
-            self.lbl_kda_d.setText(str(d))
-            self.lbl_kda_a.setText(str(a))
-            self.lbl_kda_cs.setText(f"CS: {cs}")
-            # Colores dinámicos según KDA
-            kda_val = (k + a) / max(1, d)
-            self.lbl_kda_k.setStyleSheet(f"color: {'#22c55e' if k >= 5 else '#f1f5f9'}; font-size: 36px; font-weight: bold; font-family: Impact;")
-            self.lbl_kda_d.setStyleSheet(f"color: {'#22c55e' if d <= 2 else '#ef4444' if d >= 6 else '#f59e0b'}; font-size: 36px; font-weight: bold; font-family: Impact;")
-        else:
-            self.lbl_ingame_yo.setText("🔥 Tú: (buscando...)")
-            self.lbl_kda_k.setText("-"); self.lbl_kda_d.setText("-"); self.lbl_kda_a.setText("-")
-            self.lbl_kda_cs.setText("CS: --")
-        
-        # Tiempo
-        game_time = game_info.get("gameTime", 0) if isinstance(game_info, dict) else 0
-        mins = int(game_time // 60)
-        secs = int(game_time % 60)
-        self.lbl_ingame_timer.setText(f"{mins:02d}:{secs:02d}")
-        
-        # Alerta de peligro con CS/min
-        cs_min_actual = cs / max(1, game_time / 60) if yo else 0
-        if yo and yo.get("isDead", False):
-            self.lbl_ingame_alerta.setText(f"💀 MUERTO — Mira el mapa. Planea tu próximo movimiento. CS/min: {cs_min_actual:.1f}")
-            self.lbl_ingame_alerta.setVisible(True)
-        elif yo and d >= 6:
-            self.lbl_ingame_alerta.setText(f"⚠️ {d} MUERTES — Juega seguro, no obligues. Farmea bajo torre. CS/min: {cs_min_actual:.1f}")
-            self.lbl_ingame_alerta.setVisible(True)
-        elif yo and d >= 3 and k < 2:
-            self.lbl_ingame_alerta.setText(f"⚠️ Vas perdiendo — Juega seguro, espera a tu jungla. CS/min: {cs_min_actual:.1f}")
-            self.lbl_ingame_alerta.setVisible(True)
-        else:
-            self.lbl_ingame_alerta.setVisible(False)
-        
-        # ── Tabla de jugadores ──
-        self.tb_ingame.setRowCount(0)
-        for team_label, team_players, bg in [("🔵 ALIADOS", aliados, "#0f172a"), ("🔴 ENEMIGOS", enemigos, "#1a0a0f")]:
-            row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
-            hdr = QTableWidgetItem(team_label)
-            hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
-            f = hdr.font(); f.setBold(True); hdr.setFont(f)
-            self.tb_ingame.setItem(row, 0, hdr)
-            for c in range(1, 5):
-                e = QTableWidgetItem(""); e.setBackground(QColor(bg)); self.tb_ingame.setItem(row, c, e)
-            
-            for j in team_players:
-                cname = j.get("championName", "?") or "?"
-                k = j.get("kills", 0) or 0
-                d = j.get("deaths", 0) or 0
-                a = j.get("assists", 0) or 0
-                cs = j.get("creepScore", 0) or 0
-                
-                # WR desde BD
-                try:
-                    wr, _, _, _ = self._stats_jugador_champ(cname)
-                except:
-                    wr = "--"
-                
-                # Nivel de peligro
-                peligro = ""
-                color_peligro = "#94a3b8"
-                if j in enemigos:
-                    kda_rat = (k + a) / max(1, d)
-                    if k >= 5 or kda_rat >= 4.0:
-                        peligro = "💀 MUY ALTO"
-                        color_peligro = RED_WR
-                    elif k >= 3 or kda_rat >= 2.5:
-                        peligro = "⚠️ Alto"
-                        color_peligro = YELLOW_WR
-                    elif kda_rat < 1.0 and d >= 3:
-                        peligro = "🟢 Débil"
-                        color_peligro = GREEN_WR
-                    else:
-                        peligro = "—"
-                
-                row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
-                item_c = QTableWidgetItem(f"  {cname}")
-                icon_p = self.descargar_imagen(cname, "champ")
-                if icon_p: item_c.setIcon(QIcon(icon_p))
-                self.tb_ingame.setItem(row, 0, item_c)
-                item_kda = QTableWidgetItem(f"{k}/{d}/{a}")
-                if k + d + a > 0:
-                    kv = (k + a) / max(1, d)
-                    item_kda.setForeground(QColor(GREEN_WR if kv >= 3 else YELLOW_WR if kv >= 1.5 else RED_WR))
-                self.tb_ingame.setItem(row, 1, item_kda)
-                item_cs = QTableWidgetItem(str(cs))
-                item_cs.setForeground(QColor(ACCENT_TEAL))
-                self.tb_ingame.setItem(row, 2, item_cs)
-                item_wr = QTableWidgetItem(wr)
-                if wr != "--":
-                    try:
-                        wv = int(wr.replace("%",""))
-                        item_wr.setForeground(QColor(GREEN_WR if wv >= 50 else RED_WR))
-                    except: pass
-                self.tb_ingame.setItem(row, 3, item_wr)
-                item_threat = QTableWidgetItem(peligro)
-                item_threat.setForeground(QColor(color_peligro))
-                self.tb_ingame.setItem(row, 4, item_threat)
-        
-        # Composición
-        a_nombres = [j.get("championName","") for j in aliados if j.get("championName")]
-        e_nombres = [j.get("championName","") for j in enemigos if j.get("championName")]
-        if len(a_nombres) >= 3 and len(e_nombres) >= 3:
-            try:
-                ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
-                ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
-                self.lbl_ingame_comp.setText(f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)")
-            except:
-                self.lbl_ingame_comp.setText("")
-
-    def _renderizar_ingame_lcu_v2(self, jugadores):
-        """Fallback con datos LCU (sin KDA en vivo)."""
-        self.lbl_ingame_status.setVisible(False)
-        self.pnl_postgame.setVisible(False)
-        self.pnl_ingame_dash.setVisible(True)
-        self.tb_ingame.setVisible(True)
-        
-        # Cachear para post-game
-        self._last_lcu_players = jugadores
-        
-        aliados = [j for j in jugadores if j.get("team") == "ORDER"]
-        enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
-        
-        # Usar el matcher robusto
-        yo = self._encontrar_mi_jugador(jugadores)
-        
-        # Dashboard básico
-        self.lbl_ingame_yo.setText("🔥 Tú: (sin datos en vivo)")
-        self.lbl_kda_k.setText("-"); self.lbl_kda_d.setText("-"); self.lbl_kda_a.setText("-")
-        self.lbl_kda_cs.setText("CS: --")
-        self.lbl_ingame_timer.setText("--:--")
-        self.lbl_ingame_alerta.setVisible(False)
-        
-        self.tb_ingame.setRowCount(0)
-        for team_label, team_players, bg in [("🔵 ALIADOS", aliados, "#0f172a"), ("🔴 ENEMIGOS", enemigos, "#1a0a0f")]:
-            row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
-            hdr = QTableWidgetItem(team_label)
-            hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
-            f = hdr.font(); f.setBold(True); hdr.setFont(f)
-            self.tb_ingame.setItem(row, 0, hdr)
-            for c in range(1, 5):
-                e = QTableWidgetItem(""); e.setBackground(QColor(bg)); self.tb_ingame.setItem(row, c, e)
-            
-            for j in team_players:
-                cid = int(j.get("championId", 0))
-                cname = self.procesar_nombre_champ(str(cid), "0") or "?"
-                try:
-                    wr, _, _, _ = self._stats_jugador_champ(cname)
-                except:
-                    wr = "--"
-                
-                row = self.tb_ingame.rowCount(); self.tb_ingame.insertRow(row)
-                item_c = QTableWidgetItem(f"  {cname}")
-                icon_p = self.descargar_imagen(cname, "champ")
-                if icon_p: item_c.setIcon(QIcon(icon_p))
-                self.tb_ingame.setItem(row, 0, item_c)
-                self.tb_ingame.setItem(row, 1, QTableWidgetItem("--/--/--"))
-                self.tb_ingame.setItem(row, 2, QTableWidgetItem("--"))
-                item_wr = QTableWidgetItem(wr)
-                if wr != "--":
-                    try:
-                        wv = int(wr.replace("%",""))
-                        item_wr.setForeground(QColor(GREEN_WR if wv >= 50 else RED_WR))
-                    except: pass
-                self.tb_ingame.setItem(row, 3, item_wr)
-                self.tb_ingame.setItem(row, 4, QTableWidgetItem(""))
-        
-        a_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in aliados if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
-        e_nombres = [self.procesar_nombre_champ(str(j.get("championId",0)),"0") for j in enemigos if self.procesar_nombre_champ(str(j.get("championId",0)),"0")]
-        if len(a_nombres) >= 3 and len(e_nombres) >= 3:
-            try:
-                ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
-                ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
-                self.lbl_ingame_comp.setText(f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)")
-            except:
-                self.lbl_ingame_comp.setText("")
-
-    # ═══════════════════════════════════════════════════════════
-    # UTILIDAD: ENCONTRAR MI JUGADOR (NAME MATCHING ROBUSTO)
-    # ═══════════════════════════════════════════════════════════
-
-    def _encontrar_mi_jugador(self, jugadores):
-        """Busca al jugador local entre los datos de LiveClient usando múltiples
-        estrategias de matching porque LCU usa displayName/gameName y LiveClient
-        usa summonerName — y pueden diferir (ej: Riot ID vs legacy summoner name)."""
-        if not jugadores:
-            return None
-        
-        mi_nombre_raw = self.lcu.obtener_nombre_invocador()
-        if not mi_nombre_raw:
-            return None
-        
-        # Estrategia 0: quitar tagline (#XXX) si tiene
-        mi_nombre = mi_nombre_raw.split("#")[0].strip()
-        
-        # Recoger todos los nombres del LiveClient para debug
-        nombres_live = [j.get("summonerName", "") for j in jugadores]
-        
-        # Estrategia 1: exact match
-        for j in jugadores:
-            sn = j.get("summonerName", "")
-            if sn == mi_nombre or sn == mi_nombre_raw:
-                self._last_matched_summoner_name = sn
-                return j
-        
-        # Estrategia 2: case-insensitive
-        mi_lower = mi_nombre.lower()
-        for j in jugadores:
-            sn = j.get("summonerName", "").lower()
-            if sn == mi_lower or sn == mi_nombre_raw.lower():
-                self._last_matched_summoner_name = j.get("summonerName", "")
-                return j
-        
-        # Estrategia 3: ¿mi_nombre contiene al summonerName o viceversa?
-        for j in jugadores:
-            sn = j.get("summonerName", "")
-            if sn and (mi_nombre in sn or sn in mi_nombre):
-                self._last_matched_summoner_name = sn
-                return j
-        
-        # Estrategia 4: intentar con el displayName completo de perfil
-        if hasattr(self, 'perfil_data') and self.perfil_data:
-            display = self.perfil_data.get("displayName", "")
-            if display and display != mi_nombre_raw:
-                for j in jugadores:
-                    if j.get("summonerName", "") == display:
-                        return j
-        
-        # Estrategia 5: último recurso — si ya encontré antes, usar cache
-        if hasattr(self, '_last_matched_summoner_name'):
-            for j in jugadores:
-                if j.get("summonerName", "") == self._last_matched_summoner_name:
-                    return j
-        
-        print(f"[_encontrar_mi_jugador] No match: LCU='{mi_nombre_raw}' vs LiveClient={nombres_live}")
-        return None
-
-    # ═══════════════════════════════════════════════════════════
-    # POST-GAME ANALYSIS
-    # ═══════════════════════════════════════════════════════════
-
-    def _mostrar_postgame(self):
-        """Analiza la partida terminada y muestra consejos de mejora.
-        Usa datos cacheados de la partida (LiveClient se desconecta al terminar)."""
-        self.lbl_ingame_status.setVisible(False)
-        self.tb_ingame.setVisible(True)
-        self.pnl_ingame_dash.setVisible(False)
-        self.pnl_postgame.setVisible(True)
-        
-        # Intentar LiveClient (probablemente ya no disponible)
-        jugadores, game_info = self.lcu.obtener_liveclient_data()
-        
-        # Si LiveClient ya murió, usar datos cacheados de la última actualización en vivo
-        if (not jugadores or len(jugadores) < 2):
-            if hasattr(self, '_last_liveclient_players') and self._last_liveclient_players:
-                jugadores = self._last_liveclient_players
-                if hasattr(self, '_last_liveclient_game_info') and self._last_liveclient_game_info:
-                    game_info = self._last_liveclient_game_info
-                print("[PostGame] Usando datos cacheados del LiveClient")
-        
-        # Si aún no hay datos, intentar LCU
-        if not jugadores or len(jugadores) < 2:
-            jugadores_lcu = self.lcu.obtener_summoners_partida()
-            if jugadores_lcu and len(jugadores_lcu) >= 2:
-                self._renderizar_postgame_basico(jugadores_lcu)
-                return
-            # Último recurso: datos cacheados de LCU
-            if hasattr(self, '_last_lcu_players') and self._last_lcu_players:
-                self._renderizar_postgame_basico(self._last_lcu_players)
-                return
-            self.lbl_postgame_content.setText("<p style='color:#94a3b8;'>Esperando datos de la partida...</p>")
-            return
-        
-        yo = self._encontrar_mi_jugador(jugadores)
-        
-        if not yo:
-            # Si no encontramos al jugador, mostrar resumen básico
-            aliados_raw = [j for j in jugadores if j.get("team") == "ORDER"]
-            enemigos_raw = [j for j in jugadores if j.get("team") == "CHAOS"]
-            self.lbl_postgame_content.setText(
-                f"<p style='color:#cbd5e1;'>Partida finalizada. No se pudo identificar tu campeón automáticamente.</p>"
-                f"<p style='color:#64748b;font-size:11px;'>{len(aliados_raw)} aliados vs {len(enemigos_raw)} enemigos</p>"
-            )
-            return
-        
-        cname = yo.get("championName", "Desconocido")
-        k = yo.get("kills", 0) or 0
-        d = yo.get("deaths", 0) or 0
-        a = yo.get("assists", 0) or 0
-        cs = yo.get("creepScore", 0) or 0
-        game_time = game_info.get("gameTime", 1800) if isinstance(game_info, dict) else 1800
-        cs_min = cs / (game_time / 60) if game_time > 0 else 0
-        kda = (k + a) / max(1, d)
-        
-        # ── Determinar resultado ──
-        aliados = [j for j in jugadores if j.get("team") == "ORDER"]
-        enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
-        
-        # ── Generar análisis ──
-        consejos = []
-        
-        # CS
-        if cs_min < 4:
-            consejos.append(f"🔴 <b>Farmeo crítico: {cs_min:.1f} CS/min</b>. Cada 15 CS perdidos ≈ 1 kill que regalas. Practica last-hitting 10 min diarios en Practice Tool.")
-        elif cs_min < 6:
-            consejos.append(f"🟡 <b>Farmeo mejorable: {cs_min:.1f} CS/min</b>. El CS es oro seguro, las kills no. Prioriza no perder súbditos sobre tradear.")
-        else:
-            consejos.append(f"🟢 <b>Buen farmeo: {cs_min:.1f} CS/min</b>. Sigue así. Traduce esa ventaja de oro en presión de mapa.")
-        
-        # Muertes
-        if d >= 8:
-            consejos.append(f"🔴 <b>{d} muertes es demasiado.</b> Cada muerte son 300g para el enemigo + experiencia perdida. Wardea antes de pushear y mira el minimapa cada 5s.")
-        elif d >= 5:
-            consejos.append(f"🟡 <b>{d} muertes.</b> Intenta mantenerlas por debajo de 4. Pregúntate: \"¿Estoy overextended?\" antes de cada jugada.")
-        else:
-            consejos.append(f"🟢 <b>Solo {d} muertes.</b> Buen control de mapa. Cada muerte evitada es oro que mantienes en tu equipo.")
-        
-        # KDA
-        if kda >= 4:
-            consejos.append(f"🔥 <b>KDA {kda:.1f}</b> — Alto impacto. Buen trabajo leyendo las teamfights.")
-        elif kda >= 2:
-            consejos.append(f"⚖️ <b>KDA {kda:.1f}</b> — Rendimiento sólido. Busca más oportunidades de impacto.")
-        else:
-            consejos.append(f"⚠️ <b>KDA {kda:.1f}</b> — Necesitas morir menos. Si mueres mucho en early, cambia tu estilo a más seguro.")
-        
-        # Participación en kills
-        team_total_kills = sum(j.get("kills", 0) or 0 for j in aliados) + sum(j.get("kills", 0) or 0 for j in enemigos)
-        my_kill_participation = (k + a) / max(1, team_total_kills) if team_total_kills > 0 else 0
-        if my_kill_participation < 0.2 and my_kill_participation > 0:
-            consejos.append(f"💡 <b>Participación baja: {my_kill_participation:.0%}</b>. Rotea más a peleas de equipo. No te aísles.")
-        elif my_kill_participation > 0.5:
-            consejos.append(f"🏆 <b>Participación alta: {my_kill_participation:.0%}</b>. Estuviste en todas las peleas importantes.")
-        
-        # Comparación con medias del campeón
-        comparacion = ""
-        conn = obtener_conexion()
-        cur = conn.cursor()
-        cur.execute("SELECT AVG(kills), AVG(deaths), AVG(assists), COUNT(*) FROM participantes WHERE champion=?", (cname,))
-        row = cur.fetchone()
-        if row and row[0] is not None and row[3] > 10:
-            avg_k, avg_d, avg_a, total = row[0], row[1], row[2], row[3]
-            avg_kda_val = (avg_k + avg_a) / max(1, avg_d)
-            diff_k = k - avg_k
-            diff_d = d - avg_d
-            diff_a = a - avg_a
-            comparacion = f"""
-            <div style='margin:8px 0 0 0;padding:8px;background-color:#0f172a;border-left:2px solid {ACCENT_RED};border-radius:4px;'>
-            <p style='color:#64748b;font-size:11px;margin:0 0 4px 0;'>
-            📊 <b>Media de {cname}</b> en {total} partidas: {avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f} KDA ({avg_kda_val:.1f})
-            </p>
-            <p style='color:#8fa3b8;font-size:11px;margin:0;'>
-            {"✅ Mataste " + f"{diff_k:.1f}" + " más que el promedio" if diff_k > 0 else "❌ Mataste " + f"{abs(diff_k):.1f}" + " menos que el promedio"} · 
-            {"✅ Moriste " + f"{abs(diff_d):.1f}" + " menos" if diff_d < 0 else "❌ Moriste " + f"{diff_d:.1f}" + " más"} · 
-            {"✅ " + f"{diff_a:.1f}" + " asistencias extra" if diff_a > 0 else "❌ " + f"{abs(diff_a):.1f}" + " asistencias menos"}
-            </p>
-            </div>"""
-        conn.close()
-        
-        html = f"""
-        <div style='font-family:Segoe UI,sans-serif;line-height:1.7;'>
-        <p style='font-size:18px;color:#f1f5f9;margin:0 0 2px 0;'><b>📊 {cname}</b> — {k}/{d}/{a} — {cs} CS ({cs_min:.1f}/min)</p>
-        <p style='font-size:12px;color:#94a3b8;margin:0 0 6px 0;'>⏱️ {game_time//60}:{game_time%60:02d} · KDA {kda:.1f} · Participación: {my_kill_participation:.0%}</p>
-        {comparacion}
-        <hr style='border:none;border-top:1px solid #1e293b;margin:6px 0;'>
-        <p style='font-size:14px;color:#e63946;margin:0 0 4px 0;'><b>🎯 Coach recomienda:</b></p>
-        {''.join(f'<p style="font-size:12px;color:#cbd5e1;margin:3px 0;">{c}</p>' for c in consejos[:5])}
-        <p style='font-size:11px;color:#64748b;margin:8px 0 0 0;font-style:italic;'>💡 Elige UN solo aspecto para mejorar en tu próxima partida. El crecimiento es progresivo, no instantáneo.</p>
-        <p style='font-size:10px;color:#475569;margin:2px 0 0 0;'>✨ "No se trata de ganar siempre, se trata de aprender siempre."</p>
-        </div>"""
-        
-        self.lbl_postgame_content.setText(html)
-        self.lbl_ingame_comp.setText(f"⏱️ Partida terminada — {game_time//60}:{game_time%60:02d}")
-        
-        # Guardar ID para no repetir análisis
-        self._postgame_shown_for = self._last_game_id
-
-    def _renderizar_postgame_basico(self, jugadores_lcu):
-        """Post-game con datos LCU (sin KDA)."""
-        self.pnl_postgame.setVisible(True)
-        aliados = [j for j in jugadores_lcu if j.get("team") == "ORDER"]
-        enemigos = [j for j in jugadores_lcu if j.get("team") == "CHAOS"]
-        
-        # Buscar mi campeón con nombre robusto
-        yo = self._encontrar_mi_jugador(jugadores_lcu)
-        if yo:
-            mi_champ = yo.get("championName") or self.procesar_nombre_champ(str(yo.get("championId", 0)), "0") or "?"
-        else:
-            mi_champ = "?"
-        
-        html = f"""
-        <div style='font-family:Segoe UI,sans-serif;line-height:1.7;'>
-        <p style='font-size:18px;color:#f1f5f9;margin:0 0 8px 0;'><b>📊 Partida finalizada</b></p>
-        <p style='font-size:13px;color:#cbd5e1;margin:0 0 4px 0;'>Jugaste <b style='color:#f59e0b;'>{mi_champ}</b> — {len(aliados)} aliados vs {len(enemigos)} enemigos</p>
-        <p style='font-size:11px;color:#64748b;margin:8px 0 0 0;'>
-        💡 <b>Tip:</b> Para ver análisis post-partida con KDA, CS/min y comparativas, necesitas estar en la partida con la app abierta. Los datos del puerto 2999 solo están disponibles durante la partida en vivo.</p>
-        </div>"""
-        self.lbl_postgame_content.setText(html)
-        self._postgame_shown_for = self._last_game_id
-
-    def _stats_jugador_champ(self, champion):
-        """Devuelve (WR, KDA, racha, total_partidas) para un campeon desde la BD local."""
-        try:
-            conn = obtener_conexion()
-            cur = conn.cursor()
-            # WR
-            cur.execute("SELECT COUNT(*), SUM(win) FROM participantes WHERE champion=? AND win IS NOT NULL", (champion,))
-            row = cur.fetchone()
-            total = row[0] or 0
-            wins = row[1] or 0
-            wr = f"{round(wins*100/total, 1)}%" if total > 0 else "--"
-            # KDA
-            cur.execute("SELECT AVG(kills), AVG(deaths), AVG(assists) FROM participantes WHERE champion=? AND kills IS NOT NULL", (champion,))
-            row = cur.fetchone()
-            if row and row[0] is not None:
-                kda = round((row[0] + row[2]) / max(1, row[1]), 1) if row[1] else 0
-                kda_str = f"{kda:.1f}"
-            else:
-                kda_str = "--"
-            # Racha: ultimas 5 partidas ordenadas por fecha
-            cur.execute("""SELECT p.win FROM participantes p JOIN matches m ON p.match_id=m.match_id 
-                          WHERE p.champion=? ORDER BY m.fecha_descarga DESC LIMIT 5""", (champion,))
-            wins_list = [r[0] for r in cur.fetchall()]
-            if wins_list:
-                consec_w = 0; consec_l = 0
-                for w in wins_list:
-                    if w: consec_w += 1
-                    else: break
-                for w in wins_list:
-                    if not w: consec_l += 1
-                    else: break
-                if consec_w >= 3: streak = f"🔥 {consec_w}V"
-                elif consec_l >= 3: streak = f"❄️ {consec_l}D"
-                else: streak = f"{sum(wins_list)}V/{len(wins_list)-sum(wins_list)}D"
-            else:
-                streak = "--"
-            conn.close()
-            return wr, kda_str, streak, total
-        except:
-            return "--", "--", "--", 0
-
-    def _fatiga_jugador(self, kills, deaths, assists, streak_text):
-        """Analiza fatiga por jugador combinando KDA actual y racha historica.
-        Retorna (emoji, tooltip)."""
-        kda = (kills + assists) / max(1, deaths)
-        is_feeding = deaths >= 5 and kda < 1.0
-        is_losing_streak = "❄️" in streak_text
-        is_winning = "🔥" in streak_text
-        
-        if is_feeding:
-            return "💢", "Tilteado: está feedeando (muchas muertes, bajo impacto)"
-        elif is_losing_streak and kda < 1.5:
-            return "🥱", "Cansado: racha de derrotas + KDA bajo"
-        elif deaths >= 4 and kda < 2.0:
-            return "🥱", "Posible fatiga: muertes elevadas esta partida"
-        elif is_winning or kda >= 4.0:
-            return "🔥", "Fresco: alto rendimiento, racha positiva"
-        elif kda >= 2.5:
-            return "⚖️", "Neutral: rendimiento estable"
-        else:
-            return "⚖️", "Neutral: sin datos suficientes"
-
-    def _power_spike_champ(self, champion):
-        """Devuelve info de power spike basada en niveles clave (conocimiento publico del juego, no viola TOS)."""
-        spikes = {
-            "Darius": "Nv.6 All-in", "Garen": "Nv.6 Ejecutar", "Riven": "Nv.3 Trade",
-            "Irelia": "Nv.2/Q full", "Fiora": "Nv.6 Duelo", "Jax": "Nv.6 Powerspike",
-            "Renekton": "Nv.3 Fury", "Sett": "Nv.3 W max", "Aatrox": "Nv.4 Q max",
-            "Camille": "Nv.6 R锁定", "Malphite": "Nv.6 R engage", "Ornn": "Nv.6 R team",
-            "Yasuo": "Nv.6 R combo", "Yone": "Nv.6 E+R", "Zed": "Nv.6 All-in",
-            "Akali": "Nv.6 R gap", "Katarina": "Nv.6 Reset", "Talon": "Nv.2 First blood",
-            "Fizz": "Nv.3 Trade", "Ekko": "Nv.6 R save", "Sylas": "Nv.6 R steal",
-            "Ahri": "Nv.6 R charm", "Lux": "Nv.6 R laser", "Syndra": "Nv.6 R burst",
-            "Kassadin": "Nv.16 Hyper", "Kayle": "Nv.16 Hyper", "Vladimir": "Nv.9 Teamfight",
-            "Jinx": "Nv.6 R global", "Draven": "Nv.2 Aggro", "Caitlyn": "Nv.6 R snipe",
-            "Vayne": "Nv.6 Invis", "KaiSa": "Nv.6/Evolve", "Ezreal": "Nv.6 R snipe",
-            "LeeSin": "Nv.6 R kick", "Elise": "Nv.3 Gank", "Nidalee": "Nv.3 Gank",
-            "Shaco": "Nv.3 Gank", "Evelynn": "Nv.6 Stealth", "Rengar": "Nv.6 R hunt",
-            "KhaZix": "Nv.6 Evolve", "Kayn": "Nv.6 Forma", "Nocturne": "Nv.6 R dive",
-            "Vi": "Nv.6 R lock", "JarvanIV": "Nv.6 R arena", "Sejuani": "Nv.6 R stun",
-            "Amumu": "Nv.6 R stun", "Zac": "Nv.6 R bounce", "Hecarim": "Nv.6 R fear",
-            "Leona": "Nv.2 Engage", "Nautilus": "Nv.2 Hook", "Thresh": "Nv.2 Hook",
-            "Blitzcrank": "Nv.2 Hook", "Pyke": "Nv.2 Hook", "Alistar": "Nv.2 W+Q",
-            "Rakan": "Nv.6 R charm", "Bard": "Nv.6 R save", "Lulu": "Nv.6 R save",
-            "Soraka": "Nv.6 R global", "Janna": "Nv.6 R heal", "Nami": "Nv.6 R wave",
-        }
-        return spikes.get(champion, f"Nv.6 Spike")
-
     def _dificultad_stars(self, champion):
-        """Devuelve estrellas de dificultad (1-3) basadas en tags del campeon.
-        Sanitiza el nombre usando mapeos internos para garantizar coincidencia con claves de BD."""
+        """Devuelve estrellas de dificultad (1-3) basadas en tags del campeon."""
         try:
-            # Sanitizar: quitar espacios, apostrofes, puntos
             champ_key = champion.replace(" ", "").replace("'", "").replace(".", "").replace("&", "")
-            # Usar mapeo interno si existe (ej: "MaestroYi" -> "MasterYi")
             champ_key = self.nombre_interno.get(champ_key, champ_key)
-            # Intentar con el nombre sanitizado
             tag = obtener_tag(champ_key)
             d = tag.get("difficulty", 2)
             return "⭐" * d
@@ -4672,52 +4976,6 @@ class LoLRecommenderApp(QMainWindow):
         if self.user_settings.get("mostrar_dificultad", True):
             return f"{nombre} {self._dificultad_stars(champion)}"
         return nombre
-
-    def _tooltip_size(self):
-        """Tamano de tooltip segun setting tooltips_grandes."""
-        return 55 if self.user_settings.get("tooltips_grandes", False) else 35
-
-    def _tips_principiante(self, champion):
-        """Devuelve consejos basicos para jugadores nuevos que no conocen al campeon."""
-        tips = {
-            "Garen": "Gira y cura. Facil, aguanta mucho.",
-            "Darius": "Cuidado con su pasiva de sangrado. No pelees cuerpo a cuerpo.",
-            "Malphite": "Su R aturde en area. Sepárate de tu equipo.",
-            "Yasuo": "Esquiva su Q (tornado). No pelees entre súbditos.",
-            "Zed": "Cuidado nivel 6. Su R ejecuta. Compra Zhonyas si eres AP.",
-            "Katarina": "No te pares sobre sus dagas. Cancela su R con CC.",
-            "Blitzcrank": "Escóndete detrás de súbditos. Su Q es un gancho.",
-            "Lux": "Esquiva su Q (raíz). Si te atrapa, usa su R.",
-            "MasterYi": "No puede ser ralentizado en R. Necesitas CC fuerte.",
-            "Teemo": "Compra lentes de visión (oráculo) para sus hongos.",
-            "Shaco": "Cuidado con sus cajas en arbustos. El original ataca mas fuerte.",
-            "Evelynn": "Invisible nivel 6. Wardea su jungla, no tu línea.",
-            "Leona": "Mucho CC. Si te engancha, estás muerto. Mantén distancia.",
-            "Morgana": "Su E bloquea CC. Rompe el escudo antes de enganchar.",
-        }
-        return tips.get(champion, "")
-
-    def _actualizar_recordatorios(self):
-        """Muestra recordatorios utiles durante la partida basados en tiempo (no viola TOS)."""
-        if not self.user_settings.get("recordatorios_partida", True):
-            self.pnl_recordatorios.setVisible(False)
-            return
-        self.pnl_recordatorios.setVisible(True)
-        clear_layout(self.fr_recordatorios)
-        recordatorios = [
-            "🛡️ Wardea el río a los 2:30 (posible gank)",
-            "👢 No olvides comprar botas antes del minuto 8-10",
-            "🐉 Primer dragón ~5:00. Ayuda a tu jungla con visión",
-            "📊 Mira el mapa cada 5 segundos (minimapa)",
-            "⚠️ Si no ves al jungla enemigo, asume que viene a tu línea",
-            "💀 Si vas 0-2, juega seguro bajo torre y farmea",
-            "🧊 ¿Perdiste 2 seguidas? Corta el bloque. Descansa y vuelve fresco.",
-            "🦾 Esta partida: enfócate en UNA sola habilidad a la vez.",
-        ]
-        for r in recordatorios:
-            lbl = QLabel(r)
-            lbl.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 8px;")
-            self.fr_recordatorios.addWidget(lbl)
 
     def _actualizar_analisis_pro(self, aliados, enemigos):
         """Genera analisis macro avanzado: win conditions, objetivos, sinergias, itemizacion."""
@@ -4876,12 +5134,25 @@ class LoLRecommenderApp(QMainWindow):
         """Hilo secundario: ejecuta todas las queries de Meta Builds."""
         try:
             resultados = obtener_counters(rol_api, enemigo, min_partidas=20)
-            self.meta_builds_listo.emit(resultados, rol_api, enemigo)
+            builds_data = {}
+            conn = obtener_conexion()
+            for champ, winrate, partidas in resultados:
+                if winrate <= 50:
+                    continue
+                ids_start, ids_fin = obtener_top_items(champ, rol_api, enemigos=[enemigo], conn=conn)
+                builds_data[champ] = {
+                    "starters": ids_start,
+                    "finales": ids_fin,
+                    "runas": obtener_top_runas(champ, rol_api, conn=conn),
+                    "spells": obtener_top_hechizos(champ, rol_api, conn=conn)
+                }
+            conn.close()
+            self.meta_builds_listo.emit(resultados, builds_data, rol_api, enemigo)
         except Exception as e:
             print(f"[MetaBuilds] Error: {e}")
-            self.meta_builds_listo.emit([], rol_api, enemigo)
+            self.meta_builds_listo.emit([], {}, rol_api, enemigo)
 
-    def _on_meta_builds_listo(self, resultados, rol_api, enemigo):
+    def _on_meta_builds_listo(self, resultados, builds_data, rol_api, enemigo):
         """Hilo principal: pinta la tabla con los resultados ya calculados."""
         self._cargando_meta = False
         self.builds_actuales.clear()
@@ -4892,16 +5163,12 @@ class LoLRecommenderApp(QMainWindow):
             QMessageBox.information(self, "Aviso", "Datos insuficientes. Ajusta tus filtros.")
             return
 
+        self.builds_actuales = builds_data
+
+        self.tree_counters.blockSignals(True)
         for champ, winrate, partidas in resultados:
             if winrate <= 50:
                 continue
-            ids_start, ids_fin = obtener_top_items(champ, rol_api, enemigos=[enemigo])
-            self.builds_actuales[champ] = {
-                "starters": ids_start,
-                "finales": ids_fin,
-                "runas": obtener_top_runas(champ, rol_api),
-                "spells": obtener_top_hechizos(champ, rol_api)
-            }
             row = self.tree_counters.rowCount()
             self.tree_counters.insertRow(row)
             item_champ = QTableWidgetItem(f"  {champ}")
@@ -4916,6 +5183,7 @@ class LoLRecommenderApp(QMainWindow):
             self.tree_counters.setItem(row, 0, item_champ)
             self.tree_counters.setItem(row, 1, item_wr)
             self.tree_counters.setItem(row, 2, QTableWidgetItem(str(partidas)))
+        self.tree_counters.blockSignals(False)
 
     def mostrar_build_visual(self):
         filas = self.tree_counters.selectedItems()
@@ -5345,6 +5613,7 @@ class LoLRecommenderApp(QMainWindow):
             item_champ = QTableWidgetItem(f"  {champ}")
             icon_path = self.descargar_imagen(champ, "champ")
             if icon_path: item_champ.setIcon(QIcon(icon_path))
+            item_champ.setToolTip(f"🚫 {champ}\n📊 Frecuencia de pick: {banrate}%\n📋 {partidas} partidas analizadas")
             
             item_ban = QTableWidgetItem(f"{banrate}%")
             item_ban.setForeground(QColor(RED_WR))

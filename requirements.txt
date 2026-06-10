@@ -9,3 +9,4 @@ keyboard>=0.13.5
 pywin32>=306
 gdown>=5.1.0
 urllib3>=2.0.0
+pypresence>=4.0.0

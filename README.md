@@ -65,14 +65,35 @@ python app.py
 | Ctrl+Shift+H | Mostrar/ocultar overlay |
 | Ctrl+Shift+G | Ir a IN-GAME (global) |
 
-## v2.1 — Correcciones de rendimiento y bugs (Junio 2026)
+## v2.2 — Auditoria + Nuevas Features (Junio 2026)
 
-- **Bug fix:** Jugadores duplicados en `obtener_summoners_partida` (teamTwo se concatenaba 2 veces)
-- **Rendimiento:** 1 conexion SQLite compartida por poll en lugar de 1 por jugador
-- **Rendimiento:** Cache en memoria para `tags_campeones.json`
-- **DB:** Indice unico en `lp_history(fecha, queue_type)` para evitar duplicados
-- **Overlay:** Correccion de DPI scaling en monitores 4K con escalado
-- **Limpieza:** Codigo muerto eliminado en `recomendador.py`, `itemizador_dinamico.py`, `app.py`
+### 🔴 TIER 1 — Core
+- **Setup Wizard:** Primer arranque automatico con wizard grafico (pip, descarga, extraccion). 2 mirrors de descarga.
+- **Auto-Update Data Dragon:** Detecta nuevo parche y descarga datos automaticamente
+
+### 🟡 TIER 2 — UX
+- **Notificaciones de escritorio:** Toast al encontrar partida, empezar Champ Select, terminar partida
+- **Auto-aceptar partida:** Acepta el ReadyCheck automaticamente (configurable)
+- **Settings huérfanos arreglados:** Slider de frecuencia radar (500-3000ms), eliminados `overlay_auto`/`overlay_compacto` muertos
+
+### 🟢 TIER 3 — Features nuevas
+- **Historial de Drafts:** Guarda picks, bans, aliados, enemigos y WR predicho de cada draft. Tabla en Perfil.
+- **Discord Rich Presence:** Muestra en Discord la fase del juego (en cola, champ select, en partida)
+- **Tier List Personalizada:** Toggle Global/Personal en Tier List de Bans usando tu historial
+- **Sistema de Logros:** 15 logros (Primera Sangre, En Rachaaa, Bibliotecario, etc.) visibles en Perfil
+
+### ⚪ TIER 4 — Infraestructura
+- **Sistema de Logging:** RotatingFileHandler (2MB, 3 backups), archivo `nexus.log`
+- **Auto-Update App:** Checkea GitHub Releases y notifica si hay version nueva
+- **Tests:** 13 tests automatizados (13/13 pasan) cubriendo bugs criticos
+
+### 🔧 Fixes de la auditoria (v2.1)
+- Bug fix: jugadores duplicados en `obtener_summoners_partida`
+- Rendimiento: 1 conexion SQLite compartida por poll (~20 → ~2 conexiones/seg)
+- Rendimiento: cache en memoria para `tags_campeones.json`
+- DB: indice unico en `lp_history(fecha, queue_type)`
+- Overlay: DPI scaling en monitores 4K
+- Limpieza: codigo muerto eliminado, imports sin uso
 
 ## Notas
 

@@ -59,10 +59,11 @@ PARCHE_ACTUAL = "0.0"
 VERSION_COMPLETA = "0.0.0"
 
 MAX_WORKERS = 10       # 5 → 10: más workers aprovechan mejor el rate limit
-BATCH_SIZE = 20        # 10 → 20: lotes más grandes, menos overhead entre batches
+BATCH_SIZE = 5         # pequeño en días de parche (pocos IDs/jugador), aumentar a 20 en días normales
 CHECKPOINT_EVERY = 500
 RATE_LIMIT_RPS = 18
-COUNT_POR_JUGADOR = 20  # match IDs por PUUID query (era 10 → el doble con misma API call)
+COUNT_POR_JUGADOR = 100  # max permitido por Riot (mismo costo de API call que 20)
+PLAYER_FETCH_WORKERS = 5  # jugadores procesados en paralelo en el loop principal
 
 # Desactivar timeline: la API v5 incluye SIEMPRE los 6 slots de ítems en el match summary.
 # El timeline añadía 1 API call extra por partida (30-50% del total). Desactivar = 1.5-2× más rápido.
@@ -426,7 +427,7 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     PARCHE_ACTUAL, VERSION_COMPLETA = obtener_version_riot()
     start_time = epoch_medianoche_hoy()
     print(f"  📅 Parche activo: {PARCHE_ACTUAL} ({VERSION_COMPLETA})")
-    print(f"  ⏪ Filtrando SOLO partidas de HOY (medianoche UTC)")
+    print(f"  ⏪ Filtrando SOLO partidas de HOY (medianoche UTC) — parche activo")
     print(f"  🛡️ Rate Limiter: 20 req/s + 100 req/120s (Riot Dev Key)")
     print(f"  🎯 Meta: {meta:,} partidas  |  🧵 Workers: {MAX_WORKERS}  |  📦 Batch: {BATCH_SIZE}")
     tl_mode = "activo" if USAR_TIMELINE else "desactivado (2× más rápido)"
@@ -474,31 +475,43 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     buffer_match_ids = []
     last_checkpoint = total_descargadas
 
+    def _fetch_player_ids(puuid):
+        return procesar_jugador(puuid, start_time=start_time)
+
     try:
-        while total_descargadas < meta and cola.size() > 0:
-            puuid = cola.pop()
-            if not puuid: break
-            match_ids = procesar_jugador(puuid, start_time=start_time)
-            if not match_ids: continue
+        with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as player_pool:
+            while total_descargadas < meta and cola.size() > 0:
+                # Sacar hasta PLAYER_FETCH_WORKERS jugadores y buscar sus IDs en paralelo
+                puuids = []
+                for _ in range(PLAYER_FETCH_WORKERS):
+                    p = cola.pop()
+                    if p: puuids.append(p)
+                if not puuids: break
 
-            # Dedup O(1) contra el set en memoria (pre-cargado al inicio + actualizado en cada descarga)
-            for mid in match_ids:
-                if mid not in DASH.match_ids_seen:
-                    buffer_match_ids.append(mid)
+                futures_p = {player_pool.submit(_fetch_player_ids, p): p for p in puuids}
+                for fp in as_completed(futures_p):
+                    try:
+                        ids = fp.result()
+                        for mid in (ids or []):
+                            if mid not in DASH.match_ids_seen:
+                                buffer_match_ids.append(mid)
+                    except Exception:
+                        DASH.add_error()
 
-            while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
-                lote = buffer_match_ids[:BATCH_SIZE]
-                buffer_match_ids = buffer_match_ids[BATCH_SIZE:]
-                n = descargar_lote(lote)
-                total_descargadas += n
-                if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
-                    last_checkpoint = total_descargadas
-                    cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
-                print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="")
+                # Dedup O(1) contra el set en memoria (pre-cargado al inicio + actualizado en cada descarga)
+                while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
+                    lote = buffer_match_ids[:BATCH_SIZE]
+                    buffer_match_ids = buffer_match_ids[BATCH_SIZE:]
+                    n = descargar_lote(lote)
+                    total_descargadas += n
+                    if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
+                        last_checkpoint = total_descargadas
+                        cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
+                    print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="")
 
-            if cola.size() < 50 and total_descargadas < meta:
-                print(f"\n🔄 Re-sembrando cola ({cola.size()} pendientes)...")
-                sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // 3))
+                if cola.size() < 50 and total_descargadas < meta:
+                    print(f"\n🔄 Re-sembrando cola ({cola.size()} pendientes)...")
+                    sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // 3))
 
     except KeyboardInterrupt:
         print("\n\n⏸️  Pausado. Guardando checkpoint...")

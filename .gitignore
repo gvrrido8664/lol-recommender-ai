@@ -15,6 +15,14 @@ data/*.db-shm
 data/*.db-wal
 data/*.pkl
 data/*.json
+data/*.txt
+
+# Datos temporales de setup
+datos_iniciales.zip
+
+# Logs de la app
+*.log
+*.log.*
 
 # Configuracion local (API keys, preferencias de usuario)
 config.json
@@ -59,3 +67,4 @@ icono_app.ico
 
 # Version
 version.txt
+app_version.txt

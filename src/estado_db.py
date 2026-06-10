@@ -1,71 +1,158 @@
-from .db_manager import obtener_conexion
-import datetime
+"""
+Diagnóstico de la base de datos local de NEXUS Recommender.
+Uso: python -m src.estado_db
+"""
+import os
+from .db_manager import obtener_conexion, DB_PATH
+
+
+def _barra(valor: int, maximo: int, ancho: int = 20) -> str:
+    filled = int(ancho * min(valor / max(maximo, 1), 1.0))
+    return "█" * filled + "░" * (ancho - filled)
+
+
+def _pct_icon(pct: float) -> str:
+    return "✅" if pct >= 85 else "⚠️ " if pct >= 60 else "❌"
+
 
 def generar_reporte_completo():
     conn = obtener_conexion()
     cur = conn.cursor()
 
-    print("\n" + "="*50)
-    print("       📊 REPORTE ANALÍTICO DE LA BASE DE DATOS")
-    print("="*50)
+    SEP = "═" * 60
+    print(f"\n{SEP}")
+    print("  📊 ESTADO DE LA BD — NEXUS RECOMMENDER")
+    print(SEP)
 
-    # 1. ESTADÍSTICAS GENERALES
-    cur.execute("SELECT COUNT(*) FROM matches")
-    total_partidas = cur.fetchone()[0]
-    
-    cur.execute("SELECT COUNT(*) FROM participantes")
-    total_registros = cur.fetchone()[0]
+    # ── 1. RESUMEN GENERAL ──────────────────────────────────────
+    total_matches  = cur.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
+    total_parts    = cur.execute("SELECT COUNT(*) FROM participantes").fetchone()[0]
+    total_champs   = cur.execute("SELECT COUNT(DISTINCT champion) FROM participantes").fetchone()[0]
+    db_mb          = os.path.getsize(DB_PATH) / (1024 * 1024) if os.path.exists(DB_PATH) else 0
 
-    cur.execute("SELECT COUNT(DISTINCT champion) FROM participantes")
-    total_champs = cur.fetchone()[0]
+    print(f"\n💾 RESUMEN GENERAL")
+    print(f"  Tamaño  : {db_mb:.1f} MB")
+    print(f"  Partidas: {total_matches:,}  |  Registros: {total_parts:,}  |  Campeones: {total_champs}/168")
 
-    print(f"🏟️  Partidas totales:      {total_partidas}")
-    print(f"👥  Registros de jugadores: {total_registros}")
-    print(f"⚔️  Campeones únicos:      {total_champs}/168")
+    # ── 2. DISTRIBUCIÓN POR PARCHE ──────────────────────────────
+    parches = cur.execute("""
+        SELECT m.patch, COUNT(p.id) as n
+        FROM matches m
+        LEFT JOIN participantes p ON m.match_id = p.match_id
+        WHERE m.patch IS NOT NULL AND m.patch != ''
+        GROUP BY m.patch
+        ORDER BY n DESC
+        LIMIT 6
+    """).fetchall()
 
-    # 2. DISTRIBUCIÓN POR LÍNEA (Calidad del entrenamiento)
-    print("\n📍 COBERTURA POR POSICIÓN:")
-    cur.execute("""
-        SELECT team_position, COUNT(*) 
-        FROM participantes 
-        WHERE team_position != '' 
+    if parches:
+        print(f"\n📦 DISTRIBUCIÓN POR PARCHE")
+        max_p = parches[0]["n"] if parches else 1
+        for row in parches:
+            pct = row["n"] / max(total_parts, 1) * 100
+            bar = _barra(row["n"], max_p)
+            print(f"  {row['patch']:8}  {row['n']:6,} regs ({pct:5.1f}%)  |{bar}|")
+
+    # ── 3. CALIDAD DE DATOS ─────────────────────────────────────
+    con_items  = cur.execute(
+        "SELECT COUNT(*) FROM participantes "
+        "WHERE items IS NOT NULL AND items != '' AND items != '0,0,0,0,0,0,0'"
+    ).fetchone()[0]
+    con_runes  = cur.execute(
+        "SELECT COUNT(*) FROM participantes "
+        "WHERE runes IS NOT NULL AND runes != '' AND runes != 'null'"
+    ).fetchone()[0]
+    con_spells = cur.execute(
+        "SELECT COUNT(*) FROM participantes "
+        "WHERE spells IS NOT NULL AND spells != '' AND spells != 'null'"
+    ).fetchone()[0]
+    avg_wr     = cur.execute("SELECT ROUND(AVG(win) * 100, 1) FROM participantes").fetchone()[0] or 0
+    largas     = cur.execute("SELECT COUNT(*) FROM matches WHERE game_duration > 1500").fetchone()[0]
+
+    pi = con_items  / max(total_parts, 1) * 100
+    pr = con_runes  / max(total_parts, 1) * 100
+    ps = con_spells / max(total_parts, 1) * 100
+    pl = largas     / max(total_matches, 1) * 100
+    wr_ok = "✅" if 45 <= avg_wr <= 55 else "⚠️ "
+
+    print(f"\n🎯 CALIDAD DE DATOS")
+    print(f"  Ítems registrados   : {pi:5.1f}%  {_pct_icon(pi)}  ({con_items:,} registros)")
+    print(f"  Runas registradas   : {pr:5.1f}%  {_pct_icon(pr)}")
+    print(f"  Hechizos registrados: {ps:5.1f}%  {_pct_icon(ps)}")
+    print(f"  Win rate promedio   : {avg_wr}%  {wr_ok}  (sanity: debe ser ~50%)")
+    print(f"  Partidas >25 min    : {pl:5.1f}%  {_pct_icon(pl)}  ({largas:,} builds de 6 ítems)")
+
+    # ── 4. COBERTURA POR POSICIÓN ───────────────────────────────
+    posiciones = cur.execute("""
+        SELECT team_position, COUNT(*) as n
+        FROM participantes
+        WHERE team_position != ''
         GROUP BY team_position
-    """)
-    posiciones = cur.fetchall()
-    for pos, cant in posiciones:
-        # Cada partida tiene 2 jugadores por posición (aliado y enemigo)
-        progreso = min(100, (cant / 200) * 100) # 200 registros es buena base para una línea
-        barra = "█" * int(progreso / 10) + "░" * (10 - int(progreso / 10))
-        print(f"  {pos:8}: {cant:5} registros |{barra}| {progreso:.1f}%")
+        ORDER BY n DESC
+    """).fetchall()
 
-    # 3. TOP 5 CAMPEONES CON MÁS "INTELIGENCIA"
-    print("\n🏆 CAMPEONES CON MEJOR DATA (BUILD + IA):")
-    cur.execute("""
-        SELECT champion, COUNT(*) as cant, 
-               ROUND(AVG(win) * 100, 1) as wr
-        FROM participantes 
-        GROUP BY champion 
-        ORDER BY cant DESC 
-        LIMIT 5
-    """)
-    for i, fila in enumerate(cur.fetchall(), 1):
-        print(f"  {i}. {fila['champion']:12} | {fila['cant']:4} partidas | WR: {fila['wr']}%")
+    if posiciones:
+        print(f"\n📍 COBERTURA POR POSICIÓN")
+        max_pos = max(r["n"] for r in posiciones)
+        for row in posiciones:
+            bar = _barra(row["n"], max_pos)
+            print(f"  {row['team_position']:8}  {row['n']:6,}  |{bar}|")
 
-    # 4. SALUD DE LAS BUILDS (Partidas de larga duración)
-    # Buscamos partidas de más de 25 min donde es probable ver 6 ítems
-    cur.execute("SELECT COUNT(*) FROM matches WHERE game_duration > 1500")
-    partidas_largas = cur.fetchone()[0]
-    pct_largas = (partidas_largas / total_partidas * 100) if total_partidas > 0 else 0
-    
-    print(f"\n🧪 SALUD DE BUILDS COMPLETAS:")
-    print(f"  Partidas >25 min: {partidas_largas} ({pct_largas:.1f}%)")
-    if pct_largas < 20:
-        print("  ⚠️ Nota: Tienes pocas partidas largas. Las builds de 6 ítems podrían ser escasas.")
-    else:
-        print("  ✅ Tienes suficiente data para mostrar builds finales sólidas.")
+    # ── 5. READINESS DEL RECOMENDADOR ──────────────────────────
+    readiness = cur.execute("""
+        SELECT champion, COUNT(*) as n, ROUND(AVG(win)*100, 1) as wr
+        FROM participantes
+        GROUP BY champion
+        ORDER BY n DESC
+    """).fetchall()
 
-    print("="*50 + "\n")
+    excelente = sum(1 for r in readiness if r["n"] >= 100)
+    bueno     = sum(1 for r in readiness if 50 <= r["n"] < 100)
+    basico    = sum(1 for r in readiness if 20 <= r["n"] < 50)
+    insuf     = 168 - excelente - bueno - basico
+
+    print(f"\n🤖 RECOMENDADOR — READINESS ({total_champs}/168 campeones con datos)")
+    print(f"  🟢 Excelente  (100+ partidas): {excelente:3} campeones")
+    print(f"  🟡 Bueno      (50–99)        : {bueno:3} campeones")
+    print(f"  🟠 Básico     (20–49)        : {basico:3} campeones")
+    print(f"  🔴 Insuficiente (<20/sin data): {insuf:3} campeones")
+
+    if readiness:
+        print(f"\n  TOP 10 MEJOR CUBIERTOS:")
+        top_n = readiness[0]["n"]
+        for i, r in enumerate(readiness[:10], 1):
+            bar = _barra(r["n"], top_n, 15)
+            print(f"  {i:2}. {r['champion']:14}  {r['n']:4} partidas  WR: {r['wr']:5.1f}%  |{bar}|")
+
+    # ── 6. CAMPEONES CON DATOS INSUFICIENTES ────────────────────
+    pocos = [r for r in readiness if r["n"] < 20]
+    if pocos:
+        nombres = ", ".join(r["champion"] for r in pocos[:20])
+        extra   = f" (+{len(pocos) - 20} más)" if len(pocos) > 20 else ""
+        print(f"\n⚠️  CAMPEONES CON <20 PARTIDAS: {len(pocos)}")
+        print(f"  {nombres}{extra}")
+
+    # ── 7. ESTADO EMOCIONAL (si hay datos) ─────────────────────
+    try:
+        emocional = cur.execute("""
+            SELECT estado, COUNT(*) as n
+            FROM estado_emocional
+            GROUP BY estado
+            ORDER BY n DESC
+        """).fetchall()
+        total_em = sum(r["n"] for r in emocional)
+        if total_em > 0:
+            print(f"\n🧠 ESTADO EMOCIONAL ({total_em} registros)")
+            for row in emocional:
+                pct = row["n"] / total_em * 100
+                bar = _barra(row["n"], emocional[0]["n"])
+                print(f"  {row['estado']:12}  {row['n']:4}  ({pct:4.1f}%)  |{bar}|")
+    except Exception:
+        pass
+
+    print(f"\n{SEP}\n")
     conn.close()
+
 
 if __name__ == "__main__":
     generar_reporte_completo()

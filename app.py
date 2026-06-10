@@ -20,6 +20,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, Signal, QPointF
 from src.db_manager import DATA_DIR, obtener_conexion, inicializar_db
 from src.db_manager import etiquetar_estado_emocional, obtener_estado_emocional, obtener_estadisticas_emocionales
 from src.db_manager import registrar_lp, obtener_historial_lp
+from src.db_manager import guardar_draft, completar_draft_resultado, obtener_historial_drafts
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.tags_champions import obtener_tag, obtener_nivel_cc, es_soporte, obtener_dano, es_tanque
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol,
@@ -31,6 +32,13 @@ from src.analizador_fatiga import analizar_fatiga
 from src.perfil_jugador import analizar_personalidad, detectar_habitos, generar_objetivos_semanales, analizar_emocional_vs_wr
 from src.entrenador_ia import extraer_features_comparativas, interpretar_features
 from src.overlay import OverlayWindow
+from src.discord_rpc import iniciar_discord_rpc, detener_discord_rpc, actualizar_discord_rpc
+from src.logros import evaluar_logros, obtener_logros_conseguidos, LOGROS_DEFINICIONES
+from src.logger import init_logging, get_logger
+from src.updater import check_for_update, set_current_version
+
+init_logging()
+log = get_logger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -77,11 +85,11 @@ ruta_modelo = os.path.join(BASE_DIR, "data", "modelo_1v1.pkl")
 if os.path.exists(ruta_modelo):
     try:
         modelo_1v1 = joblib.load(ruta_modelo)
-        print(f"[App] Modelo 1v1 cargado: {len(modelo_1v1)} roles")
+        log.info("Modelo 1v1 cargado: %d roles", len(modelo_1v1))
     except Exception as e:
-        print(f"[App] Error cargando modelo 1v1: {e}")
+        log.warning("Error cargando modelo 1v1: %s", e)
 else:
-    print(f"[App] AVISO: No se encuentra {ruta_modelo}. El simulador 1v1 no funcionará.")
+    log.warning("No se encuentra %s. El simulador 1v1 no funcionara.", ruta_modelo)
 ITEMS_DICT = cargar_objetos()
 RUNAS_DICT = cargar_runas()
 SPELLS_DICT = cargar_hechizos()
@@ -446,6 +454,8 @@ DEFAULT_SETTINGS = {
     "auto_items": False,
     "auto_switch_radar": True,
     "overlay_ingame": False,
+    "notificaciones_escritorio": True,
+    "auto_aceptar": False,
 }
 
 CONFIG_DIR = _get_writable_dir()
@@ -615,7 +625,39 @@ class SettingsDialog(QDialog):
         self.cb_auto_switch.setToolTip("NEXUS cambiará a Radar en Vivo cuando detecte una sesión de draft.")
         g_comp.addWidget(self.cb_auto_switch)
 
-        # ── 6. EXTRAS ──
+        self.cb_auto_aceptar = QCheckBox("✅ Auto-aceptar partida (ReadyCheck)")
+        self.cb_auto_aceptar.setChecked(self.settings.get("auto_aceptar", False))
+        self.cb_auto_aceptar.setToolTip("Acepta automáticamente cuando salta la cola. ¡No te pierdas partidas!")
+        g_comp.addWidget(self.cb_auto_aceptar)
+
+        # Frecuencia del radar
+        freq_layout = QHBoxLayout()
+        freq_layout.addWidget(QLabel("Frecuencia del radar:"))
+        self.slider_freq = QSlider(Qt.Horizontal)
+        self.slider_freq.setRange(500, 3000)
+        self.slider_freq.setSingleStep(250)
+        self.slider_freq.setValue(self.settings.get("frecuencia_radar", 1500))
+        self.slider_freq.setToolTip("Cada cuántos ms se actualiza el Radar en Vivo.")
+        freq_layout.addWidget(self.slider_freq)
+        self.lbl_freq_val = QLabel(f"{self.slider_freq.value()}ms")
+        self.lbl_freq_val.setStyleSheet("color: #94a3b8; font-size: 11px; min-width: 50px;")
+        self.slider_freq.valueChanged.connect(lambda v: self.lbl_freq_val.setText(f"{v}ms"))
+        freq_layout.addWidget(self.lbl_freq_val)
+        g_comp.addLayout(freq_layout)
+
+        # ── 6. NOTIFICACIONES ──
+        g_notif = _seccion("🔔 NOTIFICACIONES")
+        self.cb_sonido = QCheckBox("🔔 Sonidos al conectar, encontrar partida o terminar")
+        self.cb_sonido.setChecked(self.settings.get("sonidos", False))
+        self.cb_sonido.setToolTip("Avisos sonoros para que sepas qué pasa sin mirar la app.")
+        g_notif.addWidget(self.cb_sonido)
+
+        self.cb_notificaciones = QCheckBox("💬 Notificaciones de escritorio (cola, draft, fin de partida)")
+        self.cb_notificaciones.setChecked(self.settings.get("notificaciones_escritorio", True))
+        self.cb_notificaciones.setToolTip("Muestra avisos emergentes de Windows en eventos clave.")
+        g_notif.addWidget(self.cb_notificaciones)
+
+        # ── 7. EXTRAS ──
         g_extra = _seccion("🎨 EXTRAS")
         self.cb_dificultad = QCheckBox("⭐ Estrellas de dificultad en campeones (Garen ⭐, Zed ⭐⭐⭐)")
         self.cb_dificultad.setChecked(self.settings.get("mostrar_dificultad", True))
@@ -625,10 +667,6 @@ class SettingsDialog(QDialog):
         self.cb_recordatorios.setChecked(self.settings.get("recordatorios_partida", True))
         self.cb_recordatorios.setToolTip("Consejos que aparecen durante la partida para no perder el foco.")
         g_extra.addWidget(self.cb_recordatorios)
-        self.cb_sonido = QCheckBox("🔔 Sonidos al conectar, encontrar partida o terminar")
-        self.cb_sonido.setChecked(self.settings.get("sonidos", False))
-        self.cb_sonido.setToolTip("Avisos sonoros para que sepas qué pasa sin mirar la app.")
-        g_extra.addWidget(self.cb_sonido)
 
         form.addStretch()
         scroll.setWidget(scroll_w)
@@ -643,7 +681,7 @@ class SettingsDialog(QDialog):
                 "mostrar_power_spikes": self._modo != "avanzado",
                 "mostrar_explicaciones": self._modo == "basico",
                 "sonidos": self.cb_sonido.isChecked(),
-                "frecuencia_radar": 1500,
+                "frecuencia_radar": self.slider_freq.value(),
                 "modo_principiante": self._modo == "basico",
                 "modo_profesional": self._modo == "avanzado",
                 "recordatorios_partida": self.cb_recordatorios.isChecked(),
@@ -655,7 +693,9 @@ class SettingsDialog(QDialog):
                 "auto_habilidades": self.cb_auto_habilidades.isChecked(),
                 "auto_items": self.cb_auto_items.isChecked(),
                 "auto_switch_radar": self.cb_auto_switch.isChecked(),
+                "auto_aceptar": self.cb_auto_aceptar.isChecked(),
                 "overlay_ingame": self.cb_overlay.isChecked(),
+                "notificaciones_escritorio": self.cb_notificaciones.isChecked(),
                 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -1687,6 +1727,60 @@ class LoLRecommenderApp(QMainWindow):
         self.overlay = OverlayWindow()
         self.overlay.closed.connect(lambda: None)
 
+        # Discord Rich Presence
+        QTimer.singleShot(3000, self._iniciar_discord_rpc)
+
+        QTimer.singleShot(2000, self._check_actualizaciones)
+        QTimer.singleShot(10000, self._check_app_update)
+
+    def _check_app_update(self):
+        try:
+            update = check_for_update()
+            if update and hasattr(self, 'tray_icon') and self.tray_icon:
+                self.tray_icon.showMessage(
+                    "NEXUS - Nueva version disponible",
+                    f"v{update['latest']} (actual: v{update['current']})\nVe a GitHub para descargarla.",
+                    QIcon(), 8000
+                )
+                log.info("Nueva version disponible: v%s", update['latest'])
+        except Exception as e:
+            log.warning("Error verificando actualizacion de app: %s", e)
+
+    def _iniciar_discord_rpc(self):
+        try:
+            iniciar_discord_rpc()
+            actualizar_discord_rpc(
+                details="En el cliente de LoL",
+                state="Menu principal",
+                large_text="League of Legends"
+            )
+        except Exception as e:
+            print(f"[DiscordRPC] Error iniciando: {e}")
+
+    def _check_actualizaciones(self):
+        try:
+            version_actual = obtener_version_actual()
+            version_path = os.path.join(DATA_DIR, "version_local.txt")
+            version_local = ""
+            if os.path.exists(version_path):
+                with open(version_path, "r", encoding="utf-8") as f:
+                    version_local = f.read().strip()
+
+            if version_actual != version_local:
+                log.info("Nuevo parche detectado: %s -> %s", version_local, version_actual)
+                from src.riot_api import actualizar_datos_riot
+                actualizar_datos_riot()
+                with open(version_path, "w", encoding="utf-8") as f:
+                    f.write(version_actual)
+                if hasattr(self, 'tray_icon') and self.tray_icon:
+                    self.tray_icon.showMessage(
+                        "NEXUS - Datos actualizados",
+                        f"Parche {version_actual} descargado.",
+                        QIcon(), 3000
+                    )
+        except Exception as e:
+            log.warning("Error verificando actualizaciones: %s", e)
+
     # ═══════════════════════════════════════════════════════════
     # SYSTEM TRAY
     # ═══════════════════════════════════════════════════════════
@@ -1735,6 +1829,10 @@ class LoLRecommenderApp(QMainWindow):
         self.tray_icon.hide()
         if hasattr(self, "overlay"):
             self.overlay.cleanup()
+        try:
+            detener_discord_rpc()
+        except Exception:
+            pass
         QApplication.quit()
 
     def closeEvent(self, event):
@@ -2769,7 +2867,35 @@ class LoLRecommenderApp(QMainWindow):
         hs_layout.addWidget(self.lbl_historial_vacio)
         
         self.col_hist.addWidget(self.historial_stack, 1)
-        
+
+        # Draft history section
+        lbl_dh = QLabel("HISTORIAL DE DRAFTS")
+        lbl_dh.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 13px; margin-top: 8px;")
+        self.col_hist.addWidget(lbl_dh)
+        self.tb_drafts = QTableWidget()
+        self.tb_drafts.setColumnCount(6)
+        self.tb_drafts.setHorizontalHeaderLabels(["Campeon", "Rol", "Aliados", "Enemigos", "WR Pred.", "Resultado"])
+        self.tb_drafts.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tb_drafts.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tb_drafts.setSelectionMode(QAbstractItemView.NoSelection)
+        self.tb_drafts.verticalHeader().setDefaultSectionSize(36)
+        self.tb_drafts.verticalHeader().setVisible(False)
+        self.tb_drafts.setMaximumHeight(200)
+        self.col_hist.addWidget(self.tb_drafts)
+
+        # Logros row
+        self.lbl_logros_title = QLabel("LOGROS")
+        self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 8px;")
+        self.col_hist.addWidget(self.lbl_logros_title)
+        self.fr_logros = QHBoxLayout()
+        self.fr_logros.setSpacing(4)
+        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus logros...")
+        self.lbl_logros_text.setStyleSheet("color: #64748b; font-size: 11px;")
+        self.lbl_logros_text.setWordWrap(True)
+        self.fr_logros.addWidget(self.lbl_logros_text)
+        self.fr_logros.addStretch()
+        self.col_hist.addLayout(self.fr_logros)
+
         self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)
         
         l_pnl.addLayout(self.col_hist, 65)
@@ -3424,6 +3550,12 @@ class LoLRecommenderApp(QMainWindow):
         # ─── FASE 4: COACHING PRO ───
         self._actualizar_coaching()
 
+        # ─── FASE 5: HISTORIAL DE DRAFTS ───
+        self._cargar_historial_drafts()
+
+        # ─── FASE 6: LOGROS ───
+        self._cargar_logros()
+
     def _actualizar_perfil_jugador(self):
         """Puebla el panel de PERFIL DE JUGADOR & OBJETIVOS con datos del historial."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
@@ -3964,8 +4096,65 @@ class LoLRecommenderApp(QMainWindow):
             self._actualizando_radar = True
             threading.Thread(target=self._fetch_radar, daemon=True).start()
         
-        # Auto-switch de pestañas segun fase del juego
+        # Auto-switch de pestañas segun fase del juego + notificaciones
         fase = self.lcu.obtener_fase_juego()
+        if fase != self._last_fase:
+            # Notificaciones de escritorio en transiciones de fase
+            if self.user_settings.get("notificaciones_escritorio", True) and hasattr(self, 'tray_icon') and self.tray_icon:
+                if fase == "ReadyCheck":
+                    self.tray_icon.showMessage("NEXUS", "Partida encontrada", QIcon(), 4000)
+                    self._reproducir_sonido("info")
+                elif fase == "ChampSelect":
+                    self.tray_icon.showMessage("NEXUS", "Champ Select iniciado", QIcon(), 4000)
+                elif fase == "PreEndOfGame":
+                    self.tray_icon.showMessage("NEXUS", "Partida terminada — Ver analisis", QIcon(), 4000)
+                    # Marcar ultimo draft como completado
+                    try:
+                        from datetime import date
+                        completar_draft_resultado(str(date.today()), None)
+                    except Exception as e:
+                        print(f"[DraftHistory] Error completando draft: {e}")
+
+            # Auto-aceptar partida
+            if fase == "ReadyCheck" and self.user_settings.get("auto_aceptar", False):
+                try:
+                    self.lcu.request('POST', '/lol-matchmaking/v1/ready-check/accept')
+                    if hasattr(self, 'tray_icon') and self.tray_icon:
+                        self.tray_icon.showMessage("NEXUS", "Partida aceptada automaticamente", QIcon(), 3000)
+                except Exception as e:
+                    log.warning("Auto-aceptar fallo: %s", e)
+
+            self._last_fase = fase
+
+            # Actualizar Discord Rich Presence
+            try:
+                if fase in ("GameStart", "InProgress"):
+                    actualizar_discord_rpc(
+                        details="En partida",
+                        state="League of Legends - SoloQ",
+                        large_text="Jugando"
+                    )
+                elif fase == "ChampSelect":
+                    actualizar_discord_rpc(
+                        details="Seleccion de campeones",
+                        state="Champ Select",
+                        large_text="Draftero"
+                    )
+                elif fase == "ReadyCheck":
+                    actualizar_discord_rpc(
+                        details="Partida encontrada",
+                        state="Aceptando...",
+                        large_text="En cola"
+                    )
+                else:
+                    actualizar_discord_rpc(
+                        details="En el cliente de LoL",
+                        state="Menu principal",
+                        large_text="League of Legends"
+                    )
+            except Exception:
+                pass
+
         if fase == "ChampSelect":
             if self.tabview.currentIndex() != 2 and self.user_settings.get("auto_switch_radar", True):
                 self.tabview.setCurrentIndex(2)  # RADAR EN VIVO
@@ -4155,6 +4344,16 @@ class LoLRecommenderApp(QMainWindow):
                     self.lbl_wr_numero.setStyleSheet(f"color: {color}; font-family: Impact; font-size: 42px;")
                     self.lbl_wr_razon.setText(tendencia)
                     self.lbl_wr_razon.setStyleSheet(f"color: {color}; font-style: italic;")
+
+                    # Guardar draft en historial
+                    if mi_campeon:
+                        try:
+                            bans_actuales = [self.procesar_nombre_champ(
+                                b.get("championId", 0), 0) for b in draft.get("bans", {}).get("myBans", [])]
+                            bans_actuales = [b for b in bans_actuales if b]
+                            guardar_draft(mi_campeon, rol_api, bans_actuales, picks_al, picks_en, wr)
+                        except Exception as e:
+                            print(f"[DraftHistory] Error guardando draft: {e}")
 
             if mi_campeon != self.last_my_champ or rol_api != self.last_my_role:
                 self.last_my_champ = mi_campeon
@@ -5580,6 +5779,14 @@ class LoLRecommenderApp(QMainWindow):
         self.cbbanrol = QComboBox()
         self.cbbanrol.addItems(UI_ROLES)
         ctrls.addWidget(self.cbbanrol)
+
+        self.rb_ban_global = QRadioButton("Global")
+        self.rb_ban_personal = QRadioButton("Personal")
+        self.rb_ban_global.setChecked(True)
+        self.rb_ban_global.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px;")
+        self.rb_ban_personal.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px;")
+        ctrls.addWidget(self.rb_ban_global)
+        ctrls.addWidget(self.rb_ban_personal)
         
         btn_analizar = QPushButton("ANALIZAR BANS DEL META")
         btn_analizar.clicked.connect(self.buscar_baneos)
@@ -5600,20 +5807,25 @@ class LoLRecommenderApp(QMainWindow):
 
     def buscar_baneos(self):
         self.treebans.setRowCount(0)
-        resultados = obtenermejoresbaneos(ROL_TO_API[self.cbbanrol.currentText()], min_partidas=20)
-        
-        if not resultados: 
+        modo_personal = self.rb_ban_personal.isChecked()
+
+        if modo_personal and hasattr(self, 'historial_games') and self.historial_games:
+            results = self._tierlist_personal(ROL_TO_API[self.cbbanrol.currentText()])
+        else:
+            results = obtenermejoresbaneos(ROL_TO_API[self.cbbanrol.currentText()], min_partidas=20)
+
+        if not results:
             QMessageBox.information(self, "Aviso", "No hay datos suficientes para ese rol.")
             return
             
-        for champ, banrate, partidas in resultados[:15]: 
+        for champ, banrate, partidas in results[:15]: 
             row = self.treebans.rowCount()
             self.treebans.insertRow(row)
             
             item_champ = QTableWidgetItem(f"  {champ}")
             icon_path = self.descargar_imagen(champ, "champ")
             if icon_path: item_champ.setIcon(QIcon(icon_path))
-            item_champ.setToolTip(f"🚫 {champ}\n📊 Frecuencia de pick: {banrate}%\n📋 {partidas} partidas analizadas")
+            item_champ.setToolTip(f"{champ}\nFrecuencia de pick: {banrate}%\n{partidas} partidas analizadas")
             
             item_ban = QTableWidgetItem(f"{banrate}%")
             item_ban.setForeground(QColor(RED_WR))
@@ -5622,11 +5834,129 @@ class LoLRecommenderApp(QMainWindow):
             self.treebans.setItem(row, 1, item_ban)
             self.treebans.setItem(row, 2, QTableWidgetItem(str(partidas)))
 
+    def _tierlist_personal(self, rol_api):
+        from collections import Counter
+        champ_vs = Counter()
+        for g in getattr(self, 'historial_games', []) or []:
+            role = (g.get("role") or g.get("lane") or "").upper()
+            api_role = role
+            if role in ("SUPPORT",): api_role = "UTILITY"
+            elif role in ("BOT", "ADC"): api_role = "BOTTOM"
+            elif role in ("JUNGLA",): api_role = "JUNGLE"
+            elif role in ("MID",): api_role = "MIDDLE"
+            if api_role != rol_api:
+                continue
+            champ_list = g.get("enemyTeam", [])
+            if not champ_list:
+                continue
+            for c in champ_list:
+                name = c.get("championName") or c.get("championId", "")
+                if name:
+                    champ_vs[name] += 1
+        total = sum(champ_vs.values())
+        if total < 5:
+            return []
+        results = []
+        for champ, count in champ_vs.most_common(15):
+            rate = round(count / total * 100, 1)
+            results.append((champ, rate, count))
+        return results
+
+    def _cargar_logros(self):
+        try:
+            if not hasattr(self, 'historial_games') or not self.historial_games:
+                return
+            logros_dict = evaluar_logros(self.historial_games)
+            conseguidos = obtener_logros_conseguidos(logros_dict)
+
+            # Clear previous logros
+            while self.fr_logros.count():
+                item = self.fr_logros.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            if not conseguidos:
+                self.lbl_logros_text = QLabel("Sigue jugando para desbloquear logros...")
+                self.lbl_logros_text.setStyleSheet("color: #64748b; font-size: 11px;")
+                self.lbl_logros_text.setWordWrap(True)
+                self.fr_logros.addWidget(self.lbl_logros_text)
+            else:
+                for lg in conseguidos:
+                    lbl = QLabel(f"{lg['emoji']} {lg['nombre']}")
+                    lbl.setStyleSheet("color: #e2e8f0; font-size: 11px; background: #1a2744; border-radius: 4px; padding: 2px 6px;")
+                    lbl.setToolTip(lg['desc'])
+                    self.fr_logros.addWidget(lbl)
+            self.fr_logros.addStretch()
+        except Exception as e:
+            print(f"[Logros] Error: {e}")
+
+    def _cargar_historial_drafts(self):
+        try:
+            drafts = obtener_historial_drafts(limite=15)
+            self.tb_drafts.setRowCount(0)
+            if not drafts:
+                self.tb_drafts.setRowCount(1)
+                self.tb_drafts.setItem(0, 0, QTableWidgetItem("Sin drafts registrados"))
+                return
+            for d in drafts:
+                row = self.tb_drafts.rowCount()
+                self.tb_drafts.insertRow(row)
+                campeon = d.get("campeon", "?")
+                rol = d.get("rol", "?")
+                aliados = json.loads(d.get("aliados", "[]"))
+                enemigos = json.loads(d.get("enemigos", "[]"))
+                wr_pred = d.get("wr_predicho")
+                resultado = d.get("resultado", "pendiente")
+                ganada = d.get("ganada")
+
+                item_c = QTableWidgetItem(campeon)
+                icon_p = self.descargar_imagen(campeon, "champ")
+                if icon_p:
+                    item_c.setIcon(QIcon(icon_p))
+                self.tb_drafts.setItem(row, 0, item_c)
+
+                self.tb_drafts.setItem(row, 1, QTableWidgetItem(API_TO_ROL.get(rol, rol)))
+
+                item_al = QTableWidgetItem(" + ".join(aliados[:3]) + ("..." if len(aliados) > 3 else ""))
+                item_al.setToolTip(" vs ".join(aliados))
+                self.tb_drafts.setItem(row, 2, item_al)
+
+                item_en = QTableWidgetItem(" vs ".join(enemigos[:3]) + ("..." if len(enemigos) > 3 else ""))
+                item_en.setToolTip(" vs ".join(enemigos))
+                self.tb_drafts.setItem(row, 3, item_en)
+
+                wr_text = f"{wr_pred}%" if wr_pred else "--"
+                item_wr = QTableWidgetItem(wr_text)
+                if wr_pred:
+                    item_wr.setForeground(QColor(GREEN_WR if wr_pred > 52 else RED_WR if wr_pred < 48 else YELLOW_WR))
+                self.tb_drafts.setItem(row, 4, item_wr)
+
+                res_text = resultado
+                res_color = GREEN_WR if ganada == 1 else RED_WR if ganada == 0 else "#94a3b8"
+                item_res = QTableWidgetItem(res_text)
+                item_res.setForeground(QColor(res_color))
+                self.tb_drafts.setItem(row, 5, item_res)
+        except Exception as e:
+            print(f"[DraftHistory] Error cargando historial: {e}")
+            self.tb_drafts.setRowCount(1)
+            self.tb_drafts.setItem(0, 0, QTableWidgetItem("Error al cargar"))
+
 if __name__ == "__main__":
     import signal
     app = QApplication(sys.argv)
+    app.setApplicationName("NEXUS")
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+    from setup import verificar_datos_iniciales
+    if not verificar_datos_iniciales():
+        from src.setup_wizard import SetupWizard
+        wizard = SetupWizard()
+        wizard.exec()
+        if not wizard.success:
+            sys.exit(1)
+        from src.db_manager import inicializar_db
+        inicializar_db()
 
     window = LoLRecommenderApp()
     window.show()

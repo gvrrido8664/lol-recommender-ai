@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import sys
+import json
 
 def _get_base_dir():
     """Resuelve la raíz del proyecto tanto en desarrollo como en .exe de PyInstaller."""
@@ -388,6 +389,80 @@ def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) ->
             "losses": r["losses"],
         })
     return resultado
+
+
+def _crear_tabla_drafts():
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS drafts_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            campeon TEXT,
+            rol TEXT,
+            bans TEXT,
+            aliados TEXT,
+            enemigos TEXT,
+            wr_predicho REAL,
+            resultado TEXT DEFAULT 'pendiente',
+            ganada INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+_crear_tabla_drafts()
+
+
+def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
+    from datetime import date
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO drafts_history (fecha, campeon, rol, bans, aliados, enemigos, wr_predicho)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (str(date.today()), campeon, rol, json.dumps(bans), json.dumps(aliados), json.dumps(enemigos), wr_predicho))
+    draft_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return draft_id
+
+
+def completar_draft_resultado(fecha, ganada):
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    if ganada is None:
+        cur.execute("""
+            UPDATE drafts_history SET resultado = 'completada'
+            WHERE id = (
+                SELECT id FROM drafts_history
+                WHERE fecha = ? AND resultado = 'pendiente'
+                ORDER BY id DESC LIMIT 1
+            )
+        """, (fecha,))
+    else:
+        cur.execute("""
+            UPDATE drafts_history SET resultado = ?, ganada = ?
+            WHERE id = (
+                SELECT id FROM drafts_history
+                WHERE fecha = ? AND resultado = 'pendiente'
+                ORDER BY id DESC LIMIT 1
+            )
+        """, ("victoria" if ganada else "derrota", 1 if ganada else 0, fecha))
+    conn.commit()
+    conn.close()
+
+
+def obtener_historial_drafts(limite=20):
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT fecha, campeon, rol, bans, aliados, enemigos, wr_predicho, resultado, ganada
+        FROM drafts_history ORDER BY id DESC LIMIT ?
+    """, (limite,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 if __name__ == "__main__":

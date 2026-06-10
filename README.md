@@ -101,3 +101,5 @@ python app.py
 - El radar en vivo requiere tener League of Legends abierto
 - No subas tu `config.json` a GitHub (ya esta en `.gitignore`)
 - Ejecuta `python tests.py` para verificar el correcto funcionamiento
+
+- .

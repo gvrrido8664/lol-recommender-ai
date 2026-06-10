@@ -59,9 +59,6 @@ class OverlayWindow(QWidget):
         self._center_bottom_right()
 
         self._hotkeys_ok = False
-        self._timer_update = QTimer(self)
-        self._timer_update.timeout.connect(self._update_data)
-        self._timer_update.start(3000)
 
     def setup_ui(self):
         self.setStyleSheet(f"""
@@ -191,8 +188,11 @@ class OverlayWindow(QWidget):
         screen = self.screen()
         if screen:
             geo = screen.availableGeometry()
-            x = geo.right() - self.width() - 40
-            y = geo.bottom() - self.height() - 100
+            ratio = screen.devicePixelRatio()
+            w = int(self.width() * ratio)
+            h = int(self.height() * ratio)
+            x = geo.right() - w - 40
+            y = geo.bottom() - h - 100
             self.move(x, y)
 
     def _register_hotkeys(self):
@@ -205,17 +205,20 @@ class OverlayWindow(QWidget):
         except Exception as e:
             print(f"[Overlay] Error registrando hotkeys: {e}")
 
-    def winEvent(self, msg, wparam, lparam):
-        if not HAS_WIN32:
-            return False
-        if msg == WM_HOTKEY:
-            if wparam == HOTKEY_SHOW_HIDE:
-                self.toggle_visibility()
-                return True
-            elif wparam == HOTKEY_CLOSE:
-                self.close_overlay()
-                return True
-        return False
+    def nativeEvent(self, event_type, message):
+        if HAS_WIN32 and event_type == b"windows_generic_MSG":
+            try:
+                msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.wintypes.MSG)).contents
+                if msg.message == WM_HOTKEY:
+                    if msg.wParam == HOTKEY_SHOW_HIDE:
+                        self.toggle_visibility()
+                        return True, 0
+                    elif msg.wParam == HOTKEY_CLOSE:
+                        self.close_overlay()
+                        return True, 0
+            except Exception:
+                pass
+        return super().nativeEvent(event_type, message)
 
     def show_overlay(self):
         self._visible = True
@@ -238,7 +241,6 @@ class OverlayWindow(QWidget):
 
     def close_overlay(self):
         self._closing = True
-        self._timer_update.stop()
         if HAS_WIN32:
             try:
                 hwnd = int(self.winId())
@@ -256,38 +258,28 @@ class OverlayWindow(QWidget):
         elif not is_active and self._visible:
             self.hide_overlay()
 
-    def _update_data(self):
-        if not self._visible or not self._game_active:
+    def feed_live_data(self, jugadores, game_info, mi_nombre=""):
+        """Recibe datos del LiveClient desde app.py — sin crear conexiones propias."""
+        if not self._visible:
             return
         try:
-            from .lcu_api import LCUConnector
-            lcu = LCUConnector()
-            if not lcu.conectar():
-                return
-            live_data = lcu.obtener_liveclient_data()
-            if not live_data or not live_data[0]:
-                self.lbl_phase.setText("Cargando...")
-                return
-            players, game_data = live_data
-            if not players:
-                return
-
-            mi_nombre = lcu.obtener_nombre_invocador()
+            # Buscar nuestro jugador con matching flexible (igual que _renderizar_partida_live)
+            mi_nombre_lower = mi_nombre.split("#")[0].strip().lower()
             yo = None
-            aliados = []
-            enemigos = []
-            for p in players:
-                if p.get("summonerName") == mi_nombre:
+            for p in jugadores:
+                sn = (p.get("summonerName", "") or "").lower()
+                if sn == mi_nombre_lower or mi_nombre_lower in sn or sn in mi_nombre_lower:
                     yo = p
-                elif p.get("team") == "ORDER":
-                    aliados.append(p)
-                else:
-                    enemigos.append(p)
+                    break
 
-            # Game timer
-            game_time = game_data.get("gameTime", 0) if isinstance(game_data, dict) else 0
-            mins = int(game_time // 60)
-            secs = int(game_time % 60)
+            # Determinar equipo del jugador para asignar aliados/enemigos correctamente
+            mi_equipo = yo.get("team", "ORDER") if yo else "ORDER"
+            aliados = [p for p in jugadores if p is not yo and p.get("team") == mi_equipo]
+            enemigos = [p for p in jugadores if p is not yo and p.get("team") != mi_equipo]
+
+            # Timer
+            game_time = game_info.get("gameTime", 0) if isinstance(game_info, dict) else 0
+            mins, secs = int(game_time // 60), int(game_time % 60)
             self.lbl_timer.setText(f"{mins:02d}:{secs:02d}")
 
             if yo:
@@ -301,19 +293,17 @@ class OverlayWindow(QWidget):
                 self.lbl_kda_a.setText(str(a))
                 self.lbl_cs.setText(f"CS: {cs}")
 
-                # Colorear muertes: verde si <=2, rojo si >=6
                 self.lbl_kda_d.setStyleSheet(
                     f"color: {'#22c55e' if d <= 2 else '#ef4444' if d >= 6 else '#f59e0b'}; font-size: 28px; font-weight: bold;"
                 )
 
-                # Alertas relevantes
                 alertas = []
                 if yo.get("isDead", False):
-                    alertas.append("💀 MUERTO — Espera respawn, analiza tu jugada")
+                    alertas.append("💀 MUERTO — Analiza tu jugada")
                 if d >= 6:
-                    alertas.append(f"⚠️ {d} MUERTES — Juega seguro, no obligues jugadas")
-                if d >= 3 and k < 2:
-                    alertas.append("⚠️ Vas perdiendo — Farmea y espera tu oportunidad")
+                    alertas.append(f"⚠️ {d} muertes — Juega seguro")
+                elif d >= 3 and k < 2:
+                    alertas.append("⚠️ Vas perdiendo — Farmea y espera")
 
                 if alertas:
                     self.lbl_alerta.setText(" | ".join(alertas[:2]))
@@ -321,11 +311,12 @@ class OverlayWindow(QWidget):
                 else:
                     self.lbl_alerta.setVisible(False)
             else:
-                self.lbl_kda_k.setText("-"); self.lbl_kda_d.setText("-"); self.lbl_kda_a.setText("-")
+                self.lbl_kda_k.setText("-")
+                self.lbl_kda_d.setText("-")
+                self.lbl_kda_a.setText("-")
                 self.lbl_cs.setText("CS: --")
                 self.lbl_alerta.setVisible(False)
 
-            # Panel de jugadores compacto: aliados verdes, enemigos rojos con amenaza
             lines = []
             if not aliados and not enemigos:
                 lines.append("Esperando datos de jugadores...")
@@ -337,9 +328,7 @@ class OverlayWindow(QWidget):
                             pk = p.get("kills", 0) or 0
                             pd = p.get("deaths", 0) or 0
                             pa = p.get("assists", 0) or 0
-                            pname = p.get("summonerName", "?")[:10]
                             pchamp = p.get("championName", "?")[:8]
-                            # Nivel de amenaza
                             kda_rat = (pk + pa) / max(1, pd)
                             threat = "🔥" if kda_rat >= 4 or pk >= 7 else ("⚠️" if kda_rat >= 2.5 else "")
                             parts.append(f"{threat}{pchamp} {pk}/{pd}/{pa}")
@@ -348,15 +337,15 @@ class OverlayWindow(QWidget):
             self.lbl_players.setText("<br>".join(lines))
 
         except Exception as e:
-            print(f"[Overlay] Error update: {e}")
+            print(f"[Overlay] Error feed_live_data: {e}")
 
     def cleanup(self):
         self._closing = True
-        self._timer_update.stop()
-        try:
-            hwnd = int(self.winId())
-            win32gui.UnregisterHotKey(hwnd, HOTKEY_SHOW_HIDE)
-            win32gui.UnregisterHotKey(hwnd, HOTKEY_CLOSE)
-        except:
-            pass
+        if HAS_WIN32:
+            try:
+                hwnd = int(self.winId())
+                win32gui.UnregisterHotKey(hwnd, HOTKEY_SHOW_HIDE)
+                win32gui.UnregisterHotKey(hwnd, HOTKEY_CLOSE)
+            except:
+                pass
         self.close()

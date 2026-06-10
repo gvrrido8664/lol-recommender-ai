@@ -33,11 +33,33 @@ def obtener_conexion():
     conn.row_factory = sqlite3.Row 
     return conn
 
+def _db_tiene_datos():
+    """Devuelve True si la BD tiene datos reales (>1 MB o >1000 partidas)."""
+    if not os.path.exists(DB_PATH):
+        return False
+    if os.path.getsize(DB_PATH) > 1 * 1024 * 1024:
+        return True
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM matches")
+        tiene = cur.fetchone()[0] > 1000
+        conn.close()
+        return tiene
+    except Exception:
+        return False
+
 def inicializar_db():
+    if getattr(sys, 'frozen', False):
+        bundled_db = os.path.join(sys._MEIPASS, "data", "lol_data.db")
+        if os.path.exists(bundled_db) and not _db_tiene_datos():
+            os.makedirs(DATA_DIR, exist_ok=True)
+            import shutil
+            shutil.copy2(bundled_db, DB_PATH)
+            print(f"BD copiada de {bundled_db} a {DB_PATH}")
+
     conn = obtener_conexion()
     cur = conn.cursor()
-
-    print("🏗️ Inicializando arquitectura de la base de datos...")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS matches (
@@ -97,6 +119,7 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_position ON participantes(team_position);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_win ON participantes(win);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_pos ON participantes(champion, team_position);")
 
     # ─── TABLA DE ESTADO EMOCIONAL (NEXUS) ───
     cur.execute("""
@@ -279,6 +302,93 @@ def obtener_estadisticas_emocionales() -> dict:
         }
     conn.close()
     return stats
+
+# ═══════════════════════════════════════════════════════════════
+# TRACKING DE LP / MMR
+# ═══════════════════════════════════════════════════════════════
+
+def _crear_tabla_lp_history():
+    """Crea la tabla lp_history si no existe (migración segura)."""
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS lp_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
+            tier TEXT NOT NULL,
+            division TEXT NOT NULL,
+            lp INTEGER NOT NULL,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0
+        )
+    """)
+    cur.execute("DROP INDEX IF EXISTS idx_lp_fecha")
+    cur.execute("DELETE FROM lp_history WHERE id NOT IN (SELECT MAX(id) FROM lp_history GROUP BY fecha, queue_type)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lp_unique ON lp_history(fecha, queue_type)")
+    conn.commit()
+    conn.close()
+
+_crear_tabla_lp_history()
+
+
+def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int = 0,
+                 queue_type: str = "RANKED_SOLO_5x5"):
+    """Guarda un snapshot de LP. Un único registro por cola por día (upsert)."""
+    if not tier or tier.upper() in ("UNRANKED", "NONE", ""):
+        return
+    from datetime import date
+    fecha = str(date.today())
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO lp_history (fecha, queue_type, tier, division, lp, wins, losses)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
+    """, (fecha, queue_type, tier.upper(), division.upper(), int(lp), int(wins), int(losses)))
+    # Si ya hay un registro hoy, actualizarlo con los valores más recientes
+    cur.execute("""
+        UPDATE lp_history SET tier=?, division=?, lp=?, wins=?, losses=?
+        WHERE fecha=? AND queue_type=?
+    """, (tier.upper(), division.upper(), int(lp), int(wins), int(losses), fecha, queue_type))
+    conn.commit()
+    conn.close()
+
+
+def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) -> list:
+    """Devuelve lista de dicts [{fecha, tier, division, lp, lp_total}] ordenada por fecha."""
+    TIER_BASE = {
+        "IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
+        "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
+        "MASTER": 2800, "GRANDMASTER": 2800, "CHALLENGER": 2800,
+    }
+    DIV_OFFSET = {"I": 300, "II": 200, "III": 100, "IV": 0, "": 0}
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT fecha, tier, division, lp, wins, losses
+        FROM lp_history
+        WHERE queue_type=? AND fecha >= date('now', ?)
+        ORDER BY fecha ASC
+    """, (queue_type, f"-{dias} days"))
+    rows = cur.fetchall()
+    conn.close()
+    resultado = []
+    for r in rows:
+        base = TIER_BASE.get(r["tier"], 0)
+        offset = DIV_OFFSET.get(r["division"], 0)
+        lp_total = base + offset + r["lp"]
+        resultado.append({
+            "fecha": r["fecha"],
+            "tier": r["tier"],
+            "division": r["division"],
+            "lp": r["lp"],
+            "lp_total": lp_total,
+            "wins": r["wins"],
+            "losses": r["losses"],
+        })
+    return resultado
+
 
 if __name__ == "__main__":
     inicializar_db()

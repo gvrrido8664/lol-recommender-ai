@@ -605,6 +605,49 @@ MANUAL_TAGS = {
                    "mobility":3,"boots_policy":"adaptive","difficulty":1},
 }
 
+# Mapeo rol Riot API → campeones primarios del rol (para fallback cuando hay pocos datos en DB)
+_CHAMPS_POR_ROL: dict[str, set[str]] = {
+    "TOP": {
+        "Aatrox","Ambessa","Aurora","Camille","Chogath","Darius","DrMundo","Fiora",
+        "Gangplank","Garen","Gnar","Gragas","Gwen","Illaoi","Irelia","Jax","Jayce",
+        "Kayle","Kennen","Kled","KSante","Maokai","Malphite","Mordekaiser","Nasus",
+        "Olaf","Ornn","Pantheon","Poppy","Quinn","Renekton","Riven","Rumble","Sett",
+        "Shen","Singed","Sion","Teemo","Trundle","Tryndamere","Urgot","Volibear",
+        "Warwick","Wukong","Yasuo","Yone","Yorick",
+    },
+    "JUNGLE": {
+        "Amumu","Belveth","Briar","Diana","Ekko","Elise","Evelynn","Fiddlesticks",
+        "Gragas","Graves","Hecarim","Ivern","JarvanIV","Karthus","Kayn","Khazix",
+        "Kindred","LeeSin","Lillia","Maokai","MasterYi","Nidalee","Nocturne","Nunu",
+        "Poppy","Rammus","RekSai","Rengar","Sejuani","Shaco","Shyvana","Skarner",
+        "Taliyah","Talon","Udyr","Vi","Viego","XinZhao","Zac",
+    },
+    "MIDDLE": {
+        "Ahri","Akali","Akshan","Ambessa","Anivia","Annie","Aurora","AurelionSol",
+        "Azir","Cassiopeia","Corki","Fizz","Galio","Heimerdinger","Hwei","Kassadin",
+        "Katarina","Leblanc","Lissandra","Lux","Malzahar","Mel","Naafiri","Neeko",
+        "Orianna","Qiyana","Ryze","Swain","Sylas","Syndra","Taliyah","Talon",
+        "Tristana","TwistedFate","Veigar","Vex","Viktor","Vladimir","Xerath",
+        "Yasuo","Yone","Zed","Ziggs","Zoe",
+    },
+    "BOTTOM": {
+        "Aphelios","Ashe","Caitlyn","Draven","Ezreal","Jhin","Jinx","Kaisa",
+        "Kalista","KogMaw","Lucian","MissFortune","Nilah","Samira","Senna","Sivir",
+        "Smolder","Tristana","Twitch","Varus","Vayne","Xayah","Zeri",
+    },
+    "UTILITY": {
+        "Alistar","Bard","Blitzcrank","Brand","Braum","Gragas","Heimerdinger",
+        "Janna","Karma","Leona","Lulu","Maokai","Milio","Morgana","Nami","Nautilus",
+        "Pyke","Rakan","Rell","Renata","Seraphine","Sona","Soraka","TahmKench",
+        "Taric","Thresh","Velkoz","Yuumi","Zilean","Zyra",
+    },
+}
+
+
+def obtener_champs_rol_base(rol_api: str) -> list[str]:
+    """Lista de campeones primarios para un rol según tags_champions, ordenada alfabéticamente."""
+    return sorted(_CHAMPS_POR_ROL.get(rol_api, set()))
+
 
 def cargar_tags():
     """Carga los tags desde el JSON. Si no existe, lo genera desde los datos de Riot."""

@@ -238,10 +238,15 @@ class LCUConnector:
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
     
     def obtener_perfil(self):
-        res = self.request('GET', '/lol-summoner/v1/current-summoner')
-        if res and res.status_code == 200:
-            return res.json()
-        return None
+        endpoint = '/lol-summoner/v1/current-summoner'
+        res = self.request('GET', endpoint)
+        if res is None:
+            print(f"[LCU] obtener_perfil: request devolvio None (sin conexion?)")
+            return None
+        if res.status_code != 200:
+            print(f"[LCU] obtener_perfil: HTTP {res.status_code} en {endpoint}")
+            return None
+        return res.json()
 
     def obtener_region_local(self):
         config_path = os.path.join(self.lol_path, "Config", "LeagueClientSettings.yaml")

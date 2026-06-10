@@ -238,15 +238,111 @@ class LCUConnector:
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
     
     def obtener_perfil(self):
-        endpoint = '/lol-summoner/v1/current-summoner'
-        res = self.request('GET', endpoint)
-        if res is None:
-            print(f"[LCU] obtener_perfil: request devolvio None (sin conexion?)")
-            return None
-        if res.status_code != 200:
-            print(f"[LCU] obtener_perfil: HTTP {res.status_code} en {endpoint}")
-            return None
-        return res.json()
+        # Endpoint clásico (funciona en clientes más viejos)
+        res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        if res and res.status_code == 200:
+            return res.json()
+
+        # Estrategia moderna: combinar varios endpoints parciales
+        perfil = {}
+
+        # Paso 1: /lol-chat/v1/me — tiene gameName, gameTag, icon
+        # (puuid puede estar vacío si el cliente no terminó de cargar)
+        res = self.request('GET', '/lol-chat/v1/me')
+        if res and res.status_code == 200:
+            d = res.json()
+            lol = d.get("lol") or {}
+            perfil.update({
+                "puuid":         d.get("puuid") or lol.get("puuid", ""),
+                "displayName":   d.get("gameName", ""),
+                "gameName":      d.get("gameName", ""),
+                "tagLine":       d.get("gameTag", ""),
+                "profileIconId": d.get("icon", 0),
+                "summonerLevel": int(lol.get("summonerLevel") or lol.get("level") or 0),
+                "summonerId":    str(lol.get("summonerId", "")),
+                "summonerName":  lol.get("summonerName", d.get("gameName", "")),
+            })
+
+        # Paso 2: /lol-login/v1/session — tiene puuid y summonerId fiables
+        res = self.request('GET', '/lol-login/v1/session')
+        if res and res.status_code == 200:
+            d = res.json()
+            if d.get("state") == "SUCCEEDED":
+                if not perfil.get("puuid"):
+                    perfil["puuid"] = d.get("puuid", "")
+                if not perfil.get("summonerId"):
+                    perfil["summonerId"] = str(d.get("summonerId", ""))
+
+        # Paso 3: /lol-summoner/v1/summoners/{id} — nivel + icono
+        summ_id = perfil.get("summonerId")
+        if summ_id and str(summ_id) not in ("0", ""):
+            res = self.request('GET', f'/lol-summoner/v1/summoners/{summ_id}')
+            if res and res.status_code == 200:
+                d = res.json()
+                if not perfil.get("puuid"):
+                    perfil["puuid"] = d.get("puuid", "")
+                if not perfil.get("profileIconId"):
+                    perfil["profileIconId"] = d.get("profileIconId", 0)
+                if not perfil.get("summonerLevel"):
+                    perfil["summonerLevel"] = d.get("summonerLevel", 0)
+                display = d.get("displayName") or d.get("gameName", "")
+                if display and not perfil.get("gameName"):
+                    perfil["displayName"]  = display
+                    perfil["gameName"]     = display
+                    perfil["summonerName"] = display
+
+        # Paso 4: Riot API — gameName + tagLine + profileIconId + summonerLevel por puuid
+        puuid = perfil.get("puuid")
+        needs_name = not perfil.get("gameName")
+        needs_icon = not perfil.get("profileIconId")
+        needs_lvl  = not perfil.get("summonerLevel")
+        if puuid and (needs_name or needs_icon or needs_lvl):
+            try:
+                api_key = self.obtener_api_key_local()
+                region  = self.obtener_region_local() or "la2"
+                routing = "americas" if region in ("la1","la2","na1","br1","oc1") else \
+                          "europe"   if region in ("euw1","eun1","tr1","ru")      else "asia"
+                hdrs = {"X-Riot-Token": api_key}
+
+                # Summoner API — icono + nivel + summonerId
+                if needs_icon or needs_lvl:
+                    url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+                    r = requests.get(url, headers=hdrs, timeout=5, verify=True)
+                    if r.status_code == 200:
+                        sd = r.json()
+                        if needs_icon: perfil["profileIconId"] = sd.get("profileIconId", 0)
+                        if needs_lvl:  perfil["summonerLevel"] = sd.get("summonerLevel", 0)
+                        if not perfil.get("summonerId"):
+                            perfil["summonerId"] = sd.get("id", "")
+                        if needs_name and sd.get("name"):
+                            perfil["gameName"]    = sd["name"]
+                            perfil["displayName"] = sd["name"]
+                            perfil["summonerName"]= sd["name"]
+                            needs_name = False
+
+                # Account API — gameName#tagLine (Riot ID)
+                if needs_name:
+                    url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+                    r = requests.get(url, headers=hdrs, timeout=5, verify=True)
+                    if r.status_code == 200:
+                        ad = r.json()
+                        perfil["gameName"]    = ad.get("gameName", "")
+                        perfil["tagLine"]     = ad.get("tagLine", "")
+                        perfil["displayName"] = ad.get("gameName", "")
+                        perfil["summonerName"]= ad.get("gameName", "")
+            except Exception:
+                pass
+
+        if perfil.get("puuid") or perfil.get("displayName") or perfil.get("gameName"):
+            fuentes = []
+            if perfil.get("gameName"):      fuentes.append("chat/riot")
+            if perfil.get("puuid"):         fuentes.append("session")
+            if perfil.get("summonerLevel"): fuentes.append("summoner")
+            print(f"[LCU] obtener_perfil: combinado [{', '.join(fuentes)}]")
+            return perfil
+
+        print(f"[LCU] obtener_perfil: todos los endpoints fallaron")
+        return None
 
     def obtener_region_local(self):
         config_path = os.path.join(self.lol_path, "Config", "LeagueClientSettings.yaml")
@@ -459,18 +555,34 @@ class LCUConnector:
         return None
 
     def obtener_historial_extendido(self, puuid: str = None, inicio: int = 0, cantidad: int = 100):
-        """Obtiene historial de partidas via LCU (hasta 100)."""
+        """Obtiene historial de partidas via LCU."""
         if not puuid:
             perfil = self.obtener_perfil()
             if perfil:
                 puuid = perfil.get("puuid", "")
         if not puuid:
             return []
-        res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={inicio}&endIndex={inicio + cantidad}')
-        if res and res.status_code == 200:
+
+        # LCU rechaza endIndex > 200 en versiones modernas; hacer lotes de 20
+        MAX_POR_LOTE = 20
+        todos = []
+        offset = inicio
+        restante = min(cantidad, 200)
+        while restante > 0:
+            lote = min(MAX_POR_LOTE, restante)
+            res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={offset}&endIndex={offset + lote}')
+            if not res or res.status_code != 200:
+                break
             data = res.json()
-            return data.get("games", {}).get("games", [])
-        return []
+            games = data.get("games", {}).get("games", [])
+            if not games:
+                break
+            todos.extend(games)
+            restante -= lote
+            offset += lote
+            if len(games) < lote:
+                break
+        return todos
 
     # ================= FUNCIONES DE AUTO-IMPORTACIÓN =================
     def importar_hechizos(self, spell1, spell2):

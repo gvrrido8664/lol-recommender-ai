@@ -7,7 +7,7 @@ Sistema inteligente que se conecta al cliente de League of Legends para ofrecer 
 
 ## Caracteristicas
 
-- **Radar en Vivo** — Draft en tiempo real: counter picks, runas, hechizos, items y orden de habilidades recomendados; bans sugeridos; winrate estimado 5v5; analisis de composicion
+- **Radar en Vivo** — Draft en tiempo real: counter picks, runas, hechizos, items y orden de habilidades recomendados; bans sugeridos; winrate estimado 5v5; analisis de composicion ESTO ES UNA NOTA
 - **Mi Perfil** — Estadisticas completas: winrate por linea/campeon, historial de partidas, ligas, maestrias, fatiga y estado mental
 - **Coaching Pro** — Reporte personalizado con analisis de habitos, champion pool, objetivos y filosofia de juego
 - **Overlay en Partida** — Datos en vivo (KDA, CS, temporizador, alertas) superpuestos sobre el juego

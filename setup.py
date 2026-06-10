@@ -47,7 +47,7 @@ def descargar_datos(log_callback=None, progress_callback=None):
     for label, file_id in sources:
         _log(f"Intentando descarga desde: {label}", log_callback)
         try:
-            comando = [sys.executable, "-m", "gdown", "--id", file_id, "-O", DESTINO_ZIP]
+            comando = [sys.executable, "-m", "gdown", file_id, "-O", DESTINO_ZIP]
             subprocess.check_call(comando)
             if os.path.exists(DESTINO_ZIP) and os.path.getsize(DESTINO_ZIP) > 1024:
                 if progress_callback:

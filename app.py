@@ -3,7 +3,8 @@ import os
 import requests
 import threading
 import time
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, date
 from io import BytesIO
 from PIL import Image
 import numpy as np
@@ -1429,8 +1430,9 @@ class LPGraphWidget(QWidget):
         mn, mx = min(values), max(values)
         rng = max(mx - mn, 200)
 
-        def to_px(val):
-            return pad_l + int((val - mn) / rng * (w - pad_l - pad_r))
+        n = len(self._data)
+        def to_px(i):
+            return pad_l + int(i / max(1, n - 1) * (w - pad_l - pad_r))
 
         def to_py(val):
             return h - pad_b - int((val - mn) / rng * (h - pad_t - pad_b))
@@ -1447,7 +1449,7 @@ class LPGraphWidget(QWidget):
                     p.drawText(2, py - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
 
         # Línea de LP
-        points = [(to_px(self._data[i]["lp_total"]), to_py(self._data[i]["lp_total"]))
+        points = [(to_px(i), to_py(self._data[i]["lp_total"]))
                   for i in range(len(self._data))]
 
         pen = QPen(QColor(ACCENT_TEAL), 2)
@@ -1464,7 +1466,6 @@ class LPGraphWidget(QWidget):
         # Fechas en el eje X (cada ~5 puntos o primero/último)
         p.setFont(QFont("Segoe UI", 7))
         p.setPen(QColor(TEXT_MUTED))
-        n = len(self._data)
         indices = [0, n - 1] if n <= 4 else list(range(0, n, max(1, n // 4))) + [n - 1]
         for i in set(indices):
             px, _ = points[i]
@@ -1582,12 +1583,61 @@ class PostGameDialog(QDialog):
         lbl_cs.setStyleSheet(f"color: {cs_color}; font-size: 11px;")
         lay.addWidget(lbl_cs)
 
+        # Vision y objetivos
+        vision = s.get("vision_score", 0)
+        wards = s.get("wards_placed", 0)
+        cwards = s.get("control_wards", 0)
+        objectives = s.get("objectives", 0)
+        dmg = s.get("damage_dealt", 0)
+        if game_time > 0:
+            dmg_min = dmg / (game_time / 60)
+            dmg_str = f"{dmg_min/1000:.1f}k/min" if dmg > 0 else ""
+        else:
+            dmg_str = ""
+        extras = []
+        if vision > 0:
+            extras.append(f"👁 Vision {vision}")
+        if wards > 0:
+            extras.append(f"🏮 Wards {wards}")
+        if cwards > 0:
+            extras.append(f"🔮 Control {cwards}")
+        if objectives > 0:
+            extras.append(f"🎯 Objs {objectives}")
+        if dmg_str:
+            extras.append(f"⚔️ Dano {dmg_str}")
+        if extras:
+            lbl_extras = QLabel("  |  ".join(extras))
+            lbl_extras.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; padding: 2px 0;")
+            lay.addWidget(lbl_extras)
+
         # Coaching tip
         tip = s.get("tip", "")
-        if tip:
+        positives = s.get("positives", [])
+        negatives = s.get("negatives", [])
+
+        if positives or negatives:
             sep2 = QLabel(); sep2.setFixedHeight(1)
             sep2.setStyleSheet(f"background: {BORDER_SUBTLE};")
             lay.addWidget(sep2)
+
+            if positives:
+                for pt in positives:
+                    lbl_p = QLabel(pt)
+                    lbl_p.setWordWrap(True)
+                    lbl_p.setStyleSheet(f"color: {GREEN_WR}; font-size: 10px; padding: 1px 0;")
+                    lay.addWidget(lbl_p)
+
+            if negatives:
+                for ng in negatives:
+                    lbl_n = QLabel(ng)
+                    lbl_n.setWordWrap(True)
+                    lbl_n.setStyleSheet(f"color: {RED_WR}; font-size: 10px; padding: 1px 0;")
+                    lay.addWidget(lbl_n)
+
+        if tip:
+            sep3 = QLabel(); sep3.setFixedHeight(1)
+            sep3.setStyleSheet(f"background: {BORDER_SUBTLE};")
+            lay.addWidget(sep3)
             lbl_tip = QLabel(tip)
             lbl_tip.setWordWrap(True)
             lbl_tip.setStyleSheet(f"color: {YELLOW_WR}; font-size: 10px; padding: 4px 0;")
@@ -1633,6 +1683,7 @@ class LoLRecommenderApp(QMainWindow):
     radar_listo = Signal(object)
     meta_builds_listo = Signal(list, dict, str, str)  # (resultados, builds_data, rol_api, enemigo)
     postgame_ready = Signal(dict)
+    season_partial = Signal(list)  # streaming: batch de partidas de Riot descargadas
 
     def __init__(self):
         super().__init__()
@@ -1679,6 +1730,7 @@ class LoLRecommenderApp(QMainWindow):
         self.radar_listo.connect(self._on_radar_listo)
         self.meta_builds_listo.connect(self._on_meta_builds_listo)
         self.postgame_ready.connect(self._on_postgame_ready)
+        self.season_partial.connect(self._on_season_partial)
         
         self.last_aliados = []
         self.last_enemigos = []
@@ -2029,28 +2081,43 @@ class LoLRecommenderApp(QMainWindow):
             QScrollBar:vertical {{
                 background: transparent;
                 width: 6px;
-                margin: 0;
+                margin: 4px 2px 4px 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: {BORDER_SUBTLE};
+                background: #2a3a5c;
                 border-radius: 3px;
                 min-height: 30px;
             }}
             QScrollBar::handle:vertical:hover {{
-                background: {BORDER_ACCENT};
+                background: {ACCENT_RED};
+            }}
+            QScrollBar::handle:vertical:pressed {{
+                background: #be123c;
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
             QScrollBar:horizontal {{
                 background: transparent;
                 height: 6px;
-                margin: 0;
+                margin: 2px 4px 2px 4px;
             }}
             QScrollBar::handle:horizontal {{
-                background: {BORDER_SUBTLE};
+                background: #2a3a5c;
                 border-radius: 3px;
                 min-width: 30px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {ACCENT_RED};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: transparent;
             }}
             QScrollBar::handle:horizontal:hover {{
                 background: {BORDER_ACCENT};
@@ -2547,6 +2614,55 @@ class LoLRecommenderApp(QMainWindow):
         parent_layout.addWidget(main_wrap)
 
     # ================= PESTAÑA MI PERFIL DASHBOARD =================
+    @staticmethod
+    def _parse_game_date(g: dict):
+        """Parsea la fecha de una partida LCU de forma robusta (soporta locale ES/EN).
+        Retorna un objeto datetime o None si no se puede parsear."""
+        ts = g.get("gameCreation", 0)
+        if ts:
+            if ts > 1000000000000:
+                ts = ts / 1000
+            try:
+                return datetime.fromtimestamp(ts)
+            except:
+                pass
+        fecha_str = g.get("gameCreationDate", "")
+        if not fecha_str:
+            return None
+        for fmt in [
+            "%b %d, %Y %I:%M:%S %p",
+            "%b. %d, %Y %I:%M:%S %p",
+            "%b %d, %Y %H:%M:%S",
+            "%d/%m/%Y %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+        ]:
+            try:
+                return datetime.strptime(fecha_str, fmt)
+            except:
+                continue
+        try:
+            return datetime.strptime(fecha_str[:10], "%b %d, %Y")
+        except:
+            pass
+        return None
+
+    @staticmethod
+    def _format_game_date(g: dict):
+        """Devuelve la fecha formateada dd/mm de una partida."""
+        dt = LoLRecommenderApp._parse_game_date(g)
+        if dt:
+            return dt.strftime("%d/%m")
+        fecha_str = g.get("gameCreationDate", "")
+        return fecha_str[:10] if len(fecha_str) >= 10 else "?"
+
+    @staticmethod
+    def _extraer_year(g: dict):
+        """Extrae el año de una partida (gameCreationDate string o gameCreation timestamp)."""
+        dt = LoLRecommenderApp._parse_game_date(g)
+        if dt:
+            return dt.year
+        return None
+
     def _crear_icono_engranaje(self, size=20, color="#4a5070"):
         """Crea un icono de engranaje gear con QPainter."""
         import math
@@ -2677,21 +2793,29 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_season_champs.setColumnCount(4)
         self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
         self.tb_season_champs.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for col in range(1, 4):
-            self.tb_season_champs.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
+        self.tb_season_champs.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
+        self.tb_season_champs.setColumnWidth(1, 62)
+        self.tb_season_champs.setColumnWidth(2, 50)
+        self.tb_season_champs.setColumnWidth(3, 70)
         self.tb_season_champs.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_season_champs.setSelectionMode(QAbstractItemView.NoSelection)
         self.tb_season_champs.setShowGrid(False)
-        self.tb_season_champs.setAlternatingRowColors(True)
+        self.tb_season_champs.setAlternatingRowColors(False)
         self.tb_season_champs.verticalHeader().setVisible(False)
         self.tb_season_champs.horizontalHeader().setVisible(True)
-        self.tb_season_champs.verticalHeader().setDefaultSectionSize(28)
-        self.tb_season_champs.setIconSize(QSize(20, 20))
+        self.tb_season_champs.verticalHeader().setDefaultSectionSize(52)
+        self.tb_season_champs.setIconSize(QSize(28, 28))
+        self.tb_season_champs.setMaximumHeight(340)
+        self.tb_season_champs.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
+        self.tb_season_champs.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.tb_season_champs.setStyleSheet("""
             QTableWidget { border: none; background-color: transparent; }
-            QHeaderView::section { background-color: #152040; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; }
-            QTableWidget::item { border-bottom: 1px solid #1e2535; padding: 2px 6px; }
+            QHeaderView::section { background-color: #152040; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 10px; }
+            QTableWidget::item { border-bottom: 1px solid #1e2535; padding: 0px; }
         """)
+        self.tb_season_champs.verticalScrollBar().valueChanged.connect(self._on_scroll_season)
         self.l_season.addWidget(self.tb_season_champs)
         self.col_id.addWidget(self.pnl_season)
         
@@ -2847,8 +2971,8 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_historial.verticalHeader().setDefaultSectionSize(28)
         self.tb_historial.setIconSize(QSize(20, 20))
         self.tb_historial.verticalHeader().setVisible(False)
-        self.tb_historial.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.tb_historial.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.tb_historial.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tb_historial.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         hs_layout.addWidget(self.tb_historial)
         
         self.lbl_historial_vacio = QLabel(
@@ -2865,21 +2989,6 @@ class LoLRecommenderApp(QMainWindow):
         hs_layout.addWidget(self.lbl_historial_vacio)
         
         self.col_hist.addWidget(self.historial_stack, 1)
-
-        # Draft history section
-        lbl_dh = QLabel("HISTORIAL DE DRAFTS")
-        lbl_dh.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 13px; margin-top: 8px;")
-        self.col_hist.addWidget(lbl_dh)
-        self.tb_drafts = QTableWidget()
-        self.tb_drafts.setColumnCount(6)
-        self.tb_drafts.setHorizontalHeaderLabels(["Campeon", "Rol", "Aliados", "Enemigos", "WR Pred.", "Resultado"])
-        self.tb_drafts.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tb_drafts.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tb_drafts.setSelectionMode(QAbstractItemView.NoSelection)
-        self.tb_drafts.verticalHeader().setDefaultSectionSize(36)
-        self.tb_drafts.verticalHeader().setVisible(False)
-        self.tb_drafts.setMaximumHeight(200)
-        self.col_hist.addWidget(self.tb_drafts)
 
         # Logros row
         self.lbl_logros_title = QLabel("LOGROS")
@@ -3143,6 +3252,293 @@ class LoLRecommenderApp(QMainWindow):
         # Añadir stretch al final
         self.coaching_scroll_content.addStretch()
 
+    # ═══════════════════════════════════════════════════════════
+    # RIOT API — PARTIDAS DE LA TEMPORADA (para _fetch_perfil)
+    # ═══════════════════════════════════════════════════════════
+
+    def _riot_resolve_puuid(self, game_name: str, tag_line: str):
+        """Obtiene el PUUID nuevo (match v5) desde el riot id (gameName#tagLine).
+        Si no hay tag_line, no hace fallback falso — devuelve None."""
+        api_key, region, routing = self._riot_get_config()
+        if not api_key or not game_name:
+            return None
+        if not tag_line:
+            return None
+        tag = tag_line
+        try:
+            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag}"
+            res = requests.get(url, headers={"X-Riot-Token": api_key}, timeout=10)
+            if res.status_code == 200:
+                puuid = res.json().get("puuid")
+                print(f"[RiotAPI] PUUID resuelto: {game_name}#{tag} -> {puuid}")
+                return puuid
+            else:
+                print(f"[RiotAPI] HTTP {res.status_code} resolviendo PUUID para {game_name}#{tag}")
+        except Exception as e:
+            print(f"[RiotAPI] Error resolviendo PUUID: {e}")
+        return None
+
+    def _riot_get_config(self):
+        """Obtiene api_key, region y routing para llamadas a Riot API."""
+        api_key = self.lcu.obtener_api_key_local()
+        if not api_key:
+            return None, None, None
+        region = (self.lcu.obtener_region_local() or "la2").lower()
+        routing = "americas" if region in ("la1","la2","na1","br1","oc1","la","lan","las","na","br") else \
+                  "europe"   if region in ("euw1","eun1","tr1","ru","euw","eune","tr")             else \
+                  "sea"      if region in ("ph2","sg2","th2","tw2","vn2")                           else "asia"
+        print(f"[RiotAPI] Region={region}, Routing={routing}")
+        return api_key, region, routing
+
+    def _riot_fetch_match_ids(self, puuid: str):
+        """Pagina la API de Riot para obtener TODOS los match IDs de la temporada actual.
+        Usa count=100, start desde 0 incrementando de 100 en 100, con filtro startTime.
+        Rompe cuando la API devuelve []."""
+        api_key, region, routing = self._riot_get_config()
+        if not api_key:
+            return []
+        from datetime import timezone as tz
+        ahora = datetime.now(tz.utc)
+        start_time = int(datetime(ahora.year, 1, 1, tzinfo=tz.utc).timestamp())
+        all_ids = []
+        offset = 0
+        base_url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
+        hdrs = {"X-Riot-Token": api_key}
+        print(f"[RiotAPI] Paginando IDs (region={region}, routing={routing}, startTime={start_time})")
+        while True:
+            url = f"{base_url}?start={offset}&count=100&startTime={start_time}"
+            try:
+                res = requests.get(url, headers=hdrs, timeout=15)
+                if res.status_code == 429:
+                    retry_after = res.headers.get("Retry-After", "10")
+                    print(f"[RiotAPI] Rate limit, esperando {retry_after}s...")
+                    time.sleep(int(retry_after))
+                    continue
+                if res.status_code == 400:
+                    body = res.text[:300]
+                    print(f"[RiotAPI] HTTP 400: {body}")
+                    if "startTime" in body.lower() or "parameter" in body.lower():
+                        url = f"{base_url}?start={offset}&count=100"
+                        print(f"[RiotAPI] Reintentando sin startTime...")
+                        res = requests.get(url, headers=hdrs, timeout=15)
+                    else:
+                        break
+                if res.status_code != 200:
+                    print(f"[RiotAPI] HTTP {res.status_code} en listado (start={offset})")
+                    break
+                batch = res.json()
+                if not batch:
+                    break
+                all_ids.extend(batch)
+                if len(batch) < 100:
+                    break
+                offset += 100
+            except Exception as e:
+                print(f"[RiotAPI] Error obteniendo IDs (start={offset}): {e}")
+                break
+        print(f"[RiotAPI] {len(all_ids)} IDs de partida obtenidos")
+        return all_ids
+
+    def _riot_convert_match(self, raw: dict, my_puuid: str = ""):
+        """Convierte una partida de formato Riot API v5 al formato interno de la app.
+        Filtra SOLO al participante que coincide con my_puuid y lo pone en [0]."""
+        info = raw.get("info", {})
+        my_stats = None
+        for p in info.get("participants", []):
+            if my_puuid and p.get("puuid", "") != my_puuid:
+                continue
+            my_stats = {
+                "championId": int(p.get("championId", 0)),
+                "championName": p.get("championName", ""),
+                "teamPosition": p.get("teamPosition", ""),
+                "puuid": p.get("puuid", ""),
+                "stats": {
+                    "win": p.get("win", False),
+                    "kills": p.get("kills", 0),
+                    "deaths": p.get("deaths", 0),
+                    "assists": p.get("assists", 0),
+                    "totalMinionsKilled": p.get("totalMinionsKilled", 0),
+                    "neutralMinionsKilled": p.get("neutralMinionsKilled", 0),
+                    "totalDamageDealtToChampions": p.get("totalDamageDealtToChampions", 0),
+                    "totalDamageTaken": p.get("totalDamageTaken", 0),
+                    "goldEarned": p.get("goldEarned", 0),
+                    "visionScore": p.get("visionScore", 0),
+                    "wardsPlaced": p.get("wardsPlaced", 0),
+                    "visionWardsBoughtInGame": p.get("visionWardsBoughtInGame", 0),
+                    "pentaKills": p.get("pentaKills", 0),
+                    "tripleKills": p.get("tripleKills", 0),
+                    "turretKills": p.get("turretKills", 0),
+                    "dragonKills": p.get("dragonKills", 0),
+                    "baronKills": p.get("baronKills", 0),
+                    "timeCCingOthers": p.get("timeCCingOthers", 0),
+                    "firstBloodKill": p.get("firstBloodKill", False),
+                }
+            }
+            break
+        if not my_stats:
+            return None
+        game_creation_ms = info.get("gameCreation", 0)
+        game_creation_ts = game_creation_ms / 1000 if game_creation_ms else 0
+        return {
+            "gameId": raw.get("metadata", {}).get("matchId", ""),
+            "gameCreation": game_creation_ts,
+            "gameCreationDate": datetime.fromtimestamp(game_creation_ts).strftime("%b %d, %Y %I:%M:%S %p") if game_creation_ts else "",
+            "gameDuration": info.get("gameDuration", 0),
+            "gameMode": info.get("gameMode", "CLASSIC"),
+            "participants": [my_stats],
+        }
+
+    def _riot_fetch_one_match(self, match_id: str, my_puuid: str = ""):
+        """Descarga UNA partida de Riot API. Con backoff exponencial + Retry-After."""
+        api_key, region, routing = self._riot_get_config()
+        if not api_key:
+            return None
+        hdrs = {"X-Riot-Token": api_key}
+        url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        for intento in range(4):
+            try:
+                res = requests.get(url, headers=hdrs, timeout=10)
+                if res.status_code == 429:
+                    retry = int(res.headers.get("Retry-After", 2 ** intento))
+                    time.sleep(min(retry, 15))
+                    continue
+                if res.status_code == 200:
+                    return self._riot_convert_match(res.json(), my_puuid)
+                if res.status_code == 404:
+                    return None
+            except Exception:
+                time.sleep(2 ** intento)
+        return None
+
+    def _riot_fetch_matches(self, match_ids: list, my_puuid: str = "", max_matches: int = None):
+        """Descarga partidas de Riot API en PARALELO (6 workers).
+        my_puuid filtra SOLO al jugador correcto. max_matches=None = todas."""
+        api_key, region, routing = self._riot_get_config()
+        if not api_key:
+            return []
+        total_ids = len(match_ids)
+        if max_matches:
+            match_ids = match_ids[:max_matches]
+        if not match_ids:
+            return []
+        print(f"[RiotAPI] Descargando {len(match_ids)}/{total_ids} partidas (6 workers)...")
+        games = []
+        downloaded = 0
+        errores = 0
+        t_start = time.time()
+        last_emit = 0
+        BATCH_EMIT = 30
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(self._riot_fetch_one_match, mid, my_puuid): mid for mid in match_ids}
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        games.append(result)
+                        downloaded += 1
+                    else:
+                        errores += 1
+                except Exception:
+                    errores += 1
+                total = downloaded + errores
+                if downloaded - last_emit >= BATCH_EMIT:
+                    batch = games[last_emit:downloaded]
+                    if batch:
+                        self.season_partial.emit(list(batch))
+                    last_emit = downloaded
+                    elapsed = time.time() - t_start
+                    print(f"[RiotAPI] {total}/{len(match_ids)} ({(total/len(match_ids)*100):.0f}%) +{len(batch)} en {elapsed:.0f}s")
+        if last_emit < downloaded:
+            batch = games[last_emit:]
+            if batch:
+                self.season_partial.emit(list(batch))
+        elapsed = time.time() - t_start
+        pct = len(match_ids) / max(1, elapsed)
+        print(f"[RiotAPI] {downloaded} OK, {errores} err en {elapsed:.0f}s ({pct:.0f}/s)")
+        return games
+
+    def _get_season_cache_path(self, puuid: str):
+        """Ruta del archivo de cache JSON para partidas de temporada."""
+        import sys as _sys
+        if getattr(_sys, 'frozen', False):
+            base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender', 'cache')
+        else:
+            base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        os.makedirs(base, exist_ok=True)
+        safe_puuid = puuid.replace("-", "_")
+        return os.path.join(base, f"season_cache_{safe_puuid}.json")
+
+    def _load_season_cache(self, puuid: str):
+        """Carga partidas desde cache JSON si es de hoy. Retorna lista o None."""
+        cache_path = self._get_season_cache_path(puuid)
+        if not os.path.exists(cache_path):
+            return None
+        try:
+            mtime = os.path.getmtime(cache_path)
+            age_hours = (time.time() - mtime) / 3600
+            if age_hours > 24:
+                return None
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            print(f"[Cache] Cargadas {len(data)} partidas desde cache ({age_hours:.1f}h de antiguedad)")
+            return data
+        except Exception as e:
+            print(f"[Cache] Error cargando: {e}")
+        return None
+
+    def _save_season_cache(self, puuid: str, games: list):
+        """Guarda partidas en cache JSON."""
+        if not games or len(games) < 10:
+            return
+        try:
+            cache_path = self._get_season_cache_path(puuid)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(games, f)
+            print(f"[Cache] Guardadas {len(games)} partidas en cache")
+        except Exception as e:
+            print(f"[Cache] Error guardando: {e}")
+
+    def _riot_season_background(self, puuid: str, all_games: list, game_name: str, tag_line: str):
+        """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
+        Usa streaming via season_partial para mostrar datos mientras llegan."""
+        try:
+            # Intentar cache primero
+            cached = self._load_season_cache(puuid)
+            if cached:
+                existing_gids = set()
+                for g in all_games:
+                    gid = str(g.get("gameId", ""))
+                    if not gid:
+                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    existing_gids.add(gid)
+                nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
+                if nuevos_cache:
+                    self.season_partial.emit(nuevos_cache)
+                    print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
+                return
+
+            # Resolver PUUID nuevo
+            riot_puuid = puuid
+            new_puuid = self._riot_resolve_puuid(game_name, tag_line)
+            if new_puuid and new_puuid != puuid:
+                riot_puuid = new_puuid
+
+            # Descargar IDs + partidas (my_puuid = el usado para obtener IDs)
+            riot_ids = self._riot_fetch_match_ids(riot_puuid)
+            if riot_ids:
+                riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)
+                # Guardar cache (usar puuid original del LCU, no el resuelto)
+                self._save_season_cache(puuid, riot_games)
+        except Exception as e:
+            print(f"[RiotAPI] Error en background: {e}")
+
+    @staticmethod
+    def _gid_or_fallback(g):
+        gid = str(g.get("gameId", ""))
+        if not gid:
+            gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+        return gid
+
     # ================= CARGA DE PERFIL (HILO SEGUNDARIO) =================
     def _fetch_perfil(self):
         """Se ejecuta en hilo secundario. Recoge TODOS los datos de LCU sin tocar UI.
@@ -3154,9 +3550,10 @@ class LoLRecommenderApp(QMainWindow):
             perfil = None
             for intento in range(5):
                 perfil = self.lcu.obtener_perfil()
-                if perfil:
+                if perfil and (perfil.get("displayName") or perfil.get("gameName") or perfil.get("summonerName")):
                     break
                 print(f"[_fetch_perfil] Intento {intento+1}/5: perfil no disponible, esperando...")
+                perfil = None
                 time.sleep(2)
             
             if not perfil:
@@ -3168,12 +3565,19 @@ class LoLRecommenderApp(QMainWindow):
             data["perfil"] = perfil
             perfil_ok = True
             
-            # ── Fase 2: Ligas (no fatal si falla) ──
+            # ── Fase 2: Ligas (con reintentos — la API de ranked tarda en arrancar) ──
             ligas = None
-            try:
-                ligas = self.lcu.obtener_ligas()
-            except Exception as e:
-                print(f"[_fetch_perfil] Error obteniendo ligas (no fatal): {e}")
+            for intento_l in range(4):
+                try:
+                    ligas = self.lcu.obtener_ligas()
+                    if ligas and ligas.get("queues"):
+                        break
+                except Exception as e:
+                    print(f"[_fetch_perfil] Error ligas intento {intento_l+1}: {e}")
+                if intento_l < 3:
+                    time.sleep(1.5)
+            if not ligas or not ligas.get("queues"):
+                print("[_fetch_perfil] No se pudieron obtener ligas (no fatal).")
             data["ligas"] = ligas
             
             # ── Fase 3: Maestrías (no fatal si falla) ──
@@ -3203,18 +3607,25 @@ class LoLRecommenderApp(QMainWindow):
             
             # ── Fase 5: Season stats (paginación completa para toda la temporada) ──
             all_games = list(historial) if historial else []
+
+            def _gid(g):
+                gid = str(g.get("gameId", "") or "")
+                if not gid:
+                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                return gid
+
             if all_games and self.lcu and self.lcu.port:
                 try:
-                    existing_ids = {str(g.get("gameId", "")) for g in all_games}
+                    existing_ids = {_gid(g) for g in all_games}
                     for offset in range(100, 2000, 100):
                         batch = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=offset, cantidad=100)
                         if not batch:
                             break
-                        new_batch = [g for g in batch if str(g.get("gameId", "")) not in existing_ids]
+                        new_batch = [g for g in batch if _gid(g) and _gid(g) not in existing_ids]
                         if not new_batch:
                             break
                         for g in new_batch:
-                            existing_ids.add(str(g.get("gameId", "")))
+                            existing_ids.add(_gid(g))
                         all_games.extend(new_batch)
                         if len(batch) < 100:
                             break
@@ -3222,13 +3633,24 @@ class LoLRecommenderApp(QMainWindow):
                 except Exception as e:
                     print(f"[_fetch_perfil] Error paginando season stats (no fatal): {e}")
             data["all_games_season"] = all_games
-            
+
+            # Emitir YA los datos del LCU — no esperar a Riot API
             data["ok"] = perfil_ok
+            self.perfil_listo.emit(data)
+
+            # ── Fase 6: Riot API (background, no bloquea la UI) ──
+            if puuid and len(all_games) < 500:
+                game_name = perfil.get("gameName") or perfil.get("displayName", "").split("#")[0]
+                tag_line = perfil.get("tagLine") or ""
+                threading.Thread(
+                    target=self._riot_season_background,
+                    args=(puuid, all_games, game_name, tag_line),
+                    daemon=True
+                ).start()
+
         except Exception as e:
             print(f"[_fetch_perfil] Error crítico: {e}")
             data["ok"] = False
-        finally:
-            # Emitir señal para que el hilo principal actualice la UI
             self.perfil_listo.emit(data)
 
     def _on_perfil_listo(self, data):
@@ -3341,6 +3763,19 @@ class LoLRecommenderApp(QMainWindow):
             
             # obtener_historial_extendido devuelve lista directa, el viejo devuelve dict
             games = historial if isinstance(historial, list) else historial.get("games", {}).get("games", [])
+            # DEDUP: el batching de LCU puede devolver partidas duplicadas entre lotes
+            seen = set()
+            games_dedup = []
+            for g in games:
+                gid = str(g.get("gameId", ""))
+                if not gid:
+                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                if gid and gid not in seen:
+                    seen.add(gid)
+                    games_dedup.append(g)
+            if len(games_dedup) < len(games):
+                print(f"[Perfil] DEDUP historial: {len(games)} -> {len(games_dedup)} partidas unicas")
+            games = games_dedup
             self.historial_games = games
             # Guardar all_games_season si viene del fetch (paginación ya hecha en hilo secundario)
             self.all_games_season = data.get("all_games_season", list(games))
@@ -3355,7 +3790,27 @@ class LoLRecommenderApp(QMainWindow):
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
         self.tb_historial.setRowCount(0)
-        
+
+        # DEDUP robusto usando _gid_or_fallback
+        seen_gids = set()
+        unique = []
+        for g in games:
+            gid = self._gid_or_fallback(g)
+            if gid and gid not in seen_gids:
+                seen_gids.add(gid)
+                unique.append(g)
+        if len(unique) < len(games):
+            print(f"[Historial] DEDUP: {len(games)} -> {len(unique)} partidas")
+        games = unique
+
+        # Ordenar partidas por fecha (mas reciente primero) usando timestamp
+        try:
+            games = sorted(games, key=lambda g: (
+                self._parse_game_date(g) or datetime(2000,1,1)
+            ), reverse=True)
+        except:
+            pass
+
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
         champ_stats = {}
         
@@ -3380,16 +3835,8 @@ class LoLRecommenderApp(QMainWindow):
             else:
                 lp_str = "--"
             
-            # Fecha (LCU usa gameCreationDate como string)
-            fecha_str = g.get("gameCreationDate", "")
-            if fecha_str:
-                try:
-                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
-                    fecha = dt.strftime("%d/%m")
-                except:
-                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
-            else:
-                fecha = "?"
+            # Fecha (usa timestamp gameCreation, fallback a gameCreationDate)
+            fecha = self._format_game_date(g)
             
             total_k += k; total_d += d; total_a += a; total_games += 1
             if win: victorias += 1
@@ -3420,7 +3867,7 @@ class LoLRecommenderApp(QMainWindow):
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
-        # --- Tarjetas de estadísticas ---
+        # --- Tarjetas de estadisticas ---
         if total_games > 0:
             wr = round((victorias / total_games) * 100)
             kda = round((total_k + total_a) / max(1, total_d), 2)
@@ -3428,19 +3875,20 @@ class LoLRecommenderApp(QMainWindow):
             avg_d = round(total_d / total_games, 1)
             avg_a = round(total_a / total_games, 1)
             self.lbl_card_wr_val.setText(f"{wr}%")
+            self.lbl_card_wr_val.setToolTip(f"{victorias}V / {total_games - victorias}D en {total_games} partidas")
             self.lbl_card_kda_val.setText(f"{kda}")
             self.lbl_card_kda_val.setToolTip(f"Promedio: {avg_k}/{avg_d}/{avg_a} por partida")
             most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
             most_g = champ_stats[most_played]["games"]
             self.lbl_card_most_val.setText(most_played[:10])
             self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
-            self.lbl_card_most_val.setToolTip(f"{most_g} partidas jugadas con {most_played}")
+            self.lbl_card_most_val.setToolTip(f"{most_g} partidas con {most_played}")
             best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 2}
             if best_wr_champs:
                 best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
                 best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
-                self.lbl_card_best_val.setText(f"{best_champ[:10]}")
-                self.lbl_card_best_val.setStyleSheet(f"color: {GREEN_WR}; font-size: 16px; font-weight: bold;")
+                self.lbl_card_best_val.setText(f"{best_champ[:8]} {best_wr}%")
+                self.lbl_card_best_val.setStyleSheet(f"color: {GREEN_WR}; font-size: 14px; font-weight: bold;")
                 self.lbl_card_best_val.setToolTip(f"{best_wr}% WR con {best_champ} en {champ_stats[best_champ]['games']} partidas")
             else:
                 self.lbl_card_best_val.setText("--")
@@ -3547,10 +3995,7 @@ class LoLRecommenderApp(QMainWindow):
         # ─── FASE 4: COACHING PRO ───
         self._actualizar_coaching()
 
-        # ─── FASE 5: HISTORIAL DE DRAFTS ───
-        self._cargar_historial_drafts()
-
-        # ─── FASE 6: LOGROS ───
+        # ─── FASE 5: LOGROS ───
         self._cargar_logros()
 
     def _actualizar_perfil_jugador(self):
@@ -3628,8 +4073,12 @@ class LoLRecommenderApp(QMainWindow):
             return
         try:
             # Solo considerar partidas de hoy para no detectar fatiga de sesiones viejas
-            hoy = datetime.now().strftime("%b %d, %Y")
-            games_hoy = [g for g in self.historial_games if g.get("gameCreationDate", "").startswith(hoy)]
+            hoy = str(date.today())
+            games_hoy = []
+            for g in self.historial_games:
+                dt = self._parse_game_date(g)
+                if dt and str(dt.date()) == hoy:
+                    games_hoy.append(g)
             if not games_hoy:
                 estado = "fresh"
                 mensaje = "🌅 ¡No has jugado hoy! Estás en tu mejor momento."
@@ -3673,6 +4122,9 @@ class LoLRecommenderApp(QMainWindow):
 
     def _on_scroll_historial(self, value):
         """Scroll infinito: carga mas partidas cuando el usuario llega al final."""
+        # Si ya hay 100+, no cargar mas (el LCU no tiene datos adicionales)
+        if hasattr(self, 'historial_games') and len(self.historial_games) >= 100:
+            return
         scrollbar = self.tb_historial.verticalScrollBar()
         if scrollbar.maximum() > 0 and value >= scrollbar.maximum() - 50:
             if not hasattr(self, '_cargando_historial'):
@@ -3687,24 +4139,26 @@ class LoLRecommenderApp(QMainWindow):
         try:
             if not self.lcu or not self.lcu.port: return
             current = len(self.historial_games) if hasattr(self, 'historial_games') else 0
-            if current >= 500: return
+            if current >= 200: return
             perfil = self.lcu.obtener_perfil()
             if not perfil: return
             puuid = perfil.get("puuid")
             if not puuid: return
             
-            # Cargar siguiente bloque: desde current hasta current+50
             nuevas = self.lcu.obtener_historial_extendido(inicio=current, cantidad=50)
             if not nuevas: return
             
-            # Filtrar duplicados por gameId
-            existing_ids = {str(g.get("gameId", "")) for g in self.historial_games}
-            really_new = [g for g in nuevas if str(g.get("gameId", "")) not in existing_ids]
+            # DEDUP robusto usando mismo criterio que _renderizar_historial
+            existing_ids = {self._gid_or_fallback(g) for g in self.historial_games}
+            really_new = [g for g in nuevas if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_ids]
             
             if really_new:
                 self.historial_games.extend(really_new)
-                # Añadir filas de forma ADITIVA (no limpiar tabla)
-                self._append_games_to_table(really_new)
+                # Re-ordenar todo para mantener orden por fecha
+                self._renderizar_historial(self.historial_games)
+            else:
+                self._cargando_historial = False
+                return
         finally:
             self._cargando_historial = False
 
@@ -3724,15 +4178,7 @@ class LoLRecommenderApp(QMainWindow):
             duration_sec = g.get("gameDuration", 0)
             duration_min = f"{duration_sec // 60}:{duration_sec % 60:02d}"
             
-            fecha_str = g.get("gameCreationDate", "")
-            if fecha_str:
-                try:
-                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
-                    fecha = dt.strftime("%d/%m")
-                except:
-                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
-            else:
-                fecha = "?"
+            fecha = self._format_game_date(g)
             
             modo_juego = self._clasificar_modo_juego(g)
             
@@ -3806,24 +4252,6 @@ class LoLRecommenderApp(QMainWindow):
         except Exception as e:
             print(f"[_on_tag_emocional] Error: {e}")
 
-    def _extraer_year(self, g):
-        """Extrae el año de una partida (gameCreationDate string o gameCreation timestamp)."""
-        fecha_str = g.get("gameCreationDate", "")
-        if fecha_str:
-            try:
-                return datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p").year
-            except:
-                pass
-        ts = g.get("gameCreation", 0)
-        if ts:
-            if ts > 1000000000000:
-                ts = ts / 1000
-            try:
-                return datetime.fromtimestamp(ts).year
-            except:
-                pass
-        return None
-
     def filtrar_historial(self, _=None):
         """Filtra la tabla de historial por campeón, modo y temporada."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
@@ -3867,15 +4295,7 @@ class LoLRecommenderApp(QMainWindow):
                 lp_str = "--"
             
             # Fecha
-            fecha_str = g.get("gameCreationDate", "")
-            if fecha_str:
-                try:
-                    dt = datetime.strptime(fecha_str, "%b %d, %Y %I:%M:%S %p")
-                    fecha = dt.strftime("%d/%m")
-                except:
-                    fecha = fecha_str[:10] if len(fecha_str) >= 10 else "?"
-            else:
-                fecha = "?"
+            fecha = self._format_game_date(g)
 
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
@@ -4607,8 +5027,8 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_partida_header.setVisible(True)
             if fase in ("WaitingForStats", "PreEndOfGame", "EndOfGame"):
                 self.lbl_partida_header.setText("🏁 Partida terminada\n\nRevisa tu perfil para ver el analisis")
-                # Mostrar post-game una sola vez por partida
-                if self._last_game_stats and not self._postgame_shown:
+                # Mostrar post-game una sola vez por partida (al transicionar desde InProgress)
+                if not self._postgame_shown and self._last_fase in ("InProgress", "GameStart"):
                     self._postgame_shown = True
                     threading.Thread(target=self._preparar_postgame, daemon=True).start()
             else:
@@ -4719,7 +5139,23 @@ class LoLRecommenderApp(QMainWindow):
         self.tb_partida_aliados.setVisible(True)
         self.tb_partida_enemigos.setVisible(True)
 
-        self.lbl_partida_kda.setText("🎮 Partida en vivo (datos basicos LCU)")
+        # Buscar nuestro jugador en LCU
+        mi_nombre_raw = self.lcu.obtener_nombre_invocador() or ""
+        mi_nombre = mi_nombre_raw.split("#")[0].strip().lower()
+        yo = None
+        for j in jugadores:
+            sn = (j.get("summonerName", "") or "").lower()
+            if sn == mi_nombre or mi_nombre in sn or sn in mi_nombre:
+                yo = j
+                break
+
+        if yo:
+            cid = str(yo.get("championId", "0"))
+            cname = self.procesar_nombre_champ(cid, "0") or "Desconocido"
+            self.lbl_partida_kda.setText(f"🎮 En partida con {cname} (datos basicos LCU)")
+            self._last_game_stats = {"champion": cname, "kills": 0, "deaths": 0, "assists": 0, "cs": 0, "game_time": 0}
+        else:
+            self.lbl_partida_kda.setText("🎮 Partida en vivo (datos basicos LCU)")
         self.lbl_partida_cs.setText("CS: --")
         self.lbl_partida_timer.setText("--:--")
 
@@ -4745,11 +5181,50 @@ class LoLRecommenderApp(QMainWindow):
             self.lbl_partida_comp.setText("")
 
     def _preparar_postgame(self):
-        """Ejecutado en thread: reúne datos y emite postgame_ready para mostrar el diálogo."""
+        """Ejecutado en thread: reune datos y emite postgame_ready para mostrar el dialogo."""
         try:
-            stats = dict(self._last_game_stats)
+            stats = dict(self._last_game_stats) if self._last_game_stats else {}
 
-            # Medias históricas desde BD
+            # Obtener datos reales de la ultima partida desde LCU history
+            try:
+                historial = self.lcu.obtener_historial_extendido(cantidad=1)
+                if historial:
+                    ult = historial[0]
+                    part = ult.get("participants", [{}])[0]
+                    part_stats = part.get("stats", {})
+
+                    # Datos basicos de la partida
+                    stats["kills"] = part_stats.get("kills", stats.get("kills", 0))
+                    stats["deaths"] = part_stats.get("deaths", stats.get("deaths", 0))
+                    stats["assists"] = part_stats.get("assists", stats.get("assists", 0))
+                    stats["cs"] = part_stats.get("totalMinionsKilled", 0) + part_stats.get("neutralMinionsKilled", 0)
+                    stats["game_time"] = ult.get("gameDuration", stats.get("game_time", 0))
+                    cid = str(part.get("championId", "0"))
+                    stats["champion"] = self.procesar_nombre_champ(cid, "0") or stats.get("champion", "?")
+                    win = part_stats.get("win", None)
+                    if win is True:
+                        stats["resultado"] = "Victoria"
+                    elif win is False:
+                        stats["resultado"] = "Derrota"
+
+                    # Estadisticas adicionales de la partida
+                    stats["vision_score"] = part_stats.get("visionScore", 0)
+                    stats["wards_placed"] = part_stats.get("wardsPlaced", 0)
+                    stats["control_wards"] = part_stats.get("visionWardsBoughtInGame", 0)
+                    stats["damage_dealt"] = part_stats.get("totalDamageDealtToChampions", 0)
+                    stats["damage_taken"] = part_stats.get("totalDamageTaken", 0)
+                    stats["gold"] = part_stats.get("goldEarned", 0)
+                    stats["cc_score"] = part_stats.get("timeCCingOthers", 0)
+                    stats["turret_kills"] = part_stats.get("turretKills", 0)
+                    stats["objectives"] = (part_stats.get("dragonKills", 0) + part_stats.get("baronKills", 0)
+                                          + part_stats.get("turretKills", 0))
+                    stats["penta"] = part_stats.get("pentaKills", 0)
+                    stats["triple"] = part_stats.get("tripleKills", 0)
+                    stats["first_blood"] = part_stats.get("firstBloodKill", False)
+            except Exception as e:
+                print(f"[PostGame] Error obteniendo datos LCU: {e}")
+
+            # Medias historicas desde BD para comparativa
             try:
                 conn = obtener_conexion()
                 cur = conn.cursor()
@@ -4773,40 +5248,88 @@ class LoLRecommenderApp(QMainWindow):
                 stats.setdefault("avg_d", 4.0)
                 stats.setdefault("avg_a", 7.0)
 
-            # Resultado desde LCU history
-            try:
-                historial = self.lcu.obtener_historial_extendido(cantidad=1)
-                if historial:
-                    ult = historial[0]
-                    part = ult.get("participants", [{}])[0]
-                    win = part.get("stats", {}).get("win", None)
-                    if win is True:
-                        stats["resultado"] = "Victoria"
-                    elif win is False:
-                        stats["resultado"] = "Derrota"
-            except Exception:
-                pass
+            # Analisis completo: puntos fuertes, debiles y consejos
+            positives = []
+            negatives = []
+            tips = []
 
-            # Tip de coaching
-            tip_partes = []
-            d = stats.get("deaths", 0)
             k = stats.get("kills", 0)
-            avg_d = stats.get("avg_d", 4.0)
-            if d > avg_d * 1.5 and d >= 5:
-                tip_partes.append(f"⚠️ {d} muertes — muy por encima de tu media ({avg_d:.1f}). Intenta jugar más cerca de tu equipo.")
-            elif d <= 2 and k >= 4:
-                tip_partes.append("✅ Partida limpia — buen control de muertes.")
-            game_time = stats.get("game_time", 0)
-            cs = stats.get("cs", 0)
-            if game_time > 600:
-                cs_min = cs / (game_time / 60)
-                if cs_min < 5.0:
-                    tip_partes.append(f"📈 CS/min bajo ({cs_min:.1f}). Trabaja el farmeo en línea antes de rotar.")
-            stats["tip"] = "  ".join(tip_partes[:2]) if tip_partes else ""
+            d = stats.get("deaths", 0)
+            a = stats.get("assists", 0)
+            cs_val = stats.get("cs", 0)
+            game_time = stats.get("game_time", 600)
+            avg_k = stats.get("avg_k", 5)
+            avg_d = stats.get("avg_d", 4)
+            avg_a = stats.get("avg_a", 7)
+            result = stats.get("resultado", "")
+
+            if game_time > 60:
+                cs_min = cs_val / (game_time / 60)
+            else:
+                cs_min = 0
+
+            # Puntos fuertes
+            if k >= 10:
+                positives.append(f"⚔️ {k} kills — excelente presencia ofensiva")
+            if d <= 2 and game_time >= 600:
+                positives.append(f"🛡️ Solo {d} muertes — muy buena supervivencia")
+            if a >= 10:
+                positives.append(f"🤝 {a} asistencias — gran impacto en equipo")
+            if cs_min >= 7.5 and game_time >= 600:
+                positives.append(f"🌾 {cs_min:.1f} CS/min — farmeo solido")
+            if k > avg_k * 1.3:
+                positives.append(f"📈 +{k - int(avg_k)} kills sobre tu media ({avg_k:.0f})")
+            if d < avg_d * 0.7 and d <= avg_d:
+                positives.append(f"📉 -{int(avg_d) - d} muertes bajo tu media ({avg_d:.0f})")
+            if k + a >= 20:
+                positives.append(f"🎯 {k + a} de participacion — muy activo en el mapa")
+            if stats.get("vision_score", 0) >= 30:
+                positives.append(f"👁️ {stats['vision_score']} de vision — buen control de mapa")
+            if stats.get("penta", 0) >= 1:
+                positives.append("🔥 PENTAKILL — partida legendaria")
+            if stats.get("first_blood", False):
+                positives.append("⚡ First Blood — ventaja temprana")
+
+            # Puntos debiles
+            if d >= 7:
+                negatives.append(f"⚠️ {d} muertes — demasiadas, revisa tu posicionamiento")
+            if d > avg_d * 1.5:
+                negatives.append(f"📊 +{d - int(avg_d)} muertes sobre tu media — partida atipica o tilt")
+            if cs_min < 5.0 and game_time >= 600:
+                negatives.append(f"📉 CS/min bajo ({cs_min:.1f}) — practica el farmeo")
+            if k + a < d * 1.5 and game_time >= 600:
+                negatives.append(f"📉 Baja participacion — K+A ({k + a}) vs D ({d})")
+            if stats.get("vision_score", 0) < 5 and game_time >= 900:
+                negatives.append(f"🔦 Poca vision ({stats.get('vision_score', 0)}) — compra wards de control")
+            if d >= 3 and k == 0 and game_time >= 600:
+                negatives.append("😓 Sin kills — enfocate en jugadas seguras")
+            if cs_min < 3.5 and game_time >= 900:
+                negatives.append("🚫 Farmeo muy bajo — prioriza las oleadas de minions")
+
+            # Consejos de mejora
+            if negatives:
+                tips.append("Consejo: " + negatives[0].split("—")[-1].strip() if "—" in negatives[0] else negatives[0])
+            if d >= 5:
+                tips.append("Juega mas conservador si vas detras y espera los powerspikes de tu campeon")
+            if k + a < 5 and game_time >= 900:
+                tips.append("Intenta rotar mas para ayudar a tu equipo en objetivos (dragon, heraldo)")
+            if cs_min < 6.0:
+                tips.append("Dedica 10 min en practica de herramientas a farmear bajo torre")
+            if result == "Derrota" and k >= 8:
+                tips.append("Aunque perdiste, tu desempeno ofensivo fue bueno. Revisa decisiones macro")
+            if result == "Victoria" and d >= 7:
+                tips.append("Buen resultado pero cuidado con las muertes — en partidas mas dificiles te castigaran")
+
+            stats["positives"] = positives[:4]
+            stats["negatives"] = negatives[:4]
+            tips_dedup = list(dict.fromkeys(tips))
+            stats["tip"] = "  |  ".join(tips_dedup[:3]) if tips_dedup else ""
 
             self.postgame_ready.emit(stats)
         except Exception as e:
             print(f"[PostGame] Error preparando resumen: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_postgame_ready(self, stats: dict):
         """Muestra el diálogo de post-game en el hilo principal."""
@@ -4816,6 +5339,33 @@ class LoLRecommenderApp(QMainWindow):
             dlg.show()
         except Exception as e:
             print(f"[PostGame] Error mostrando diálogo: {e}")
+
+    def _on_season_partial(self, batch: list):
+        """Recibe un lote de partidas de Riot API (hilo principal via signal).
+        Las añade a all_games_season y refresca incrementalmente la tabla de season."""
+        try:
+            if not hasattr(self, 'all_games_season'):
+                self.all_games_season = []
+            # DEDUP contra lo que ya tenemos
+            seen = set()
+            for g in self.all_games_season:
+                gid = str(g.get("gameId", ""))
+                if not gid:
+                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                seen.add(gid)
+            nuevos = 0
+            for g in batch:
+                gid = str(g.get("gameId", ""))
+                if not gid:
+                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                if gid and gid not in seen:
+                    seen.add(gid)
+                    self.all_games_season.append(g)
+                    nuevos += 1
+            if nuevos > 0:
+                self._cargar_stats_season()
+        except Exception as e:
+            print(f"[SeasonPartial] Error: {e}")
 
     def _ir_a_coaching(self):
         """Navega a la pestaña de Coaching."""
@@ -5071,8 +5621,9 @@ class LoLRecommenderApp(QMainWindow):
             layout.addWidget(card)
 
     def _cargar_stats_season(self):
-        """Carga estadísticas de la season desde los datos ya paginados en hilo secundario.
-        NO hace llamadas HTTP — solo procesa datos en memoria. Incluye TODOS los modos de juego."""
+        """Carga estadisticas de la season. Procesa todas las partidas en memoria,
+        guarda la lista completa en self._season_champ_data y renderiza los primeros 15.
+        El resto se carga bajo demanda via scroll (lazy loading)."""
         if not hasattr(self, 'all_games_season') or not self.all_games_season:
             if hasattr(self, 'historial_games') and self.historial_games:
                 self.all_games_season = list(self.historial_games)
@@ -5080,8 +5631,21 @@ class LoLRecommenderApp(QMainWindow):
                 return
         try:
             all_games = self.all_games_season
-            champ_stats = {}
+            # DEDUP
+            seen_ids = set()
+            unique_games = []
             for g in all_games:
+                gid = str(g.get("gameId", ""))
+                if not gid:
+                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                if gid and gid not in seen_ids:
+                    seen_ids.add(gid)
+                    unique_games.append(g)
+            if len(unique_games) < len(all_games):
+                print(f"[_cargar_stats_season] DEDUP: {len(all_games)} -> {len(unique_games)} partidas unicas")
+            # Computar stats por campeon (todos, con CS y duracion)
+            champ_stats = {}
+            for g in unique_games:
                 part = g.get("participants", [{}])[0]
                 stats = part.get("stats", {})
                 cid = str(part.get("championId", "0"))
@@ -5089,41 +5653,172 @@ class LoLRecommenderApp(QMainWindow):
                 if cname == "?":
                     continue
                 if cname not in champ_stats:
-                    champ_stats[cname] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
-                cs_data = champ_stats[cname]
-                cs_data["games"] += 1
+                    champ_stats[cname] = {
+                        "wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0,
+                        "total_cs": 0, "total_duration": 0,
+                    }
+                cs = champ_stats[cname]
+                cs["games"] += 1
                 if stats.get("win", False):
-                    cs_data["wins"] += 1
-                cs_data["kills"] += stats.get("kills", 0)
-                cs_data["deaths"] += stats.get("deaths", 0)
-                cs_data["assists"] += stats.get("assists", 0)
-            
-            top = sorted(champ_stats.items(), key=lambda x: x[1]["games"], reverse=True)[:8]
-            print(f"[_cargar_stats_season] {len(all_games)} partidas, {len(champ_stats)} campeones, top={[(c, s['games']) for c, s in top[:5]]}")
+                    cs["wins"] += 1
+                cs["kills"] += stats.get("kills", 0)
+                cs["deaths"] += stats.get("deaths", 0)
+                cs["assists"] += stats.get("assists", 0)
+                cs["total_cs"] += stats.get("totalMinionsKilled", 0) + stats.get("neutralMinionsKilled", 0)
+                cs["total_duration"] += g.get("gameDuration", 0)
+
+            # Ordenar por partidas descendente y guardar lista completa
+            sorted_champs = sorted(champ_stats.items(), key=lambda x: x[1]["games"], reverse=True)
+            self._season_champ_data = []
+            for cname, cs in sorted_champs:
+                self._season_champ_data.append({
+                    "name": cname,
+                    "games": cs["games"],
+                    "wins": cs["wins"],
+                    "kills": cs["kills"],
+                    "deaths": cs["deaths"],
+                    "assists": cs["assists"],
+                    "total_cs": cs["total_cs"],
+                    "total_duration": cs["total_duration"],
+                })
+            print(f"[_cargar_stats_season] {len(unique_games)} partidas, {len(self._season_champ_data)} campeones totales")
+            # Cargar primeros 15 (o menos si hay pocos)
+            self._season_offset = 0
+            self._cargando_season = False
             self.tb_season_champs.setRowCount(0)
-            for cname, cs in top:
-                games = cs["games"]
-                wr_c = round(cs["wins"] * 100 / games, 1) if games > 0 else 0
-                kda = round((cs["kills"] + cs["assists"]) / max(1, cs["deaths"]), 1)
-                r = self.tb_season_champs.rowCount()
-                self.tb_season_champs.insertRow(r)
-                item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(cname)}")
-                icon = self.descargar_imagen(cname, "champ")
-                if icon:
-                    item_c.setIcon(QIcon(icon))
-                self.tb_season_champs.setItem(r, 0, item_c)
-                item_p = QTableWidgetItem(str(games))
-                item_p.setTextAlignment(Qt.AlignCenter)
-                self.tb_season_champs.setItem(r, 1, item_p)
-                item_w = QTableWidgetItem(f"{wr_c}%")
-                item_w.setTextAlignment(Qt.AlignCenter)
-                item_w.setForeground(QColor(GREEN_WR if wr_c >= 50 else RED_WR))
-                self.tb_season_champs.setItem(r, 2, item_w)
-                item_k = QTableWidgetItem(str(kda))
-                item_k.setTextAlignment(Qt.AlignCenter)
-                self.tb_season_champs.setItem(r, 3, item_k)
+            self._append_champs_season(count=15)
         except Exception as e:
             print(f"[_cargar_stats_season] Error: {e}")
+
+    def _crear_fila_champ_season(self, champ: dict, max_games: int):
+        """Construye los 4 widgets de celda para una fila de campeon en la tabla de season."""
+        cname = champ["name"]
+        games = champ["games"]
+        wins = champ["wins"]
+        kills = champ["kills"]
+        deaths = champ["deaths"]
+        assists = champ["assists"]
+        total_cs = champ["total_cs"]
+        total_dur = max(champ["total_duration"], 1)
+        wr_val = round(wins * 100 / games, 1) if games > 0 else 0
+        kda_val = round((kills + assists) / max(1, deaths), 2)
+        cs_min = round(total_cs / (total_dur / 60), 1)
+        bar_pct = int((games / max(1, max_games)) * 100)
+        wr_color = GREEN_WR if wr_val >= 50 else RED_WR
+
+        # ── Col 0: Icono + Nombre + CS ──
+        w0 = QWidget()
+        w0.setStyleSheet("background: transparent;")
+        l0 = QHBoxLayout(w0)
+        l0.setContentsMargins(4, 3, 4, 3)
+        l0.setSpacing(6)
+        icon_lbl = QLabel()
+        icon_path = self.descargar_imagen(cname, "champ")
+        if icon_path:
+            icon_lbl.setPixmap(QPixmap(icon_path).scaled(28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        icon_lbl.setFixedSize(28, 28)
+        l0.addWidget(icon_lbl)
+        txt_vbox = QVBoxLayout()
+        txt_vbox.setContentsMargins(0, 0, 0, 0)
+        txt_vbox.setSpacing(0)
+        lbl_name = QLabel(self._nombre_con_dificultad(cname))
+        lbl_name.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; font-weight: bold; background: transparent;")
+        txt_vbox.addWidget(lbl_name)
+        lbl_cs = QLabel(f"CS {total_cs} ({cs_min}/min)")
+        lbl_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 8px; background: transparent;")
+        txt_vbox.addWidget(lbl_cs)
+        l0.addLayout(txt_vbox, 1)
+
+        # ── Col 1: Partidas + mini barra ──
+        w1 = QWidget()
+        w1.setStyleSheet("background: transparent;")
+        l1 = QVBoxLayout(w1)
+        l1.setContentsMargins(2, 5, 2, 5)
+        l1.setSpacing(2)
+        lbl_games = QLabel(str(games))
+        lbl_games.setAlignment(Qt.AlignCenter)
+        lbl_games.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 13px; font-weight: bold; background: transparent;")
+        l1.addWidget(lbl_games)
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(bar_pct)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(3)
+        bar.setStyleSheet(f"""
+            QProgressBar {{ background: #1a2332; border: none; border-radius: 1px; }}
+            QProgressBar::chunk {{ background: {ACCENT_TEAL}; border-radius: 1px; }}
+        """)
+        l1.addWidget(bar)
+
+        # ── Col 2: WR % ──
+        w2 = QLabel(f"{wr_val}%")
+        w2.setAlignment(Qt.AlignCenter)
+        w2.setStyleSheet(f"color: {wr_color}; font-size: 14px; font-weight: bold; background: transparent; padding: 4px;")
+
+        # ── Col 3: KDA ratio + K/D/A ──
+        w3 = QWidget()
+        w3.setStyleSheet("background: transparent;")
+        l3 = QVBoxLayout(w3)
+        l3.setContentsMargins(2, 3, 2, 3)
+        l3.setSpacing(0)
+        lbl_kda = QLabel(f"{kda_val}:1")
+        lbl_kda.setAlignment(Qt.AlignCenter)
+        lbl_kda.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; font-weight: bold; background: transparent;")
+        l3.addWidget(lbl_kda)
+        kda_detail = QLabel()
+        kda_detail.setAlignment(Qt.AlignCenter)
+        kda_detail.setTextFormat(Qt.RichText)
+        avg_k = round(kills / max(1, games))
+        avg_d = round(deaths / max(1, games))
+        avg_a = round(assists / max(1, games))
+        kda_detail.setText(
+            f"<span style='color:{GREEN_WR};font-size:9px;'>{avg_k}</span>"
+            f"<span style='color:{TEXT_MUTED};font-size:9px;'>/</span>"
+            f"<span style='color:{RED_WR};font-size:9px;'>{avg_d}</span>"
+            f"<span style='color:{TEXT_MUTED};font-size:9px;'>/</span>"
+            f"<span style='color:{YELLOW_WR};font-size:9px;'>{avg_a}</span>"
+        )
+        l3.addWidget(kda_detail)
+
+        return w0, w1, w2, w3
+
+    def _append_champs_season(self, count=15):
+        """Añade los siguientes 'count' campeones a la tabla sin limpiar."""
+        if not hasattr(self, '_season_champ_data') or not self._season_champ_data:
+            return
+        data = self._season_champ_data
+        offset = self._season_offset
+        end = min(offset + count, len(data))
+        if offset >= len(data):
+            return
+        max_games = data[0]["games"] if data else 1
+        for i in range(offset, end):
+            champ = data[i]
+            w0, w1, w2, w3 = self._crear_fila_champ_season(champ, max_games)
+            r = self.tb_season_champs.rowCount()
+            self.tb_season_champs.insertRow(r)
+            self.tb_season_champs.setCellWidget(r, 0, w0)
+            self.tb_season_champs.setCellWidget(r, 1, w1)
+            self.tb_season_champs.setCellWidget(r, 2, w2)
+            self.tb_season_champs.setCellWidget(r, 3, w3)
+            self.tb_season_champs.setRowHeight(r, 52)
+        self._season_offset = end
+        if end >= len(data):
+            print(f"[_cargar_stats_season] Todos los {len(data)} campeones cargados")
+
+    def _on_scroll_season(self, value):
+        """Detecta scroll cercano al final y carga mas campeones."""
+        sb = self.tb_season_champs.verticalScrollBar()
+        if sb.maximum() > 0 and value >= int(sb.maximum() * 0.80):
+            if not hasattr(self, '_cargando_season'):
+                self._cargando_season = False
+            if self._cargando_season:
+                return
+            self._cargando_season = True
+            try:
+                self._append_champs_season(count=15)
+            finally:
+                self._cargando_season = False
 
     def mostrar_picks_vivo(self, rol, aliados, enemigos):
         clear_layout(self.fr_picks_icons)
@@ -5905,57 +6600,6 @@ class LoLRecommenderApp(QMainWindow):
             self.fr_logros.addStretch()
         except Exception as e:
             print(f"[Logros] Error: {e}")
-
-    def _cargar_historial_drafts(self):
-        try:
-            drafts = obtener_historial_drafts(limite=15)
-            self.tb_drafts.setRowCount(0)
-            if not drafts:
-                self.tb_drafts.setRowCount(1)
-                self.tb_drafts.setItem(0, 0, QTableWidgetItem("Sin drafts registrados"))
-                return
-            for d in drafts:
-                row = self.tb_drafts.rowCount()
-                self.tb_drafts.insertRow(row)
-                campeon = d.get("campeon", "?")
-                rol = d.get("rol", "?")
-                aliados = json.loads(d.get("aliados", "[]"))
-                enemigos = json.loads(d.get("enemigos", "[]"))
-                wr_pred = d.get("wr_predicho")
-                resultado = d.get("resultado", "pendiente")
-                ganada = d.get("ganada")
-
-                item_c = QTableWidgetItem(campeon)
-                icon_p = self.descargar_imagen(campeon, "champ")
-                if icon_p:
-                    item_c.setIcon(QIcon(icon_p))
-                self.tb_drafts.setItem(row, 0, item_c)
-
-                self.tb_drafts.setItem(row, 1, QTableWidgetItem(API_TO_ROL.get(rol, rol)))
-
-                item_al = QTableWidgetItem(" + ".join(aliados[:3]) + ("..." if len(aliados) > 3 else ""))
-                item_al.setToolTip(" vs ".join(aliados))
-                self.tb_drafts.setItem(row, 2, item_al)
-
-                item_en = QTableWidgetItem(" vs ".join(enemigos[:3]) + ("..." if len(enemigos) > 3 else ""))
-                item_en.setToolTip(" vs ".join(enemigos))
-                self.tb_drafts.setItem(row, 3, item_en)
-
-                wr_text = f"{wr_pred}%" if wr_pred else "--"
-                item_wr = QTableWidgetItem(wr_text)
-                if wr_pred:
-                    item_wr.setForeground(QColor(GREEN_WR if wr_pred > 52 else RED_WR if wr_pred < 48 else YELLOW_WR))
-                self.tb_drafts.setItem(row, 4, item_wr)
-
-                res_text = resultado
-                res_color = GREEN_WR if ganada == 1 else RED_WR if ganada == 0 else "#94a3b8"
-                item_res = QTableWidgetItem(res_text)
-                item_res.setForeground(QColor(res_color))
-                self.tb_drafts.setItem(row, 5, item_res)
-        except Exception as e:
-            print(f"[DraftHistory] Error cargando historial: {e}")
-            self.tb_drafts.setRowCount(1)
-            self.tb_drafts.setItem(0, 0, QTableWidgetItem("Error al cargar"))
 
 if __name__ == "__main__":
     import signal

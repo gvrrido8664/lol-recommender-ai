@@ -1,10 +1,12 @@
-import sqlite3
 import pandas as pd
 import numpy as np
 import joblib
 import os
 import sys
+import warnings
 from sklearn.ensemble import RandomForestClassifier
+
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
 # Añadir el directorio raíz al path para evitar errores de importación al ejecutarlo directamente
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -284,8 +286,8 @@ def entrenar_modelo_1v1():
             SELECT p1.champion AS aliado, p2.champion AS enemigo, p1.win
             FROM participantes p1
             JOIN participantes p2 ON p1.match_id = p2.match_id
-            WHERE p1.team_position = ? 
-              AND p2.team_position = ?
+            WHERE p1.team_position = %s
+              AND p2.team_position = %s
               AND p1.team != p2.team
         """
         df = pd.read_sql_query(query, conn, params=(rol, rol))

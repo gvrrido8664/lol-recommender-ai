@@ -1,18 +1,25 @@
-import sqlite3
 import os
 import sys
 import json
+import time
+
+import psycopg2
+import psycopg2.errors
+from psycopg2.extras import DictCursor
+
+
+class ConexionDBError(Exception):
+    """Error al conectar o consultar la base de datos PostgreSQL."""
+    pass
+
 
 def _get_base_dir():
-    """Resuelve la raíz del proyecto tanto en desarrollo como en .exe de PyInstaller."""
     if getattr(sys, 'frozen', False):
         return sys._MEIPASS
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
 def _get_data_dir():
-    """Devuelve un directorio de datos escribible.
-    En desarrollo: data/ junto al código.
-    En .exe frozen: %APPDATA%/LoLRecommender/data para que sea escribible."""
     if getattr(sys, 'frozen', False):
         base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
     else:
@@ -21,27 +28,78 @@ def _get_data_dir():
     os.makedirs(d, exist_ok=True)
     return d
 
+
 BASE_DIR = _get_base_dir()
 DATA_DIR = _get_data_dir()
+
+# Mantenido para compatibilidad con código que espera estas variables.
+# En modo PostgreSQL la ruta del archivo .db ya no se usa.
 DB_PATH = os.path.join(DATA_DIR, "lol_data.db")
 
+
+def _cargar_config():
+    try:
+        config_paths = ["config.json", os.path.join("..", "config.json")]
+        for p in config_paths:
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _obtener_db_url() -> str | None:
+    url = os.environ.get("DATABASE_URL", "")
+    if url:
+        return url
+    config = _cargar_config()
+    url = config.get("DATABASE_URL", "")
+    if url:
+        return url
+    return None
+
+
 def obtener_conexion():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL;") 
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")  
-    conn.row_factory = sqlite3.Row 
-    return conn
+    url = _obtener_db_url()
+    if not url:
+        raise ConexionDBError(
+            "DATABASE_URL no configurado. Agrega la URL de PostgreSQL en config.json "
+            "o en la variable de entorno DATABASE_URL."
+        )
+
+    ultimo_error = None
+    max_intentos = 3
+    for intento in range(max_intentos):
+        try:
+            conn = psycopg2.connect(
+                url,
+                cursor_factory=DictCursor,
+                connect_timeout=30,
+                keepalives=1,
+                keepalives_idle=60,
+                keepalives_interval=10,
+                keepalives_count=3,
+                options='-c statement_timeout=30000',
+            )
+            conn.set_session(autocommit=False)
+            return conn
+        except psycopg2.OperationalError as e:
+            ultimo_error = e
+            if intento < max_intentos - 1:
+                espera = 5 * (intento + 1)
+                time.sleep(espera)
+
+    raise ConexionDBError(
+        f"No se pudo conectar a PostgreSQL tras {max_intentos} intentos.\n"
+        f"Verifica tu conexion a internet y que el servidor este accesible.\n"
+        f"Detalle: {str(ultimo_error).strip()}"
+    )
+
 
 def _db_tiene_datos():
-    """Devuelve True si la BD tiene datos reales (>1 MB o >1000 partidas)."""
-    if not os.path.exists(DB_PATH):
-        return False
-    if os.path.getsize(DB_PATH) > 1 * 1024 * 1024:
-        return True
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = obtener_conexion()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM matches")
         tiene = cur.fetchone()[0] > 1000
@@ -50,15 +108,8 @@ def _db_tiene_datos():
     except Exception:
         return False
 
-def inicializar_db():
-    if getattr(sys, 'frozen', False):
-        bundled_db = os.path.join(sys._MEIPASS, "data", "lol_data.db")
-        if os.path.exists(bundled_db) and not _db_tiene_datos():
-            os.makedirs(DATA_DIR, exist_ok=True)
-            import shutil
-            shutil.copy2(bundled_db, DB_PATH)
-            print(f"BD copiada de {bundled_db} a {DB_PATH}")
 
+def inicializar_db():
     conn = obtener_conexion()
     cur = conn.cursor()
 
@@ -74,7 +125,7 @@ def inicializar_db():
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS participantes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             match_id TEXT,
             champion TEXT NOT NULL,
             team_position TEXT NOT NULL,
@@ -90,31 +141,23 @@ def inicializar_db():
         )
     """)
 
-    # Migración de estructura segura (si la BD ya existía, le agrega las columnas nuevas sin borrar los datos)
-    try:
-        cur.execute("ALTER TABLE matches ADD COLUMN patch TEXT")
-    except sqlite3.OperationalError: pass
-    
-    try:
-        cur.execute("ALTER TABLE participantes ADD COLUMN runes TEXT")
-    except sqlite3.OperationalError: pass
-
-    try:
-        cur.execute("ALTER TABLE participantes ADD COLUMN spells TEXT")
-    except sqlite3.OperationalError: pass
-
-    try:
-        cur.execute("ALTER TABLE participantes ADD COLUMN kills INTEGER")
-    except sqlite3.OperationalError: pass
-
-    try:
-        cur.execute("ALTER TABLE participantes ADD COLUMN deaths INTEGER")
-    except sqlite3.OperationalError: pass
-
-    try:
-        cur.execute("ALTER TABLE participantes ADD COLUMN assists INTEGER")
-    except sqlite3.OperationalError: pass
-
+    for col, tipo in [
+        ("patch", "TEXT"),
+        ("runes", "TEXT"),
+        ("spells", "TEXT"),
+        ("kills", "INTEGER"),
+        ("deaths", "INTEGER"),
+        ("assists", "INTEGER"),
+    ]:
+        cur.execute(f"""
+            DO $$
+            BEGIN
+                ALTER TABLE {('participantes' if col != 'patch' else 'matches')}
+                ADD COLUMN {col} {tipo};
+            EXCEPTION
+                WHEN duplicate_column THEN NULL;
+            END $$;
+        """)
 
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champion ON participantes(champion);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_position ON participantes(team_position);")
@@ -122,10 +165,9 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_win ON participantes(win);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_pos ON participantes(champion, team_position);")
 
-    # ─── TABLA DE ESTADO EMOCIONAL (NEXUS) ───
     cur.execute("""
         CREATE TABLE IF NOT EXISTS estado_emocional (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             game_id TEXT NOT NULL,
             puuid TEXT,
             champion TEXT,
@@ -139,7 +181,8 @@ def inicializar_db():
 
     conn.commit()
     conn.close()
-    print("✅ Base de datos 'lol_data.db' operativa y actualizada con KDA, Parches, Hechizos y Motor Emocional.")
+    print("Base de datos PostgreSQL operativa y actualizada con KDA, Parches, Hechizos y Motor Emocional.")
+
 
 def limpiar_base_de_datos():
     conn = obtener_conexion()
@@ -148,145 +191,101 @@ def limpiar_base_de_datos():
     cur.execute("DELETE FROM matches")
     conn.commit()
     conn.close()
-    print("🗑️ Base de datos limpiada.")
+    print("Base de datos limpiada.")
+
 
 def purgar_parches_antiguos(parche_actual: str):
-    """
-    Elimina todas las partidas de parches anteriores al actual.
-    Riot formatea versiones como '16.11.1' o '16.11.xxx'.
-    Esta función borra todo lo que NO empiece con 'parche_actual.'.
-    Luego ejecuta VACUUM para recuperar el espacio en disco.
-    
-    Args:
-        parche_actual: str como '16.11' (mayor.menor)
-    
-    Returns:
-        tuple[int, float]: (partidas_eliminadas, tamaño_mb_despues)
-    """
     conn = obtener_conexion()
     cur = conn.cursor()
-    
-    # Contar antes
+
     cur.execute("SELECT COUNT(*) FROM matches")
     total_antes = cur.fetchone()[0]
-    
-    # Obtener tamaño antes
-    try:
-        size_antes = os.path.getsize(DB_PATH) / (1024 * 1024)
-    except:
-        size_antes = 0
-    
-    # Eliminar partidas cuyo game_version NO empieza con el parche actual
-    # Ej: parche_actual='16.11' → borra versiones como '16.10.x', '14.4.x', etc.
-    # El ON DELETE CASCADE borra automáticamente los participantes asociados.
+
     cur.execute("""
-        DELETE FROM matches 
-        WHERE game_version NOT LIKE ? 
+        DELETE FROM matches
+        WHERE game_version NOT LIKE %s
            OR game_version IS NULL
     """, (f"{parche_actual}.%",))
     eliminadas = cur.rowcount
     conn.commit()
-    
-    # Cerrar conexión antes de VACUUM (SQLite lo requiere en ciertos modos)
     conn.close()
-    
-    # VACUUM: desfragmenta y recupera espacio en disco
-    # Se ejecuta en conexión separada sin row_factory para evitar conflictos
+
     if eliminadas > 0:
-        print(f"  [PURGA] {eliminadas:,} partidas antiguas eliminadas. Compactando base de datos...")
-        conn2 = sqlite3.connect(DB_PATH)
-        conn2.execute("PRAGMA journal_mode=WAL")
+        print(f"  [PURGA] {eliminadas:,} partidas antiguas eliminadas.")
+        conn2 = obtener_conexion()
         conn2.execute("VACUUM")
         conn2.close()
-    
-    # Tamaño después
-    try:
-        size_despues = os.path.getsize(DB_PATH) / (1024 * 1024)
-    except:
-        size_despues = 0
-    
-    ahorro = size_antes - size_despues
+
     print(f"  [PURGA] Base de datos: {total_antes:,} -> {total_antes - eliminadas:,} partidas")
-    print(f"  [PURGA] Disco: {size_antes:.1f} MB -> {size_despues:.1f} MB (ahorro: {ahorro:.1f} MB)")
-    
-    return eliminadas, size_despues
+    return eliminadas, 0
+
 
 def compactar_base_de_datos():
-    """Reduce el tamaño del archivo .db eliminando espacio vacío interno (VACUUM).
-       También limpia datos antiguos que ya no sirven para entrenar."""
     conn = obtener_conexion()
     cur = conn.cursor()
-    
-    # 1. Eliminar partidas sin participantes (huérfanas)
+
     cur.execute("""
         DELETE FROM matches WHERE match_id NOT IN (
             SELECT DISTINCT match_id FROM participantes
         )
     """)
     huerfanas = cur.rowcount
-    
-    # 2. Eliminar partidas muy antiguas (>6 meses) si hay más de 5000
+
     cur.execute("SELECT COUNT(*) FROM matches")
     total = cur.fetchone()[0]
     if total > 5000:
         cur.execute("""
             DELETE FROM matches WHERE match_id IN (
-                SELECT match_id FROM matches 
-                WHERE fecha_descarga < datetime('now', '-6 months')
+                SELECT match_id FROM matches
+                WHERE fecha_descarga < NOW() - INTERVAL '6 months'
                 ORDER BY fecha_descarga ASC
-                LIMIT ?
+                LIMIT %s
             )
         """, (total - 5000,))
         antiguas = cur.rowcount
     else:
         antiguas = 0
-    
+
     conn.commit()
-    
-    # 3. Compactar archivo (recupera espacio libre)
-    print(f"  🧹 Huérfanas eliminadas: {huerfanas}")
-    print(f"  🕒 Antiguas eliminadas: {antiguas}")
-    print(f"  📦 Compactando archivo...")
+
+    print(f"  Huérfanas eliminadas: {huerfanas}")
+    print(f"  Antiguas eliminadas: {antiguas}")
+    print(f"  Compactando archivo...")
     cur.execute("VACUUM")
     conn.close()
-    
-    # Mostrar reducción
-    tamaño_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
-    print(f"✅ Base de datos compactada: {tamaño_mb:.2f} MB")
 
-# ═══════════════════════════════════════════════════════════════
-# MOTOR EMOCIONAL (NEXUS)
-# ═══════════════════════════════════════════════════════════════
+    print("Base de datos compactada.")
+
+
+# ─── MOTOR EMOCIONAL (NEXUS) ───
 
 def etiquetar_estado_emocional(game_id: str, estado: str, puuid: str = "", champion: str = ""):
-    """Guarda o actualiza el estado emocional de una partida."""
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO estado_emocional (game_id, puuid, champion, estado)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(game_id) DO UPDATE SET estado=excluded.estado, fecha_tag=CURRENT_TIMESTAMP
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT(game_id) DO UPDATE SET estado=EXCLUDED.estado, fecha_tag=CURRENT_TIMESTAMP
     """, (str(game_id), puuid, champion, estado))
     conn.commit()
     conn.close()
 
+
 def obtener_estado_emocional(game_id: str) -> str | None:
-    """Obtiene el estado emocional de una partida específica."""
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT estado FROM estado_emocional WHERE game_id=?", (str(game_id),))
+    cur.execute("SELECT estado FROM estado_emocional WHERE game_id=%s", (str(game_id),))
     row = cur.fetchone()
     conn.close()
     return row["estado"] if row else None
 
+
 def obtener_estadisticas_emocionales() -> dict:
-    """Devuelve estadísticas agregadas del estado emocional vs winrate (desde matches en BD).
-    Retorna un dict con {estado: {'partidas': N, 'wins': N, 'wr': %}}."""
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("""
         SELECT ee.estado, COUNT(*) as partidas,
-               SUM(CASE WHEN p.win=1 THEN 1 ELSE 0 END) as wins
+               SUM(CASE WHEN p.win THEN 1 ELSE 0 END) as wins
         FROM estado_emocional ee
         JOIN participantes p ON p.match_id = ee.game_id AND p.champion = ee.champion
         GROUP BY ee.estado
@@ -294,8 +293,8 @@ def obtener_estadisticas_emocionales() -> dict:
     stats = {}
     for row in cur.fetchall():
         estado = row["estado"]
-        partidas = row["partidas"]
-        wins = row["wins"] or 0
+        partidas = int(row["partidas"] or 0)
+        wins = int(row["wins"] or 0)
         stats[estado] = {
             "partidas": partidas,
             "wins": wins,
@@ -304,17 +303,15 @@ def obtener_estadisticas_emocionales() -> dict:
     conn.close()
     return stats
 
-# ═══════════════════════════════════════════════════════════════
-# TRACKING DE LP / MMR
-# ═══════════════════════════════════════════════════════════════
+
+# ─── TRACKING DE LP / MMR ───
 
 def _crear_tabla_lp_history():
-    """Crea la tabla lp_history si no existe (migración segura)."""
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS lp_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             fecha TEXT NOT NULL,
             queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
             tier TEXT NOT NULL,
@@ -330,12 +327,15 @@ def _crear_tabla_lp_history():
     conn.commit()
     conn.close()
 
-_crear_tabla_lp_history()
+
+try:
+    _crear_tabla_lp_history()
+except ConexionDBError:
+    pass
 
 
 def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int = 0,
                  queue_type: str = "RANKED_SOLO_5x5"):
-    """Guarda un snapshot de LP. Un único registro por cola por día (upsert)."""
     if not tier or tier.upper() in ("UNRANKED", "NONE", ""):
         return
     from datetime import date
@@ -344,20 +344,18 @@ def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int =
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO lp_history (fecha, queue_type, tier, division, lp, wins, losses)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT DO NOTHING
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (fecha, queue_type) DO NOTHING
     """, (fecha, queue_type, tier.upper(), division.upper(), int(lp), int(wins), int(losses)))
-    # Si ya hay un registro hoy, actualizarlo con los valores más recientes
     cur.execute("""
-        UPDATE lp_history SET tier=?, division=?, lp=?, wins=?, losses=?
-        WHERE fecha=? AND queue_type=?
+        UPDATE lp_history SET tier=%s, division=%s, lp=%s, wins=%s, losses=%s
+        WHERE fecha=%s AND queue_type=%s
     """, (tier.upper(), division.upper(), int(lp), int(wins), int(losses), fecha, queue_type))
     conn.commit()
     conn.close()
 
 
 def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) -> list:
-    """Devuelve lista de dicts [{fecha, tier, division, lp, lp_total}] ordenada por fecha."""
     TIER_BASE = {
         "IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
         "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
@@ -369,9 +367,9 @@ def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) ->
     cur.execute("""
         SELECT fecha, tier, division, lp, wins, losses
         FROM lp_history
-        WHERE queue_type=? AND fecha >= date('now', ?)
+        WHERE queue_type=%s AND fecha >= (CURRENT_DATE - (%s || ' days')::INTERVAL)::TEXT
         ORDER BY fecha ASC
-    """, (queue_type, f"-{dias} days"))
+    """, (queue_type, str(dias)))
     rows = cur.fetchall()
     conn.close()
     resultado = []
@@ -396,7 +394,7 @@ def _crear_tabla_drafts():
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS drafts_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             fecha TEXT NOT NULL,
             campeon TEXT,
             rol TEXT,
@@ -411,7 +409,11 @@ def _crear_tabla_drafts():
     conn.commit()
     conn.close()
 
-_crear_tabla_drafts()
+
+try:
+    _crear_tabla_drafts()
+except ConexionDBError:
+    pass
 
 
 def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
@@ -420,9 +422,10 @@ def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO drafts_history (fecha, campeon, rol, bans, aliados, enemigos, wr_predicho)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
     """, (str(date.today()), campeon, rol, json.dumps(bans), json.dumps(aliados), json.dumps(enemigos), wr_predicho))
-    draft_id = cur.lastrowid
+    draft_id = cur.fetchone()["id"]
     conn.commit()
     conn.close()
     return draft_id
@@ -436,16 +439,16 @@ def completar_draft_resultado(fecha, ganada):
             UPDATE drafts_history SET resultado = 'completada'
             WHERE id = (
                 SELECT id FROM drafts_history
-                WHERE fecha = ? AND resultado = 'pendiente'
+                WHERE fecha = %s AND resultado = 'pendiente'
                 ORDER BY id DESC LIMIT 1
             )
         """, (fecha,))
     else:
         cur.execute("""
-            UPDATE drafts_history SET resultado = ?, ganada = ?
+            UPDATE drafts_history SET resultado = %s, ganada = %s
             WHERE id = (
                 SELECT id FROM drafts_history
-                WHERE fecha = ? AND resultado = 'pendiente'
+                WHERE fecha = %s AND resultado = 'pendiente'
                 ORDER BY id DESC LIMIT 1
             )
         """, ("victoria" if ganada else "derrota", 1 if ganada else 0, fecha))
@@ -458,7 +461,7 @@ def obtener_historial_drafts(limite=20):
     cur = conn.cursor()
     cur.execute("""
         SELECT fecha, campeon, rol, bans, aliados, enemigos, wr_predicho, resultado, ganada
-        FROM drafts_history ORDER BY id DESC LIMIT ?
+        FROM drafts_history ORDER BY id DESC LIMIT %s
     """, (limite,))
     rows = cur.fetchall()
     conn.close()

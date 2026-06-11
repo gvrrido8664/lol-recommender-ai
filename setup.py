@@ -79,9 +79,12 @@ def extraer_datos(log_callback=None, progress_callback=None):
         os.remove(DESTINO_ZIP)
         _log("Archivo temporal eliminado.", log_callback)
 
-        from src.db_manager import DB_PATH
-        if os.path.exists(DB_PATH):
+        from src.db_manager import DATA_DIR
+        modelo_path = os.path.join(DATA_DIR, "modelo_ia.pkl")
+        if os.path.exists(modelo_path):
             _log("Base de datos verificada.", log_callback)
+        else:
+            _log("AVISO: No se encontro modelo_ia.pkl. Los modelos IA no se cargaron.", log_callback)
         return True
     except Exception as e:
         _log(f"Error al descomprimir: {e}", log_callback)
@@ -89,10 +92,10 @@ def extraer_datos(log_callback=None, progress_callback=None):
 
 
 def verificar_datos_iniciales():
-    from src.db_manager import DB_PATH, DATA_DIR
+    from src.db_manager import DATA_DIR
     modelo_path = os.path.join(DATA_DIR, "modelo_ia.pkl")
     tags_path = os.path.join(DATA_DIR, "tags_campeones.json")
-    return os.path.exists(DB_PATH) and os.path.exists(modelo_path) and os.path.exists(tags_path)
+    return os.path.exists(modelo_path) and os.path.exists(tags_path)
 
 
 if __name__ == "__main__":

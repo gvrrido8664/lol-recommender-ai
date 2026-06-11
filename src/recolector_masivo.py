@@ -334,13 +334,8 @@ def descargar_partida(match_id: str) -> bool:
         version = info.get("gameVersion", "0")
         parts = version.split(".")
         patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
-        try:
-            p_major, p_minor = map(int, PARCHE_ACTUAL.split("."))
-            parches_permitidos = [PARCHE_ACTUAL, f"{p_major}.{p_minor - 1}"]
-        except:
-            parches_permitidos = [PARCHE_ACTUAL]
         
-        if patch not in parches_permitidos: return False
+        if patch != PARCHE_ACTUAL: return False
 
         # La API v5 incluye los 6 slots de ítems en el match summary.
         # USAR_TIMELINE=False elimina 1 API call extra por partida (30-50% del total).

@@ -32,12 +32,38 @@ LOGROS_DEFINICIONES = [
 ]
 
 
+def _extraer_stats(g):
+    """Normaliza una partida del formato anidado de LCU a un dict plano."""
+    part = g.get("participants", [{}])
+    p0 = part[0] if part else {}
+    stats = p0.get("stats", {})
+
+    champion_id = str(p0.get("championId", "0"))
+    champion_name = g.get("championName") or p0.get("championName") or champion_id
+
+    return {
+        "win": stats.get("win", g.get("win", False)),
+        "kills": stats.get("kills", g.get("kills", 0)),
+        "deaths": stats.get("deaths", g.get("deaths", 0)),
+        "assists": stats.get("assists", g.get("assists", 0)),
+        "pentaKills": stats.get("pentaKills", g.get("pentaKills", 0)),
+        "tripleKills": stats.get("tripleKills", g.get("tripleKills", 0)),
+        "totalMinionsKilled": stats.get("totalMinionsKilled", g.get("totalMinionsKilled", 0)),
+        "neutralMinionsKilled": stats.get("neutralMinionsKilled", g.get("neutralMinionsKilled", 0)),
+        "gameDuration": g.get("gameDuration", 0),
+        "championName": champion_name,
+        "role": p0.get("teamPosition", p0.get("role", g.get("role", g.get("lane", "")))),
+        "lane": p0.get("teamPosition", p0.get("lane", g.get("lane", g.get("role", "")))),
+    }
+
+
 def evaluar_logros(games, daily_counts=None):
     logros = {lg["id"]: False for lg in LOGROS_DEFINICIONES}
     if not games:
         return logros
 
-    recent = list(reversed(games))  # oldest first, newest last
+    flat_games = [_extraer_stats(g) for g in games]
+    recent = list(reversed(flat_games))
 
     # 1. En Rachaaa: 5 wins in a row
     max_streak = 0
@@ -71,7 +97,7 @@ def evaluar_logros(games, daily_counts=None):
     # 5. Granjero: 10 CS/min in a game lasting 20+ min
     for g in recent:
         dur = g.get("gameDuration", 0) or 0
-        cs_val = g.get("totalMinionsKilled") or g.get("neutralMinionsKilled", 0) or 0
+        cs_val = (g.get("totalMinionsKilled", 0) or 0) + (g.get("neutralMinionsKilled", 0) or 0)
         if dur >= 1200 and dur > 0:
             cs_min = cs_val / (dur / 60)
             if cs_min >= 10:
@@ -134,12 +160,12 @@ def evaluar_logros(games, daily_counts=None):
     )
 
     # 13. Resiliente: win right after 3 consecutive losses (chronological: L,L,L,W)
-    if len(games) >= 4:
-        for i in range(3, len(games)):
-            if (not games[i - 3].get("win", True) and
-                not games[i - 2].get("win", True) and
-                not games[i - 1].get("win", True) and
-                games[i].get("win", False)):
+    if len(flat_games) >= 4:
+        for i in range(3, len(flat_games)):
+            if (not flat_games[i - 3].get("win", True) and
+                not flat_games[i - 2].get("win", True) and
+                not flat_games[i - 1].get("win", True) and
+                flat_games[i].get("win", False)):
                 logros["resiliente"] = True
                 break
 

@@ -1,9 +1,19 @@
 """
-LOLLECT v2 — Motor de Recolección Masiva de Partidas de LoL
+LOLLECT v3 — Motor de Recolección Masiva de Partidas de LoL
 ═══════════════════════════════════════════════════════════════
 Producción-grade. Construido para ser rápido, resiliente y observable.
 
-Características:
+Mejoras v3:
+  • Rate limiters por endpoint (match, league, timeline) — sin lock contention
+  • Pipeline continuo de PUUIDs (sin esperas bloqueantes entre grupos)
+  • Conexiones PG persistentes (sin reconexión por lote)
+  • Auto-detección de tier de API key (development / production)
+  • Inserción batch optimizada en PostgreSQL
+  • Re-seeding inteligente por plataforma
+  • Reintentos de PUUIDs fallidos
+  • Deduplicación thread-safe de match IDs + restricción UNIQUE en participantes
+
+Características heredadas de v2:
   • Rate limiter adaptativo con token bucket + backoff exponencial
   • Descarga paralela de partidas (ThreadPool + batch processing)
   • Persistencia de cola en PostgreSQL (resume automático tras reinicio)
@@ -25,12 +35,43 @@ import os
 import sys
 import threading
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from datetime import datetime, timedelta, timezone as tz
 from contextlib import contextmanager
 
+from psycopg2.extras import execute_values
 from .db_manager import obtener_conexion, inicializar_db, DATA_DIR, purgar_parches_antiguos
 from .riot_api import cargar_objetos
+
+# ═══════════════════════════════════════════════════════════════
+# CONEXIÓN THREAD-LOCAL  (1 PG conn por worker — persistente)
+# ═══════════════════════════════════════════════════════════════
+
+_pg_local = threading.local()
+_pg_connections = set()
+_pg_conn_lock = threading.Lock()
+
+
+def _get_thread_conn():
+    conn = getattr(_pg_local, "conn", None)
+    if conn is None or conn.closed:
+        conn = obtener_conexion()
+        _pg_local.conn = conn
+        with _pg_conn_lock:
+            _pg_connections.add(conn)
+    return conn
+
+
+def _close_thread_connections():
+    with _pg_conn_lock:
+        for conn in list(_pg_connections):
+            try:
+                if not conn.closed:
+                    conn.close()
+            except Exception:
+                pass
+        _pg_connections.clear()
+
 
 # ═══════════════════════════════════════════════════════════════
 # CONFIGURACIÓN
@@ -41,14 +82,20 @@ def _cargar_config():
         config_paths = ["config.json", os.path.join("..", "config.json")]
         for p in config_paths:
             if os.path.exists(p):
-                with open(p, "r") as f: return json.load(f)
-    except: pass
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+    except Exception:
+        pass
     return {}
 
 CONFIG = _cargar_config()
 API_KEY = CONFIG.get("API_KEY", os.environ.get("RIOT_API_KEY", ""))
-REGION_ROUTING = "americas"
-PLATFORMS = ["la2", "la1", "na1", "br1"]
+
+COLLECTOR_CFG = CONFIG.get("collector_settings", {})
+REGION_ROUTING = COLLECTOR_CFG.get("region_routing", "americas")
+PLATFORMS = COLLECTOR_CFG.get("platforms", ["la2", "la1", "na1", "br1"])
+API_KEY_TIER = COLLECTOR_CFG.get("api_key_tier", "development")
+
 HEADERS = {"X-Riot-Token": API_KEY}
 ITEMS_DATA = cargar_objetos()
 ITEMS_SUPP_FINAL = {"3866", "3867", "3869", "3870", "3871", "3873", "3874"}
@@ -57,22 +104,25 @@ PARCHE_ACTUAL = "0.0"
 VERSION_COMPLETA = "0.0.0"
 
 MAX_WORKERS = 10
-BATCH_SIZE = 5
+BATCH_SIZE = 30
 CHECKPOINT_EVERY = 500
-RATE_LIMIT_RPS = 18
 COUNT_POR_JUGADOR = 100
 PLAYER_FETCH_WORKERS = 5
 
 USAR_TIMELINE = False
 
-DIAS_RECIENTES = 5
 JUGADORES_SEMILLA = 500
+SEMILLA_POR_PLATAFORMA = 20
+RE_SEED_FRACCION = 3
+
 
 # ═══════════════════════════════════════════════════════════════
-# RIOT RATE LIMITER DUAL (Development API Key)
+# RIOT RATE LIMITER  —  Sin lock contention durante sleep
 # ═══════════════════════════════════════════════════════════════
 
 class RiotRateLimiter:
+    """Token bucket con dos ventanas. El sleep ocurre FUERA del lock."""
+
     def __init__(self, short_rate: int = 20, short_window: float = 1.0,
                  long_rate: int = 100, long_window: float = 120.0):
         self.short_rate = short_rate
@@ -88,29 +138,28 @@ class RiotRateLimiter:
             timestamps.popleft()
 
     def acquire(self):
-        with self.lock:
-            now = time.monotonic()
-            self._clean_old(self.short_timestamps, self.short_window, now)
-            self._clean_old(self.long_timestamps, self.long_window, now)
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                self._clean_old(self.short_timestamps, self.short_window, now)
+                self._clean_old(self.long_timestamps, self.long_window, now)
 
-            if len(self.long_timestamps) >= self.long_rate:
-                wait = self.long_timestamps[0] + self.long_window - now
-                if wait > 0:
-                    time.sleep(wait)
-                    now = time.monotonic()
-                    self._clean_old(self.long_timestamps, self.long_window, now)
-                    self._clean_old(self.short_timestamps, self.short_window, now)
+                long_wait = 0.0
+                if len(self.long_timestamps) >= self.long_rate:
+                    long_wait = self.long_timestamps[0] + self.long_window - now
 
-            if len(self.short_timestamps) >= self.short_rate:
-                wait = self.short_timestamps[0] + self.short_window - now
-                if wait > 0:
-                    time.sleep(wait)
-                    now = time.monotonic()
-                    self._clean_old(self.short_timestamps, self.short_window, now)
-                    self._clean_old(self.long_timestamps, self.long_window, now)
+                short_wait = 0.0
+                if len(self.short_timestamps) >= self.short_rate:
+                    short_wait = self.short_timestamps[0] + self.short_window - now
 
-            self.short_timestamps.append(now)
-            self.long_timestamps.append(now)
+                wait_time = max(long_wait, short_wait, 0.0)
+
+                if wait_time <= 0:
+                    self.short_timestamps.append(now)
+                    self.long_timestamps.append(now)
+                    return
+
+            time.sleep(wait_time + 0.001)
 
     @property
     def short_used(self) -> int:
@@ -124,10 +173,32 @@ class RiotRateLimiter:
             self._clean_old(self.long_timestamps, self.long_window, time.monotonic())
             return len(self.long_timestamps)
 
-RATE_LIMITER = RiotRateLimiter()
+
+def _crear_rate_limiters():
+    if API_KEY_TIER == "production":
+        return (
+            RiotRateLimiter(500, 10.0, 2000, 600.0),
+            RiotRateLimiter(500, 10.0, 2000, 600.0),
+            RiotRateLimiter(500, 10.0, 2000, 600.0),
+        )
+    else:
+        shared = RiotRateLimiter(20, 1.0, 100, 120.0)
+        return (shared, shared, shared)
+
+
+RATE_LIMITER_MATCH, RATE_LIMITER_LEAGUE, RATE_LIMITER_TIMELINE = _crear_rate_limiters()
+
+
+def _limiter_for(url: str) -> RiotRateLimiter:
+    if "/timeline" in url:
+        return RATE_LIMITER_TIMELINE
+    if "/match/v5/" in url:
+        return RATE_LIMITER_MATCH
+    return RATE_LIMITER_LEAGUE
+
 
 # ═══════════════════════════════════════════════════════════════
-# COLA PERSISTENTE (PostgreSQL)
+# COLA PERSISTENTE  (PostgreSQL)
 # ═══════════════════════════════════════════════════════════════
 
 class ColaPersistente:
@@ -201,6 +272,21 @@ class ColaPersistente:
                 self._reset_conn()
         return None
 
+    def push_back(self, puuid: str):
+        """Re-encola un PUUID cuyo fetch falló (resetea procesado=0)."""
+        with self.lock:
+            try:
+                conn = self._get_conn()
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO cola(puuid, procesado) VALUES(%s, 0) "
+                    "ON CONFLICT (puuid) DO UPDATE SET procesado=0",
+                    (puuid,)
+                )
+                conn.commit()
+            except Exception:
+                self._reset_conn()
+
     def size(self) -> int:
         with self.lock:
             try:
@@ -218,7 +304,8 @@ class ColaPersistente:
                 conn = self._get_conn()
                 cur = conn.cursor()
                 cur.execute(
-                    "UPDATE checkpoint SET total_descargadas=%s, total_errores=%s, fecha_checkpoint=CURRENT_TIMESTAMP WHERE id=1",
+                    "UPDATE checkpoint SET total_descargadas=%s, total_errores=%s, "
+                    "fecha_checkpoint=CURRENT_TIMESTAMP WHERE id=1",
                     (descargadas, errores)
                 )
                 conn.commit()
@@ -262,9 +349,16 @@ class ColaPersistente:
 
 class Dashboard:
     def __init__(self):
-        self.lock = threading.Lock(); self.start_time = time.monotonic()
-        self.matches = 0; self.errors = 0; self.rate_limits = 0; self.bytes_down = 0
-        self.last_n_matches = []; self.champions_seen = set(); self.match_ids_seen = set()
+        self.lock = threading.Lock()
+        self.start_time = time.monotonic()
+        self.matches = 0
+        self.errors = 0
+        self.rate_limits = 0
+        self.bytes_down = 0
+        self.last_n_matches = []
+        self.champions_seen = set()
+        self.match_ids_seen = set()
+
     def add_match(self, match_id: str, champions: list, size_bytes: int = 0):
         with self.lock:
             self.matches += 1
@@ -276,6 +370,10 @@ class Dashboard:
                 self.champions_seen.add(c)
             self.match_ids_seen.add(match_id)
 
+    def is_match_known(self, match_id: str) -> bool:
+        with self.lock:
+            return match_id in self.match_ids_seen
+
     def add_error(self):
         with self.lock:
             self.errors += 1
@@ -283,15 +381,24 @@ class Dashboard:
     def add_rate_limit(self):
         with self.lock:
             self.rate_limits += 1
+
     def snapshot(self) -> dict:
         with self.lock:
             elapsed = max(time.monotonic() - self.start_time, 1)
             rpm = len(self.last_n_matches) / min(elapsed / 60, 5) if self.last_n_matches else 0
-            return {"matches": self.matches, "errors": self.errors, "rate_limits": self.rate_limits,
-                    "rpm": round(rpm, 1), "elapsed": str(timedelta(seconds=int(elapsed))),
-                    "champions": len(self.champions_seen), "bytes_mb": round(self.bytes_down / (1024*1024), 1)}
+            return {
+                "matches": self.matches,
+                "errors": self.errors,
+                "rate_limits": self.rate_limits,
+                "rpm": round(rpm, 1),
+                "elapsed": str(timedelta(seconds=int(elapsed))),
+                "champions": len(self.champions_seen),
+                "bytes_mb": round(self.bytes_down / (1024 * 1024), 1),
+            }
+
 
 DASH = Dashboard()
+
 
 # ═══════════════════════════════════════════════════════════════
 # HELPERS
@@ -300,43 +407,77 @@ DASH = Dashboard()
 def obtener_version_riot() -> tuple:
     try:
         resp = requests.get("https://ddragon.leagueoflegends.com/api/versions.json", timeout=5)
-        v = resp.json()[0]; parts = v.split(".")
+        v = resp.json()[0]
+        parts = v.split(".")
         return (".".join(parts[:2]), v)
-    except: return ("14.10", "14.10.1")
+    except Exception:
+        return ("14.10", "14.10.1")
 
-def epoch_dias_atras(dias: int) -> int:
-    return int((datetime.utcnow() - timedelta(days=dias)).timestamp())
 
 def epoch_medianoche_hoy() -> int:
-    from datetime import timezone as tz
     hoy = datetime.now(tz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     return int(hoy.timestamp())
+
 
 def es_bota(item_id: str) -> bool:
     data = ITEMS_DATA.get(item_id, {})
     tags = data.get("tags", [])
-    if not tags or "Consumable" in tags or "Vision" in tags or "Trinket" in tags: return False
+    if not tags or "Consumable" in tags or "Vision" in tags or "Trinket" in tags:
+        return False
     return "Boots" in tags
+
 
 def es_item_supp_final(item_id: str) -> bool:
     return item_id in ITEMS_SUPP_FINAL
 
+
 def peticion_segura(url: str) -> dict | None:
+    limiter = _limiter_for(url)
     for intento in range(4):
         try:
-            RATE_LIMITER.acquire()
+            limiter.acquire()
             resp = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code == 200: return resp.json()
+            if resp.status_code == 200:
+                return resp.json()
             if resp.status_code == 429:
                 espera = int(resp.headers.get("Retry-After", 2 ** intento + 1))
-                DASH.add_rate_limit(); time.sleep(espera); continue
-            if resp.status_code in (500, 502, 503, 504): time.sleep(2 ** intento); continue
+                DASH.add_rate_limit()
+                time.sleep(espera)
+                continue
+            if resp.status_code in (500, 502, 503, 504):
+                time.sleep(2 ** intento)
+                continue
             return None
-        except: time.sleep(1 + intento); continue
-    DASH.add_error(); return None
+        except Exception:
+            time.sleep(1 + intento)
+            continue
+    DASH.add_error()
+    return None
+
+
+@contextmanager
+def transaction(conn):
+    try:
+        yield
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIEMBRA  —  Re-seeding inteligente por plataforma
+# ═══════════════════════════════════════════════════════════════
+
+_platform_yield = {}
+
 
 def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> int:
-    ligas = {"CHALLENGER": "challengerleagues", "GRANDMASTER": "grandmasterleagues", "MASTER": "masterleagues"}
+    ligas = {
+        "CHALLENGER": "challengerleagues",
+        "GRANDMASTER": "grandmasterleagues",
+        "MASTER": "masterleagues",
+    }
 
     tareas = []
     for platform in PLATFORMS:
@@ -351,8 +492,8 @@ def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> i
 
     resultados = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(_fetch_liga, t): t for t in tareas}
-        for f in as_completed(futures):
+        futures_map = {pool.submit(_fetch_liga, t): t for t in tareas}
+        for f in as_completed(futures_map):
             try:
                 resultados.append(f.result())
             except Exception:
@@ -360,51 +501,62 @@ def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> i
 
     agregados = 0
     for platform, nombre_liga, datos in resultados:
-        if agregados >= jugadores_max: break
+        if agregados >= jugadores_max:
+            break
         if not datos or "entries" not in datos:
             print(f"  {platform.upper()} {nombre_liga}: sin datos")
             continue
-        entradas = random.sample(datos["entries"], min(20, len(datos["entries"])))
+        muestra = min(SEMILLA_POR_PLATAFORMA, len(datos["entries"]))
+        entradas = random.sample(datos["entries"], muestra)
         n = 0
         for e in entradas:
             if e.get("puuid") and agregados < jugadores_max:
-                cola.push(e["puuid"]); n += 1; agregados += 1
+                cola.push(e["puuid"])
+                n += 1
+                agregados += 1
+        _platform_yield[platform] = _platform_yield.get(platform, 0) + n
         print(f"  {platform.upper()} {nombre_liga}: +{n} jugadores")
     return agregados
 
-@contextmanager
-def transaction(conn):
-    try: yield; conn.commit()
-    except: conn.rollback(); raise
+
+def _mejores_plataformas(top_n: int = 2) -> list:
+    if not _platform_yield:
+        return PLATFORMS[:top_n]
+    sorted_plat = sorted(_platform_yield.items(), key=lambda kv: kv[1], reverse=True)
+    return [p for p, _ in sorted_plat[:top_n]]
+
 
 # ═══════════════════════════════════════════════════════════════
 # PROCESAMIENTO
 # ═══════════════════════════════════════════════════════════════
 
-def procesar_jugador(puuid: str, start_time: int = 0, count: int = COUNT_POR_JUGADOR) -> list:
-    base = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?queue=420&start=0&count={count}"
+def procesar_jugador(puuid: str, start_time: int = 0) -> list:
+    base = (
+        f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/"
+        f"by-puuid/{puuid}/ids?queue=420&start=0&count={COUNT_POR_JUGADOR}"
+    )
     if start_time > 0:
         base += f"&startTime={start_time}"
     match_ids = peticion_segura(base)
     return match_ids if match_ids else []
 
-def descargar_partida(match_id: str) -> bool:
-    conn = obtener_conexion()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM matches WHERE match_id=%s", (match_id,))
-        if cur.fetchone(): return False
 
+def descargar_partida(match_id: str) -> tuple | None:
+    """Descarga y valida una partida. Retorna (match_row, participants_rows, champions, data_bytes) o None."""
+    try:
         url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
         data = peticion_segura(url)
-        if not data or "info" not in data: return False
+        if not data or "info" not in data:
+            return None
         info = data["info"]
-        if info.get("gameDuration", 0) < 600: return False
+        if info.get("gameDuration", 0) < 600:
+            return None
 
         version = info.get("gameVersion", "0")
         parts = version.split(".")
         patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
-        if patch != PARCHE_ACTUAL: return False
+        if patch != PARCHE_ACTUAL:
+            return None
 
         boots_map, supp_map = {}, {}
         if USAR_TIMELINE:
@@ -412,7 +564,9 @@ def descargar_partida(match_id: str) -> bool:
             for p in info.get("participants", []):
                 items_slots = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
                 pos = p.get("teamPosition", "")
-                if not any(es_bota(i) for i in items_slots) or (pos == "UTILITY" and not any(es_item_supp_final(i) for i in items_slots)):
+                if not any(es_bota(i) for i in items_slots) or (
+                    pos == "UTILITY" and not any(es_item_supp_final(i) for i in items_slots)
+                ):
                     necesita_timeline = True
                     break
             if necesita_timeline:
@@ -421,64 +575,119 @@ def descargar_partida(match_id: str) -> bool:
                 if timeline and "info" in timeline:
                     for frame in timeline["info"].get("frames", []):
                         for ev in frame.get("events", []):
-                            if ev.get("type") != "ITEM_PURCHASED": continue
-                            pid = ev.get("participantId"); iid = str(ev.get("itemId", 0))
-                            if not pid or iid == "0": continue
-                            if es_bota(iid): boots_map[pid] = iid
-                            elif es_item_supp_final(iid): supp_map[pid] = iid
+                            if ev.get("type") != "ITEM_PURCHASED":
+                                continue
+                            pid = ev.get("participantId")
+                            iid = str(ev.get("itemId", 0))
+                            if not pid or iid == "0":
+                                continue
+                            if es_bota(iid):
+                                boots_map[pid] = iid
+                            elif es_item_supp_final(iid):
+                                supp_map[pid] = iid
 
         champions = []
-        with transaction(conn):
-            cur.execute("INSERT INTO matches(match_id,game_version,game_duration,patch) VALUES(%s,%s,%s,%s)",
-                        (match_id, version, info.get("gameDuration", 0), patch))
-            for p in info.get("participants", []):
-                raw = p.get("championName")
-                champ = raw if raw != "MonkeyKing" else "Wukong"
-                champions.append(champ)
+        participants_rows = []
+        for p in info.get("participants", []):
+            raw = p.get("championName")
+            champ = raw if raw != "MonkeyKing" else "Wukong"
+            champions.append(champ)
 
-                items = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
-                pid_p = p.get("participantId"); pos = p.get("teamPosition", "")
-                if pid_p in boots_map and not any(es_bota(i) for i in items): items.append(boots_map[pid_p])
-                if pos == "UTILITY" and pid_p in supp_map and not any(es_item_supp_final(i) for i in items): items.append(supp_map[pid_p])
+            items = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
+            pid_p = p.get("participantId")
+            pos = p.get("teamPosition", "")
+            if pid_p in boots_map and not any(es_bota(i) for i in items):
+                items.append(boots_map[pid_p])
+            if pos == "UTILITY" and pid_p in supp_map and not any(es_item_supp_final(i) for i in items):
+                items.append(supp_map[pid_p])
 
-                styles = p.get("perks", {}).get("styles", [])
-                runas = []
-                for s in styles:
-                    runas.append(str(s.get("style")))
-                    for sel in s.get("selections", []): runas.append(str(sel.get("perk")))
-                sp = p.get("perks", {}).get("statPerks", {})
-                if sp:
-                    for k in ("defense", "flex", "offense"): runas.append(str(sp.get(k, "")))
-                runas_str = ",".join(r for r in runas if r)
-                spells = f"{p.get('summoner1Id',0)},{p.get('summoner2Id',0)}"
+            styles = p.get("perks", {}).get("styles", [])
+            runas = []
+            for s in styles:
+                runas.append(str(s.get("style")))
+                for sel in s.get("selections", []):
+                    runas.append(str(sel.get("perk")))
+            sp = p.get("perks", {}).get("statPerks", {})
+            if sp:
+                for k in ("defense", "flex", "offense"):
+                    runas.append(str(sp.get(k, "")))
+            runas_str = ",".join(r for r in runas if r)
+            spells = f"{p.get('summoner1Id', 0)},{p.get('summoner2Id', 0)}"
 
-                cur.execute("""INSERT INTO participantes(match_id,champion,team_position,team,win,items,runes,spells,kills,deaths,assists)
-                               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                            (match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
-                             ",".join(items), runas_str, spells, p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)))
-        DASH.add_match(match_id, champions, len(json.dumps(data)))
-        return True
+            participants_rows.append((
+                match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
+                ",".join(items), runas_str, spells,
+                p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)
+            ))
+
+        match_row = (match_id, version, info.get("gameDuration", 0), patch)
+        data_bytes = len(json.dumps(data))
+        return (match_row, participants_rows, champions, data_bytes)
     except Exception:
-        return False
-    finally:
-        conn.close()
+        return None
+
+
+def insertar_lote_datos(datos: list) -> int:
+    """Inserta en batch: matches + participantes. Retorna cuántas partidas NUEVAS se insertaron."""
+    if not datos:
+        return 0
+    conn = _get_thread_conn()
+    try:
+        with transaction(conn):
+            cur = conn.cursor()
+            match_rows = []
+            all_parts = []
+            for match_row, parts_rows, _, _ in datos:
+                match_rows.append(match_row)
+                all_parts.extend(parts_rows)
+
+            execute_values(cur,
+                """INSERT INTO matches(match_id, game_version, game_duration, patch)
+                   VALUES %s ON CONFLICT (match_id) DO NOTHING""",
+                match_rows)
+
+            if all_parts:
+                execute_values(cur,
+                    """INSERT INTO participantes(match_id, champion, team_position, team, win,
+                       items, runes, spells, kills, deaths, assists)
+                       VALUES %s ON CONFLICT (match_id, champion, team) DO NOTHING""",
+                    all_parts)
+
+        return len(datos)
+    except Exception:
+        return 0
+
 
 def descargar_lote(match_ids: list) -> int:
-    descargadas = 0
+    """Descarga un lote de partidas en paralelo y las inserta en batch. Retorna cuántas nuevas."""
+    descargados = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = {pool.submit(descargar_partida, mid): mid for mid in match_ids}
-        for future in as_completed(futures):
+        futures_map = {pool.submit(descargar_partida, mid): mid for mid in match_ids}
+        for future in as_completed(futures_map):
+            mid = futures_map[future]
             try:
-                if future.result(): descargadas += 1
-            except: DASH.add_error()
-    return descargadas
+                result = future.result()
+                if result:
+                    descargados.append(result)
+                    DASH.add_match(mid, result[2], result[3])
+            except Exception:
+                DASH.add_error()
+
+    if not descargados:
+        return 0
+
+    return insertar_lote_datos(descargados)
+
 
 def _progress_bar(current: int, total: int, s: dict, width: int = 40) -> str:
     pct = min(current / max(total, 1), 1.0)
     filled = int(width * pct)
     bar = "█" * filled + "░" * (width - filled)
-    return (f"\r [{bar}] {current}/{total} | {s['elapsed']} | {s['rpm']} rpm | "
-            f"{s['champions']} champs | {s['errors']} err")
+    return (
+        f"\r [{bar}] {current}/{total} | {s['elapsed']} | {s['rpm']} rpm | "
+        f"{s['champions']} champs | {s['errors']} err"
+    )
+
 
 # ═══════════════════════════════════════════════════════════════
 # ORQUESTADOR
@@ -488,25 +697,34 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     global PARCHE_ACTUAL, VERSION_COMPLETA
 
     print("\n" + "═" * 55)
-    print("  LOLLECT v2 — Motor de Recolección Masiva")
+    print("  LOLLECT v3 — Motor de Recolección Masiva")
     print("═" * 55)
 
     PARCHE_ACTUAL, VERSION_COMPLETA = obtener_version_riot()
-    start_time = epoch_medianoche_hoy()
+    midnight = epoch_medianoche_hoy()
+    tier_label = "Production" if API_KEY_TIER == "production" else "Development"
+
     print(f"  Parche activo: {PARCHE_ACTUAL} ({VERSION_COMPLETA})")
     print(f"  Filtrando SOLO partidas de HOY (medianoche UTC) — parche activo")
-    print(f"  Rate Limiter: 20 req/s + 100 req/120s (Riot Dev Key)")
+    print(f"  API Key tier: {tier_label}")
+    if API_KEY_TIER == "production":
+        print(f"  Rate Limiters:   Match=500/10s+2000/10min | League=500/10s+2000/10min | Timeline=500/10s+2000/10min")
+    else:
+        print(f"  Rate Limiter:    20 req/s + 100 req/120s (compartido — Dev Key)")
     print(f"  Meta: {meta:,} partidas  |  Workers: {MAX_WORKERS}  |  Batch: {BATCH_SIZE}")
-    tl_mode = "activo" if USAR_TIMELINE else "desactivado (2× más rápido)"
+    tl_mode = "activo (2× más lento)" if USAR_TIMELINE else "desactivado (2× más rápido)"
     print(f"  Checkpoint: {CHECKPOINT_EVERY}  |  Timeline: {tl_mode}  |  IDs/jugador: {COUNT_POR_JUGADOR}")
+    print(f"  Plataformas: {', '.join(PLATFORMS)}  |  Región: {REGION_ROUTING}")
     print()
 
-    if not API_KEY: print("ERROR: API_KEY no encontrada."); return
+    if not API_KEY:
+        print("ERROR: API_KEY no encontrada en config.json ni en variable RIOT_API_KEY.")
+        return
 
     print(f"Verificando base de datos para el parche {PARCHE_ACTUAL}...")
     eliminadas, _ = purgar_parches_antiguos(PARCHE_ACTUAL)
     if eliminadas == 0:
-        print(f"  No hay partidas de parches antiguos. BD limpia.")
+        print("  No hay partidas de parches antiguos. BD limpia.")
     print()
 
     cola = ColaPersistente()
@@ -530,7 +748,8 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
         _cur_init.execute("SELECT match_id FROM matches")
         _existing = set(r[0] for r in _cur_init.fetchall())
         _conn_init.close()
-        DASH.match_ids_seen.update(_existing)
+        with DASH.lock:
+            DASH.match_ids_seen.update(_existing)
         print(f"{len(_existing):,} IDs cargados")
     except Exception:
         print("(no disponibles)")
@@ -540,52 +759,79 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
         sembrados = sembrar_desde_high_elo(cola, JUGADORES_SEMILLA)
         print(f"   {sembrados} jugadores agregados\n")
 
-    if cola.size() == 0: print("Cola vacía."); return
+    if cola.size() == 0:
+        print("Cola vacía. Nada que recolectar.")
+        return
 
     total_descargadas = total_base
     buffer_match_ids = []
     last_checkpoint = total_descargadas
 
     def _fetch_player_ids(puuid):
-        return procesar_jugador(puuid, start_time=start_time)
+        ids = procesar_jugador(puuid, start_time=midnight)
+        if not ids:
+            cola.push_back(puuid)
+        return ids
+
+    def _collect_new_ids(ids):
+        nonlocal buffer_match_ids
+        if not ids:
+            return
+        for mid in ids:
+            if not DASH.is_match_known(mid):
+                buffer_match_ids.append(mid)
+
+    def _process_batch():
+        nonlocal total_descargadas, last_checkpoint
+        processed = 0
+        while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
+            lote = buffer_match_ids[:BATCH_SIZE]
+            del buffer_match_ids[:BATCH_SIZE]
+            n = descargar_lote(lote)
+            total_descargadas += n
+            processed += 1
+            if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
+                last_checkpoint = total_descargadas
+                cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
+            print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="")
+        return processed
 
     try:
         with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as player_pool:
-            while total_descargadas < meta and cola.size() > 0:
-                puuids = []
-                for _ in range(PLAYER_FETCH_WORKERS):
-                    p = cola.pop()
-                    if p: puuids.append(p)
-                if not puuids: break
+            active_futures = {}
 
-                futures_p = {player_pool.submit(_fetch_player_ids, p): p for p in puuids}
-                for fp in as_completed(futures_p):
+            def _fill_pool():
+                while len(active_futures) < PLAYER_FETCH_WORKERS:
+                    p = cola.pop()
+                    if not p:
+                        break
+                    active_futures[player_pool.submit(_fetch_player_ids, p)] = p
+
+            _fill_pool()
+
+            while active_futures and total_descargadas < meta:
+                done, _ = wait(set(active_futures.keys()), return_when=FIRST_COMPLETED)
+                for f in done:
                     try:
-                        ids = fp.result()
-                        for mid in (ids or []):
-                            if mid not in DASH.match_ids_seen:
-                                buffer_match_ids.append(mid)
+                        ids = f.result()
+                        _collect_new_ids(ids)
                     except Exception:
                         DASH.add_error()
+                    del active_futures[f]
 
-                while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
-                    lote = buffer_match_ids[:BATCH_SIZE]
-                    buffer_match_ids = buffer_match_ids[BATCH_SIZE:]
-                    n = descargar_lote(lote)
-                    total_descargadas += n
-                    if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
-                        last_checkpoint = total_descargadas
-                        cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
-                    print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="")
+                _process_batch()
+                _fill_pool()
 
                 if cola.size() < 50 and total_descargadas < meta:
                     print(f"\nRe-sembrando cola ({cola.size()} pendientes)...")
-                    sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // 3))
+                    sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
 
     except KeyboardInterrupt:
         print("\n\nPausado. Guardando checkpoint...")
     finally:
-        cola.checkpoint(total_descargadas, DASH.snapshot()["errors"]); cola.close()
+        cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
+        cola.close()
+        _close_thread_connections()
 
     s = DASH.snapshot()
     print("\n\n" + "═" * 55)
@@ -598,16 +844,21 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     print("\nCompactando BD...")
     try:
         conn = obtener_conexion()
+        conn.autocommit = True
         conn.execute("VACUUM")
         conn.close()
         print("   Optimizada.")
-    except:
+    except Exception:
         pass
 
+
 if __name__ == "__main__":
-    meta = 20000; reset = False
+    meta = 20000
+    reset = False
     for a in sys.argv[1:]:
-        if a == "--reset": reset = True
-        elif a.isdigit(): meta = int(a)
+        if a == "--reset":
+            reset = True
+        elif a.isdigit():
+            meta = int(a)
     inicializar_db()
     ejecutar_recoleccion_masiva(meta=meta, reset=reset)

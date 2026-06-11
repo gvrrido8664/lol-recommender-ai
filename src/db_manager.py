@@ -159,6 +159,20 @@ def inicializar_db():
             END $$;
         """)
 
+    cur.execute("""
+        DO $$
+        BEGIN
+            ALTER TABLE participantes
+            DROP CONSTRAINT IF EXISTS uq_participante_match_champ_team;
+            ALTER TABLE participantes
+            ADD CONSTRAINT uq_participante_match_champ_team
+            UNIQUE (match_id, champion, team);
+        EXCEPTION
+            WHEN undefined_table THEN NULL;
+            WHEN undefined_column THEN NULL;
+        END $$;
+    """)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champion ON participantes(champion);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_position ON participantes(team_position);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")

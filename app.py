@@ -1753,7 +1753,15 @@ class LoLRecommenderApp(QMainWindow):
         self._actualizando_radar = False
         self._cargando_meta = False
 
-        inicializar_db()
+        from src.db_manager import ConexionDBError
+        self._db_conectado = True
+        try:
+            inicializar_db()
+        except ConexionDBError as e:
+            self._db_conectado = False
+            print(f"[NEXUS] ERROR de conexion a PostgreSQL: {e}")
+            print("[NEXUS] La app funcionara con funcionalidad limitada.")
+            print("[NEXUS] Verifica tu conexion a internet y que el servidor este accesible.")
 
         self.crear_interfaz()
         
@@ -3913,7 +3921,7 @@ class LoLRecommenderApp(QMainWindow):
         # 1 sola query: rol más frecuente de cada campeón
         rol_por_champ = {}
         if champs_hist:
-            placeholders = ",".join(["?"] * len(champs_hist))
+            placeholders = ",".join(["%s"] * len(champs_hist))
             cur.execute(f"""
                 SELECT champion, team_position FROM (
                     SELECT champion, team_position,
@@ -5405,10 +5413,10 @@ class LoLRecommenderApp(QMainWindow):
                 wr = "--"
                 try:
                     cur = conn_db.cursor()
-                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=?", (cname,))
+                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=%s", (cname,))
                     r = cur.fetchone()
                     if r and r[0]:
-                        wr = f"{r[0]}%"
+                        wr = f"{float(r[0])}%"
                 except:
                     pass
 
@@ -5461,10 +5469,10 @@ class LoLRecommenderApp(QMainWindow):
                 wr = "--"
                 try:
                     cur = conn_db.cursor()
-                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=?", (cname,))
+                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=%s", (cname,))
                     r = cur.fetchone()
                     if r and r[0]:
-                        wr = f"{r[0]}%"
+                        wr = f"{float(r[0])}%"
                 except:
                     pass
 
@@ -5490,9 +5498,14 @@ class LoLRecommenderApp(QMainWindow):
                 conn = obtener_conexion()
             cur = conn.cursor()
             # WR y partidas totales
-            cur.execute("SELECT COUNT(*), ROUND(AVG(kills),1), ROUND(AVG(deaths),1) FROM participantes WHERE champion=?", (champion,))
+            cur.execute("SELECT COUNT(*), ROUND(AVG(kills),1), ROUND(AVG(deaths),1) FROM participantes WHERE champion=%s", (champion,))
             r = cur.fetchone()
-            total, avg_k, avg_d = r[0] if r else (0, 0, 0)
+            if r:
+                total = int(r[0] or 0)
+                avg_k = float(r[1] or 0)
+                avg_d = float(r[2] or 0)
+            else:
+                total, avg_k, avg_d = 0, 0.0, 0.0
 
             comentarios = []
             color = "#94a3b8"  # default gray
@@ -6616,8 +6629,11 @@ if __name__ == "__main__":
         wizard.exec()
         if not wizard.success:
             sys.exit(1)
-        from src.db_manager import inicializar_db
-        inicializar_db()
+        from src.db_manager import inicializar_db, ConexionDBError
+        try:
+            inicializar_db()
+        except ConexionDBError:
+            pass
 
     window = LoLRecommenderApp()
     window.show()

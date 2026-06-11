@@ -70,7 +70,7 @@ PLAYER_FETCH_WORKERS = 5  # jugadores procesados en paralelo en el loop principa
 USAR_TIMELINE = False
 
 # Días hacia atrás para filtrar partidas (evita descargar partidas de parches viejos)
-DIAS_RECIENTES = 5
+DIAS_RECIENTES = 1
 # Cuántos jugadores semillar de high elo (aumentar a inicio de season)
 JUGADORES_SEMILLA = 500
 
@@ -322,7 +322,7 @@ def descargar_partida(match_id: str) -> bool:
     conn = obtener_conexion()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM matches WHERE match_id=?", (match_id,))
+        cur.execute("SELECT 1 FROM matches WHERE match_id=%s", (match_id,))
         if cur.fetchone(): return False
 
         url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
@@ -334,7 +334,13 @@ def descargar_partida(match_id: str) -> bool:
         version = info.get("gameVersion", "0")
         parts = version.split(".")
         patch = ".".join(parts[:2]) if len(parts) >= 2 else "0.0"
-        if patch != PARCHE_ACTUAL: return False
+        try:
+            p_major, p_minor = map(int, PARCHE_ACTUAL.split("."))
+            parches_permitidos = [PARCHE_ACTUAL, f"{p_major}.{p_minor - 1}"]
+        except:
+            parches_permitidos = [PARCHE_ACTUAL]
+        
+        if patch not in parches_permitidos: return False
 
         # La API v5 incluye los 6 slots de ítems en el match summary.
         # USAR_TIMELINE=False elimina 1 API call extra por partida (30-50% del total).
@@ -361,7 +367,7 @@ def descargar_partida(match_id: str) -> bool:
 
         champions = []
         with transaction(conn):
-            cur.execute("INSERT INTO matches(match_id,game_version,game_duration,patch) VALUES(?,?,?,?)",
+            cur.execute("INSERT INTO matches(match_id,game_version,game_duration,patch) VALUES(%s,%s,%s,%s)",
                         (match_id, version, info.get("gameDuration", 0), patch))
             for p in info.get("participants", []):
                 raw = p.get("championName")
@@ -386,12 +392,13 @@ def descargar_partida(match_id: str) -> bool:
                 spells = f"{p.get('summoner1Id',0)},{p.get('summoner2Id',0)}"
 
                 cur.execute("""INSERT INTO participantes(match_id,champion,team_position,team,win,items,runes,spells,kills,deaths,assists)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                             (match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
                              ",".join(items), runas_str, spells, p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)))
         DASH.add_match(match_id, champions, len(json.dumps(data)))
         return True
-    except Exception:
+    except Exception as e:
+        print(f"\n[DEBUG] Error en descargar_partida: {e}")
         return False
     finally:
         conn.close()
@@ -425,9 +432,9 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     print("═" * 55)
 
     PARCHE_ACTUAL, VERSION_COMPLETA = obtener_version_riot()
-    start_time = epoch_medianoche_hoy()
+    start_time = epoch_dias_atras(DIAS_RECIENTES)
     print(f"  📅 Parche activo: {PARCHE_ACTUAL} ({VERSION_COMPLETA})")
-    print(f"  ⏪ Filtrando SOLO partidas de HOY (medianoche UTC) — parche activo")
+    print(f"  ⏪ Filtrando partidas de los últimos {DIAS_RECIENTES} días (parche {PARCHE_ACTUAL} y anterior)")
     print(f"  🛡️ Rate Limiter: 20 req/s + 100 req/120s (Riot Dev Key)")
     print(f"  🎯 Meta: {meta:,} partidas  |  🧵 Workers: {MAX_WORKERS}  |  📦 Batch: {BATCH_SIZE}")
     tl_mode = "activo" if USAR_TIMELINE else "desactivado (2× más rápido)"
@@ -457,12 +464,14 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     print("  📂 Cargando IDs de partidas existentes en memoria...", end=" ", flush=True)
     try:
         _conn_init = obtener_conexion()
-        _existing = set(r[0] for r in _conn_init.execute("SELECT match_id FROM matches").fetchall())
+        _cur_init = _conn_init.cursor()
+        _cur_init.execute("SELECT match_id FROM matches")
+        _existing = set(r[0] for r in _cur_init.fetchall())
         _conn_init.close()
         DASH.match_ids_seen.update(_existing)
-        print(f"{len(_existing):,} IDs cargados")
-    except Exception:
-        print("(no disponibles)")
+        print(f"{len(_existing):,} IDs cargados", flush=True)
+    except Exception as e:
+        print(f"(no disponibles: {e})", flush=True)
 
     if cola.size() < 50:
         print(f"\n🌱 Sembrando cola desde High Elo (Challenger/GM/Master, max {JUGADORES_SEMILLA})...")
@@ -528,10 +537,10 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
 
     print("\n🧹 Compactando BD...")
     try:
-        dbc = sqlite3.connect(os.path.join(DATA_DIR, "lol_data.db"))
-        dbc.execute("VACUUM"); dbc.close()
-        print("   ✅ Optimizada.")
-    except: pass
+        from .db_manager import compactar_base_de_datos
+        compactar_base_de_datos()
+    except Exception as e:
+        print(f"   ⚠️ Error al compactar: {e}")
 
 if __name__ == "__main__":
     meta = 20000; reset = False

@@ -1,0 +1,323 @@
+{
+    "identidad": {
+        "nombre": "Mock Player",
+        "nivel": 150,
+        "icono": 4000,
+        "soloq": {
+            "tier": "GOLD",
+            "division": "II",
+            "lp": 50,
+            "wins": 120,
+            "losses": 110
+        },
+        "flex": {
+            "tier": "SILVER",
+            "division": "I",
+            "lp": 99,
+            "wins": 45,
+            "losses": 40
+        }
+    },
+    "historial": [
+        {
+            "gameId": 1000000,
+            "gameDuration": 1412,
+            "gameCreation": 1690000000000,
+            "participants": [
+                {
+                    "championId": 62,
+                    "stats": {
+                        "win": true,
+                        "kills": 8,
+                        "deaths": 6,
+                        "assists": 14,
+                        "totalMinionsKilled": 206,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 26,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000001,
+            "gameDuration": 2206,
+            "gameCreation": 1690010000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": true,
+                        "kills": 11,
+                        "deaths": 6,
+                        "assists": 10,
+                        "totalMinionsKilled": 164,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 30,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000002,
+            "gameDuration": 2339,
+            "gameCreation": 1690020000000,
+            "participants": [
+                {
+                    "championId": 62,
+                    "stats": {
+                        "win": false,
+                        "kills": 9,
+                        "deaths": 2,
+                        "assists": 14,
+                        "totalMinionsKilled": 222,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 19,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000003,
+            "gameDuration": 1989,
+            "gameCreation": 1690030000000,
+            "participants": [
+                {
+                    "championId": 86,
+                    "stats": {
+                        "win": false,
+                        "kills": 10,
+                        "deaths": 3,
+                        "assists": 8,
+                        "totalMinionsKilled": 173,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 13,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000004,
+            "gameDuration": 1479,
+            "gameCreation": 1690040000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": true,
+                        "kills": 8,
+                        "deaths": 4,
+                        "assists": 7,
+                        "totalMinionsKilled": 111,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 23,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000005,
+            "gameDuration": 1782,
+            "gameCreation": 1690050000000,
+            "participants": [
+                {
+                    "championId": 122,
+                    "stats": {
+                        "win": false,
+                        "kills": 5,
+                        "deaths": 4,
+                        "assists": 14,
+                        "totalMinionsKilled": 104,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 27,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000006,
+            "gameDuration": 1943,
+            "gameCreation": 1690060000000,
+            "participants": [
+                {
+                    "championId": 62,
+                    "stats": {
+                        "win": true,
+                        "kills": 12,
+                        "deaths": 1,
+                        "assists": 12,
+                        "totalMinionsKilled": 129,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 27,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000007,
+            "gameDuration": 1228,
+            "gameCreation": 1690070000000,
+            "participants": [
+                {
+                    "championId": 62,
+                    "stats": {
+                        "win": false,
+                        "kills": 6,
+                        "deaths": 6,
+                        "assists": 12,
+                        "totalMinionsKilled": 201,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 8,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000008,
+            "gameDuration": 1708,
+            "gameCreation": 1690080000000,
+            "participants": [
+                {
+                    "championId": 86,
+                    "stats": {
+                        "win": true,
+                        "kills": 11,
+                        "deaths": 2,
+                        "assists": 5,
+                        "totalMinionsKilled": 185,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 7,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000009,
+            "gameDuration": 1555,
+            "gameCreation": 1690090000000,
+            "participants": [
+                {
+                    "championId": 86,
+                    "stats": {
+                        "win": true,
+                        "kills": 12,
+                        "deaths": 9,
+                        "assists": 11,
+                        "totalMinionsKilled": 169,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 7,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000010,
+            "gameDuration": 2222,
+            "gameCreation": 1690100000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": false,
+                        "kills": 12,
+                        "deaths": 4,
+                        "assists": 11,
+                        "totalMinionsKilled": 127,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 25,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000011,
+            "gameDuration": 2242,
+            "gameCreation": 1690110000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": false,
+                        "kills": 9,
+                        "deaths": 8,
+                        "assists": 9,
+                        "totalMinionsKilled": 105,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 11,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000012,
+            "gameDuration": 2056,
+            "gameCreation": 1690120000000,
+            "participants": [
+                {
+                    "championId": 122,
+                    "stats": {
+                        "win": false,
+                        "kills": 4,
+                        "deaths": 4,
+                        "assists": 8,
+                        "totalMinionsKilled": 182,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 13,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000013,
+            "gameDuration": 1500,
+            "gameCreation": 1690130000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": true,
+                        "kills": 10,
+                        "deaths": 3,
+                        "assists": 13,
+                        "totalMinionsKilled": 226,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 17,
+                        "firstBloodKill": false
+                    }
+                }
+            ]
+        },
+        {
+            "gameId": 1000014,
+            "gameDuration": 1579,
+            "gameCreation": 1690140000000,
+            "participants": [
+                {
+                    "championId": 157,
+                    "stats": {
+                        "win": true,
+                        "kills": 12,
+                        "deaths": 9,
+                        "assists": 13,
+                        "totalMinionsKilled": 177,
+                        "neutralMinionsKilled": 0,
+                        "visionScore": 24,
+                        "firstBloodKill": true
+                    }
+                }
+            ]
+        }
+    ]
+}

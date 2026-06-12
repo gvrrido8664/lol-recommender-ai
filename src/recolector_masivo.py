@@ -472,7 +472,7 @@ class Dashboard:
             self.matches += 1
             self.bytes_down += size_bytes
             self.last_n_matches.append(time.monotonic())
-            if len(self.last_n_matches) > 100:
+            if len(self.last_n_matches) > 500:
                 self.last_n_matches.pop(0)
             for c in champions:
                 self.champions_seen.add(c)
@@ -499,7 +499,9 @@ class Dashboard:
     def snapshot(self) -> dict:
         with self.lock:
             elapsed = max(time.monotonic() - self.start_time, 1)
-            rpm = len(self.last_n_matches) / min(elapsed / 60, 5) if self.last_n_matches else 0
+            # Partidas/min reales: las descargadas en los últimos 60 segundos.
+            corte = time.monotonic() - 60
+            rpm = float(sum(1 for t in self.last_n_matches if t >= corte))
             return {
                 "matches": self.matches,
                 "errors": self.errors,
@@ -512,6 +514,95 @@ class Dashboard:
 
 
 DASH = Dashboard()
+
+
+# ═══════════════════════════════════════════════════════════════
+# PANEL DE CONSOLA  —  una fila por región, redibujado en su lugar
+# ═══════════════════════════════════════════════════════════════
+
+class ConsolaUI:
+    """Panel fijo de estado. En terminal interactiva se redibuja en su lugar
+    con secuencias ANSI; si la salida está redirigida (log) imprime un resumen
+    de una línea cada 15 segundos."""
+
+    def __init__(self, regiones: list, meta: int):
+        self.lock = threading.Lock()
+        self.meta = meta
+        self.region_data = {
+            r: {"estado": "iniciando", "partidas": 0, "jugadores": 0, "cola": 0, "buffer": 0}
+            for r in regiones
+        }
+        self._frame_lines = 0
+        self._ultimo_plano = 0.0
+        try:
+            self._es_tty = sys.stdout.isatty()
+        except Exception:
+            self._es_tty = False
+        if self._es_tty and os.name == "nt":
+            os.system("")  # habilita las secuencias ANSI en la consola de Windows
+
+    def actualizar(self, region: str, **campos):
+        with self.lock:
+            self.region_data[region].update(campos)
+
+    def sumar(self, region: str, campo: str, n: int = 1):
+        with self.lock:
+            self.region_data[region][campo] += n
+
+    def _construir_frame(self, total: int, s: dict) -> list:
+        pct = min(total / max(self.meta, 1), 1.0)
+        ancho = 44
+        llenas = int(ancho * pct)
+        barra = "█" * llenas + "░" * (ancho - llenas)
+        rpm = s["rpm"]
+        if rpm > 0 and total < self.meta:
+            eta = str(timedelta(seconds=int((self.meta - total) / rpm * 60)))
+        else:
+            eta = "--:--:--"
+        lineas = [
+            "",
+            f"  {total:,}/{self.meta:,} partidas ({pct * 100:.1f}%)  ·  {rpm:.0f} partidas/min  ·  ETA {eta}",
+            f"  [{barra}]",
+            "",
+            f"  {'REGIÓN':<10} {'ESTADO':<36} {'PARTIDAS':>9} {'JUGADORES':>10} {'COLA':>6} {'BUFFER':>7}",
+            f"  {'─' * 10} {'─' * 36} {'─' * 9} {'─' * 10} {'─' * 6} {'─' * 7}",
+        ]
+        for region, d in self.region_data.items():
+            lineas.append(
+                f"  {region:<10} {d['estado']:<36.36} {d['partidas']:>9,} "
+                f"{d['jugadores']:>10,} {d['cola']:>6,} {d['buffer']:>7,}"
+            )
+        lineas.append("")
+        lineas.append(
+            f"  {s['champions']} campeones  ·  {s['bytes_mb']} MB  ·  "
+            f"{s['errors']} errores  ·  {s['rate_limits']} × 429  ·  {s['elapsed']}"
+        )
+        return lineas
+
+    def render(self, total: int, s: dict):
+        with self.lock:
+            if self._es_tty:
+                lineas = self._construir_frame(total, s)
+                out = ""
+                if self._frame_lines:
+                    out += f"\x1b[{self._frame_lines}F"  # volver al inicio del panel
+                out += "\n".join("\x1b[K" + linea for linea in lineas) + "\n"
+                print(out, end="", flush=True)
+                self._frame_lines = len(lineas)
+            else:
+                ahora = time.monotonic()
+                if ahora - self._ultimo_plano < 15:
+                    return
+                self._ultimo_plano = ahora
+                resumen = " | ".join(
+                    f"{r}: {d['partidas']:,} ({d['estado']})"
+                    for r, d in self.region_data.items()
+                )
+                print(
+                    f" {total:,}/{self.meta:,} · {s['rpm']:.0f} p/min · "
+                    f"{s['errors']} err · {s['rate_limits']}×429 — {resumen}",
+                    flush=True,
+                )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -549,6 +640,9 @@ def es_item_supp_final(item_id: str) -> bool:
 # Riot expiran cada 24h: sin esto el recolector falla silenciosamente en TODO.
 API_KEY_INVALIDA = threading.Event()
 
+# Mensajes fatales diferidos: se imprimen al final para no romper el panel.
+MENSAJES_FATALES: list[str] = []
+
 _http_local = threading.local()
 
 
@@ -575,11 +669,11 @@ def peticion_segura(url: str) -> dict | list | None:
             if resp.status_code in (401, 403):
                 if not API_KEY_INVALIDA.is_set():
                     API_KEY_INVALIDA.set()
-                    print(
-                        "\n\nERROR FATAL: la API key fue rechazada por Riot "
+                    MENSAJES_FATALES.append(
+                        "ERROR FATAL: la API key fue rechazada por Riot "
                         f"(HTTP {resp.status_code}).\n"
                         "Las development keys expiran cada 24 horas — renueva la tuya en "
-                        "https://developer.riotgames.com y actualiza config.json.\n"
+                        "https://developer.riotgames.com y actualiza config.json."
                     )
                 return None
             if resp.status_code == 429:
@@ -617,8 +711,9 @@ def transaction(conn):
 # ═══════════════════════════════════════════════════════════════
 
 def sembrar_desde_high_elo(cola: ColaPersistente, region: str, platforms: list,
-                           jugadores_max: int = 200) -> int:
-    """Siembra jugadores de Master/GM/Challenger de las plataformas de una región."""
+                           jugadores_max: int = 200, notificar=None) -> int:
+    """Siembra jugadores de Master/GM/Challenger de las plataformas de una región.
+    `notificar(platform, liga, n)` reporta el avance al panel; sin él, imprime."""
     ligas = {
         "CHALLENGER": "challengerleagues",
         "GRANDMASTER": "grandmasterleagues",
@@ -650,7 +745,10 @@ def sembrar_desde_high_elo(cola: ColaPersistente, region: str, platforms: list,
         if agregados >= jugadores_max:
             break
         if not datos or "entries" not in datos:
-            print(f"  [{region}] {platform.upper()} {nombre_liga}: sin datos")
+            if notificar:
+                notificar(platform, nombre_liga, 0)
+            else:
+                print(f"  [{region}] {platform.upper()} {nombre_liga}: sin datos")
             continue
         muestra = min(SEMILLA_POR_PLATAFORMA, len(datos["entries"]))
         entradas = random.sample(datos["entries"], muestra)
@@ -658,7 +756,10 @@ def sembrar_desde_high_elo(cola: ColaPersistente, region: str, platforms: list,
         puuids = puuids[: jugadores_max - agregados]
         cola.push_many(puuids, region)
         agregados += len(puuids)
-        print(f"  [{region}] {platform.upper()} {nombre_liga}: +{len(puuids)} jugadores")
+        if notificar:
+            notificar(platform, nombre_liga, len(puuids))
+        else:
+            print(f"  [{region}] {platform.upper()} {nombre_liga}: +{len(puuids)} jugadores")
     return agregados
 
 
@@ -895,8 +996,9 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
 
     # ── Estado compartido entre las regiones ──
     estado_lock = threading.Lock()
-    estado = {"total": total_base, "checkpoint": total_base, "jugadores": 0}
+    estado = {"total": total_base, "checkpoint": total_base}
     DETENER.clear()
+    ui = ConsolaUI(list(REGIONES.keys()), meta)
 
     def _total() -> int:
         with estado_lock:
@@ -936,16 +1038,27 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
             while len(buffer_ids) >= umbral and not DETENER.is_set():
                 lote = buffer_ids[:BATCH_SIZE]
                 del buffer_ids[:BATCH_SIZE]
+                ui.actualizar(region, estado=f"descargando lote de {len(lote)}",
+                              buffer=len(buffer_ids))
                 n, puuids = descargar_lote(lote, region)
                 # Crawling: los participantes de cada partida alimentan la cola
                 # (mismo nivel high elo, cero requests extra).
                 if puuids and cola.pendientes_aprox(region) < MAX_COLA_POR_REGION:
                     cola.push_many(puuids, region)
                 _registrar(n)
+                ui.sumar(region, "partidas", n)
+                ui.actualizar(region, buffer=len(buffer_ids),
+                              cola=cola.pendientes_aprox(region))
+
+        def _notificar_siembra(platform, liga, n):
+            ui.actualizar(region, estado=f"sembrando {platform.upper()} {liga} +{n}")
 
         try:
             if cola.size(region) < 50 and not DETENER.is_set():
-                sembrar_desde_high_elo(cola, region, platforms, JUGADORES_SEMILLA)
+                ui.actualizar(region, estado="sembrando ligas high elo")
+                sembrar_desde_high_elo(cola, region, platforms, JUGADORES_SEMILLA,
+                                       notificar=_notificar_siembra)
+                ui.actualizar(region, cola=cola.pendientes_aprox(region))
 
             with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as pool:
                 activos = {}
@@ -967,9 +1080,10 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
                         ahora = time.monotonic()
                         if ahora - ultimo_reseed >= 90:
                             ultimo_reseed = ahora
-                            print(f"\n  [{region}] re-sembrando cola...")
+                            ui.actualizar(region, estado="re-sembrando ligas high elo")
                             sembrar_desde_high_elo(cola, region, platforms,
-                                                   max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
+                                                   max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION),
+                                                   notificar=_notificar_siembra)
                             if _fill() or activos:
                                 reseeds_inutiles = 0
                                 continue
@@ -977,11 +1091,14 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
                             if reseeds_inutiles >= 3:
                                 break  # región sin jugadores nuevos que procesar
                             continue
+                        ui.actualizar(region, estado="cola vacía — esperando re-siembra")
                         if DETENER.wait(10):
                             break
                         _fill()
                         continue
 
+                    ui.actualizar(region, estado="buscando IDs de partidas",
+                                  buffer=len(buffer_ids))
                     done, _ = wait(set(activos.keys()), return_when=FIRST_COMPLETED, timeout=10)
                     for f in done:
                         try:
@@ -992,8 +1109,7 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
                         except Exception:
                             DASH.add_error()
                         activos.pop(f, None)
-                        with estado_lock:
-                            estado["jugadores"] += 1
+                        ui.sumar(region, "jugadores")
 
                     _procesar_lotes()
                     _fill()
@@ -1003,6 +1119,8 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
                     _procesar_lotes(force=True)
         except Exception:
             DASH.add_error()
+        finally:
+            ui.actualizar(region, estado="terminada", buffer=0)
 
     hilos = []
     for region, plats in REGIONES.items():
@@ -1013,15 +1131,9 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
 
     try:
         while any(t.is_alive() for t in hilos):
-            time.sleep(2)
-            s = DASH.snapshot()
-            with estado_lock:
-                tot, jug = estado["total"], estado["jugadores"]
-            print(
-                f"\r ⏳ {tot}/{meta} partidas | {s['rpm']} rpm | {jug} jugadores | "
-                f"{s['errors']} err | {s['rate_limits']} × 429   ",
-                end="", flush=True,
-            )
+            time.sleep(1)
+            ui.render(_total(), DASH.snapshot())
+        ui.render(_total(), DASH.snapshot())
     except KeyboardInterrupt:
         print("\n\nPausado. Guardando checkpoint...")
         DETENER.set()
@@ -1032,6 +1144,9 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
         cola.checkpoint(_total(), DASH.snapshot()["errors"])
         cola.close()
         _close_thread_connections()
+
+    for msg in MENSAJES_FATALES:
+        print("\n" + msg)
 
     total_descargadas = _total()
 

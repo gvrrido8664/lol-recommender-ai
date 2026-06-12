@@ -2,6 +2,8 @@
 Diagnóstico de la base de datos local de NEXUS Recommender.
 Uso: python -m src.estado_db
 """
+import json
+
 from .db_manager import obtener_conexion
 
 
@@ -28,6 +30,7 @@ def _fetchval(sql, cur, col=0):
 
 
 def generar_reporte_completo():
+    CHAMP_COUNT = len(json.load(open("data/champ_ids.json", encoding="utf-8")))
     conn = obtener_conexion()
     cur = conn.cursor()
 
@@ -48,7 +51,7 @@ def generar_reporte_completo():
 
     print(f"\n💾 RESUMEN GENERAL")
     print(f"  Tamaño  : {db_mb:.1f} MB")
-    print(f"  Partidas: {total_matches:,}  |  Registros: {total_parts:,}  |  Campeones: {total_champs}/168")
+    print(f"  Partidas: {total_matches:,}  |  Registros: {total_parts:,}  |  Campeones: {total_champs}/{CHAMP_COUNT}")
 
     # ── 2. DISTRIBUCIÓN POR PARCHE ──────────────────────────────
     cur.execute("""
@@ -133,9 +136,9 @@ def generar_reporte_completo():
     excelente = sum(1 for r in readiness if r["n"] >= 100)
     bueno     = sum(1 for r in readiness if 50 <= r["n"] < 100)
     basico    = sum(1 for r in readiness if 20 <= r["n"] < 50)
-    insuf     = 168 - excelente - bueno - basico
+    insuf     = max(0, CHAMP_COUNT - excelente - bueno - basico)
 
-    print(f"\n🤖 RECOMENDADOR — READINESS ({total_champs}/168 campeones con datos)")
+    print(f"\n🤖 RECOMENDADOR — READINESS ({total_champs}/{CHAMP_COUNT} campeones con datos)")
     print(f"  🟢 Excelente  (100+ partidas): {excelente:3} campeones")
     print(f"  🟡 Bueno      (50–99)        : {bueno:3} campeones")
     print(f"  🟠 Básico     (20–49)        : {basico:3} campeones")

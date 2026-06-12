@@ -43,6 +43,14 @@ from psycopg2.extras import execute_values
 from .db_manager import obtener_conexion, inicializar_db, DATA_DIR, purgar_parches_antiguos
 from .riot_api import cargar_objetos
 
+# La consola de Windows usa cp1252 por defecto y los caracteres ═/█ crashean el script.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 # ═══════════════════════════════════════════════════════════════
 # CONEXIÓN THREAD-LOCAL  (1 PG conn por worker — persistente)
 # ═══════════════════════════════════════════════════════════════
@@ -131,11 +139,17 @@ class RiotRateLimiter:
         self.long_window = long_window
         self.short_timestamps: deque[float] = deque()
         self.long_timestamps: deque[float] = deque()
+        self.cooldown_until = 0.0
         self.lock = threading.Lock()
 
     def _clean_old(self, timestamps: deque, window: float, now: float):
         while timestamps and now - timestamps[0] > window:
             timestamps.popleft()
+
+    def set_cooldown(self, seconds: float):
+        """Pausa global tras un 429: todos los threads esperan, no solo el que lo recibió."""
+        with self.lock:
+            self.cooldown_until = max(self.cooldown_until, time.monotonic() + seconds)
 
     def acquire(self):
         while True:
@@ -152,14 +166,14 @@ class RiotRateLimiter:
                 if len(self.short_timestamps) >= self.short_rate:
                     short_wait = self.short_timestamps[0] + self.short_window - now
 
-                wait_time = max(long_wait, short_wait, 0.0)
+                wait_time = max(long_wait, short_wait, self.cooldown_until - now, 0.0)
 
                 if wait_time <= 0:
                     self.short_timestamps.append(now)
                     self.long_timestamps.append(now)
                     return
 
-            time.sleep(wait_time + 0.001)
+            time.sleep(min(wait_time + 0.005, 5.0))
 
     @property
     def short_used(self) -> int:
@@ -174,27 +188,33 @@ class RiotRateLimiter:
             return len(self.long_timestamps)
 
 
-def _crear_rate_limiters():
+# Los límites de aplicación de Riot son POR HOST (americas, la2, la1, ...):
+# cada host tiene su propio presupuesto de 20/1s + 100/120s con dev key.
+# Un limiter por host aprovecha el máximo sin que la siembra de ligas
+# (hosts de plataforma) consuma el presupuesto de match-v5 (host regional).
+_limiters: dict[str, RiotRateLimiter] = {}
+_limiters_lock = threading.Lock()
+
+
+def _nuevo_limiter() -> RiotRateLimiter:
     if API_KEY_TIER == "production":
-        return (
-            RiotRateLimiter(500, 10.0, 2000, 600.0),
-            RiotRateLimiter(500, 10.0, 2000, 600.0),
-            RiotRateLimiter(500, 10.0, 2000, 600.0),
-        )
-    else:
-        shared = RiotRateLimiter(20, 1.0, 100, 120.0)
-        return (shared, shared, shared)
-
-
-RATE_LIMITER_MATCH, RATE_LIMITER_LEAGUE, RATE_LIMITER_TIMELINE = _crear_rate_limiters()
+        return RiotRateLimiter(500, 10.0, 30000, 600.0)
+    # Ventanas con un pequeño margen (1.05s / 121s) para absorber la deriva
+    # entre nuestro reloj y el contador de Riot y evitar 429 en los bordes.
+    return RiotRateLimiter(20, 1.05, 100, 121.0)
 
 
 def _limiter_for(url: str) -> RiotRateLimiter:
-    if "/timeline" in url:
-        return RATE_LIMITER_TIMELINE
-    if "/match/v5/" in url:
-        return RATE_LIMITER_MATCH
-    return RATE_LIMITER_LEAGUE
+    try:
+        host = url.split("/", 3)[2].split(".", 1)[0]
+    except IndexError:
+        host = "default"
+    with _limiters_lock:
+        lim = _limiters.get(host)
+        if lim is None:
+            lim = _nuevo_limiter()
+            _limiters[host] = lim
+        return lim
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -280,7 +300,8 @@ class ColaPersistente:
                 cur = conn.cursor()
                 cur.execute(
                     "INSERT INTO cola(puuid, procesado) VALUES(%s, 0) "
-                    "ON CONFLICT (puuid) DO UPDATE SET procesado=0",
+                    "ON CONFLICT (puuid) DO UPDATE "
+                    "SET procesado=0, fecha_agregado=CURRENT_TIMESTAMP",
                     (puuid,)
                 )
                 conn.commit()
@@ -374,6 +395,12 @@ class Dashboard:
         with self.lock:
             return match_id in self.match_ids_seen
 
+    def mark_known(self, match_id: str):
+        """Marca un match ID como visto aunque haya sido rechazado (parche viejo,
+        partida corta, error). Evita gastar requests re-descargándolo."""
+        with self.lock:
+            self.match_ids_seen.add(match_id)
+
     def add_error(self):
         with self.lock:
             self.errors += 1
@@ -431,17 +458,49 @@ def es_item_supp_final(item_id: str) -> bool:
     return item_id in ITEMS_SUPP_FINAL
 
 
-def peticion_segura(url: str) -> dict | None:
+# Señal de aborto cuando la API key es rechazada (401/403). Las dev keys de
+# Riot expiran cada 24h: sin esto el recolector falla silenciosamente en TODO.
+API_KEY_INVALIDA = threading.Event()
+
+_http_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    s = getattr(_http_local, "session", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update(HEADERS)
+        _http_local.session = s
+    return s
+
+
+def peticion_segura(url: str) -> dict | list | None:
+    if API_KEY_INVALIDA.is_set():
+        return None
     limiter = _limiter_for(url)
     for intento in range(4):
         try:
             limiter.acquire()
-            resp = requests.get(url, headers=HEADERS, timeout=10)
+            resp = _get_session().get(url, timeout=10)
             if resp.status_code == 200:
                 return resp.json()
+            if resp.status_code in (401, 403):
+                if not API_KEY_INVALIDA.is_set():
+                    API_KEY_INVALIDA.set()
+                    print(
+                        "\n\nERROR FATAL: la API key fue rechazada por Riot "
+                        f"(HTTP {resp.status_code}).\n"
+                        "Las development keys expiran cada 24 horas — renueva la tuya en "
+                        "https://developer.riotgames.com y actualiza config.json.\n"
+                    )
+                return None
             if resp.status_code == 429:
-                espera = int(resp.headers.get("Retry-After", 2 ** intento + 1))
+                try:
+                    espera = float(resp.headers.get("Retry-After", 2 ** intento + 1))
+                except (TypeError, ValueError):
+                    espera = 2 ** intento + 1
                 DASH.add_rate_limit()
+                limiter.set_cooldown(espera)
                 time.sleep(espera)
                 continue
             if resp.status_code in (500, 502, 503, 504):
@@ -530,7 +589,9 @@ def _mejores_plataformas(top_n: int = 2) -> list:
 # PROCESAMIENTO
 # ═══════════════════════════════════════════════════════════════
 
-def procesar_jugador(puuid: str, start_time: int = 0) -> list:
+def procesar_jugador(puuid: str, start_time: int = 0) -> list | None:
+    """Retorna la lista de match IDs (puede ser [] si el jugador no jugó hoy)
+    o None si la petición falló — el caller decide si re-encolar."""
     base = (
         f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/"
         f"by-puuid/{puuid}/ids?queue=420&start=0&count={COUNT_POR_JUGADOR}"
@@ -538,7 +599,9 @@ def procesar_jugador(puuid: str, start_time: int = 0) -> list:
     if start_time > 0:
         base += f"&startTime={start_time}"
     match_ids = peticion_segura(base)
-    return match_ids if match_ids else []
+    if match_ids is None:
+        return None
+    return match_ids if isinstance(match_ids, list) else []
 
 
 def descargar_partida(match_id: str) -> tuple | None:
@@ -665,6 +728,7 @@ def descargar_lote(match_ids: list) -> int:
         futures_map = {pool.submit(descargar_partida, mid): mid for mid in match_ids}
         for future in as_completed(futures_map):
             mid = futures_map[future]
+            DASH.mark_known(mid)
             try:
                 result = future.result()
                 if result:
@@ -766,50 +830,58 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     total_descargadas = total_base
     buffer_match_ids = []
     last_checkpoint = total_descargadas
+    jugadores_procesados = 0
 
     def _fetch_player_ids(puuid):
         ids = procesar_jugador(puuid, start_time=midnight)
-        if not ids:
+        if ids is None:
+            # Fallo real de la petición → reintentar más tarde (al final de la cola).
             cola.push_back(puuid)
+            return []
+        # [] legítimo (el jugador no jugó hoy): NO re-encolar, sería un bucle
+        # infinito quemando el rate limit.
         return ids
 
     def _collect_new_ids(ids):
-        nonlocal buffer_match_ids
         if not ids:
             return
         for mid in ids:
             if not DASH.is_match_known(mid):
                 buffer_match_ids.append(mid)
 
-    def _process_batch():
+    def _process_batch(force: bool = False):
         nonlocal total_descargadas, last_checkpoint
-        processed = 0
-        while len(buffer_match_ids) >= BATCH_SIZE and total_descargadas < meta:
+        umbral = 1 if force else BATCH_SIZE
+        while len(buffer_match_ids) >= umbral and total_descargadas < meta:
             lote = buffer_match_ids[:BATCH_SIZE]
             del buffer_match_ids[:BATCH_SIZE]
             n = descargar_lote(lote)
             total_descargadas += n
-            processed += 1
             if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
                 last_checkpoint = total_descargadas
                 cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
-            print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="")
-        return processed
+            print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="", flush=True)
 
     try:
         with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as player_pool:
             active_futures = {}
+            ultimo_reseed = 0.0
 
-            def _fill_pool():
+            def _fill_pool() -> bool:
+                """Rellena el pool de jugadores. Retorna False si la cola se agotó."""
                 while len(active_futures) < PLAYER_FETCH_WORKERS:
                     p = cola.pop()
                     if not p:
-                        break
+                        return False
                     active_futures[player_pool.submit(_fetch_player_ids, p)] = p
+                return True
 
             _fill_pool()
 
             while active_futures and total_descargadas < meta:
+                if API_KEY_INVALIDA.is_set():
+                    break
+
                 done, _ = wait(set(active_futures.keys()), return_when=FIRST_COMPLETED)
                 for f in done:
                     try:
@@ -818,13 +890,30 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
                     except Exception:
                         DASH.add_error()
                     del active_futures[f]
+                    jugadores_procesados += 1
 
                 _process_batch()
-                _fill_pool()
 
-                if cola.size() < 50 and total_descargadas < meta:
-                    print(f"\nRe-sembrando cola ({cola.size()} pendientes)...")
-                    sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
+                # Re-sembrar SOLO si la cola se agotó, con cooldown de 90s para
+                # no quemar el rate limit en llamadas a ligas en bucle.
+                if not _fill_pool() and total_descargadas < meta:
+                    ahora = time.monotonic()
+                    if ahora - ultimo_reseed >= 90:
+                        ultimo_reseed = ahora
+                        print(f"\nRe-sembrando cola (agotada)...")
+                        sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
+                        _fill_pool()
+
+                print(
+                    f"\r ⏳ {total_descargadas}/{meta} partidas | "
+                    f"{jugadores_procesados} jugadores | "
+                    f"buffer: {len(buffer_match_ids)} IDs   ",
+                    end="", flush=True,
+                )
+
+            # Descargar lo que quedó en el buffer (< BATCH_SIZE): antes se perdía.
+            if not API_KEY_INVALIDA.is_set():
+                _process_batch(force=True)
 
     except KeyboardInterrupt:
         print("\n\nPausado. Guardando checkpoint...")
@@ -845,7 +934,8 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     try:
         conn = obtener_conexion()
         conn.autocommit = True
-        conn.execute("VACUUM")
+        cur = conn.cursor()
+        cur.execute("VACUUM")
         conn.close()
         print("   Optimizada.")
     except Exception:

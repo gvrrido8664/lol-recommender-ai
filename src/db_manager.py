@@ -159,6 +159,20 @@ def inicializar_db():
             END $$;
         """)
 
+    cur.execute("""
+        DO $$
+        BEGIN
+            ALTER TABLE participantes
+            DROP CONSTRAINT IF EXISTS uq_participante_match_champ_team;
+            ALTER TABLE participantes
+            ADD CONSTRAINT uq_participante_match_champ_team
+            UNIQUE (match_id, champion, team);
+        EXCEPTION
+            WHEN undefined_table THEN NULL;
+            WHEN undefined_column THEN NULL;
+        END $$;
+    """)
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champion ON participantes(champion);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_position ON participantes(team_position);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")
@@ -212,9 +226,14 @@ def purgar_parches_antiguos(parche_actual: str):
 
     if eliminadas > 0:
         print(f"  [PURGA] {eliminadas:,} partidas antiguas eliminadas.")
-        conn2 = obtener_conexion()
-        conn2.execute("VACUUM")
-        conn2.close()
+        try:
+            conn2 = obtener_conexion()
+            conn2.autocommit = True
+            cur2 = conn2.cursor()
+            cur2.execute("VACUUM")
+            conn2.close()
+        except Exception:
+            pass
 
     print(f"  [PURGA] Base de datos: {total_antes:,} -> {total_antes - eliminadas:,} partidas")
     return eliminadas, 0

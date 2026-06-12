@@ -1,7 +1,16 @@
 """
-LOLLECT v3 — Motor de Recolección Masiva de Partidas de LoL
+LOLLECT v4 — Motor de Recolección Masiva de Partidas de LoL
 ═══════════════════════════════════════════════════════════════
 Producción-grade. Construido para ser rápido, resiliente y observable.
+
+Mejoras v4:
+  • Multi-región en paralelo (americas/europe/asia/sea) — cada host de Riot
+    tiene su propio presupuesto de rate limit ⇒ ~4× throughput con dev key
+  • Ventana de IDs de N días (no solo hoy): cada request de IDs rinde hasta
+    100 partidas en vez de ~5 (el filtro de parche al descargar se mantiene)
+  • Crawling de participantes: los 10 PUUIDs de cada partida descargada
+    alimentan la cola — sin requests extra y la cola nunca se agota
+  • Cooldown global en 429 + detección de API key expirada (401/403)
 
 Mejoras v3:
   • Rate limiters por endpoint (match, league, timeline) — sin lock contention
@@ -18,7 +27,7 @@ Características heredadas de v2:
   • Descarga paralela de partidas (ThreadPool + batch processing)
   • Persistencia de cola en PostgreSQL (resume automático tras reinicio)
   • Barra de progreso enriquecida con ETA, RPM, throughput
-  • Muestreo inteligente multi-MMR (Challenger → Diamond)
+  • Muestreo high elo (Challenger / Grandmaster / Master)
   • Stats en tiempo real: partidas/min, rate limits, errores, cobertura
   • Checkpoint automático cada N partidas
 
@@ -100,9 +109,32 @@ CONFIG = _cargar_config()
 API_KEY = CONFIG.get("API_KEY", os.environ.get("RIOT_API_KEY", ""))
 
 COLLECTOR_CFG = CONFIG.get("collector_settings", {})
-REGION_ROUTING = COLLECTOR_CFG.get("region_routing", "americas")
-PLATFORMS = COLLECTOR_CFG.get("platforms", ["la2", "la1", "na1", "br1"])
 API_KEY_TIER = COLLECTOR_CFG.get("api_key_tier", "development")
+
+# Mapa región de routing (match-v5) → plataformas (league-v4) para la siembra.
+# Los límites de Riot son POR HOST, así que cada región aporta su PROPIO
+# presupuesto de 20/1s + 100/120s: recolectar de las 4 en paralelo ≈ 4× throughput.
+REGIONES_DEFAULT = {
+    "americas": ["la2", "la1", "na1", "br1"],
+    "europe": ["euw1", "eun1", "tr1"],
+    "asia": ["kr", "jp1"],
+    "sea": ["oc1", "sg2", "tw2", "vn2"],
+}
+
+
+def _cargar_regiones() -> dict:
+    regiones = COLLECTOR_CFG.get("regiones")
+    if isinstance(regiones, dict) and regiones:
+        return regiones
+    # Compatibilidad con la config antigua de una sola región
+    routing = COLLECTOR_CFG.get("region_routing")
+    platforms = COLLECTOR_CFG.get("platforms")
+    if routing and platforms:
+        return {routing: platforms}
+    return REGIONES_DEFAULT
+
+
+REGIONES = _cargar_regiones()
 
 HEADERS = {"X-Riot-Token": API_KEY}
 ITEMS_DATA = cargar_objetos()
@@ -122,6 +154,20 @@ USAR_TIMELINE = False
 JUGADORES_SEMILLA = 500
 SEMILLA_POR_PLATAFORMA = 20
 RE_SEED_FRACCION = 3
+
+# Ventana de búsqueda de match IDs por jugador. Pedir varios días (en vez de
+# solo hoy) hace que cada request de IDs rinda hasta 100 partidas en lugar de
+# ~5, reduciendo drásticamente el overhead. Las partidas de parches anteriores
+# que entren en la ventana se rechazan al descargar (una sola vez, quedan
+# marcadas como vistas).
+DIAS_VENTANA_IDS = COLLECTOR_CFG.get("dias_ventana_ids", 7)
+
+# Tope de jugadores pendientes por región: el crawling de participantes
+# alimenta la cola solo, esto evita que crezca sin límite.
+MAX_COLA_POR_REGION = 1500
+
+# Señal global de parada (meta alcanzada, Ctrl+C o key inválida).
+DETENER = threading.Event()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -151,8 +197,11 @@ class RiotRateLimiter:
         with self.lock:
             self.cooldown_until = max(self.cooldown_until, time.monotonic() + seconds)
 
-    def acquire(self):
+    def acquire(self) -> bool:
+        """Retorna True al obtener un slot, False si se pidió detener mientras esperaba."""
         while True:
+            if DETENER.is_set():
+                return False
             with self.lock:
                 now = time.monotonic()
                 self._clean_old(self.short_timestamps, self.short_window, now)
@@ -171,7 +220,7 @@ class RiotRateLimiter:
                 if wait_time <= 0:
                     self.short_timestamps.append(now)
                     self.long_timestamps.append(now)
-                    return
+                    return True
 
             time.sleep(min(wait_time + 0.005, 5.0))
 
@@ -225,6 +274,7 @@ class ColaPersistente:
     def __init__(self):
         self.lock = threading.Lock()
         self._conn = None
+        self._size_cache: dict[str, tuple[int, float]] = {}
         self._init_db()
 
     def _get_conn(self):
@@ -247,9 +297,12 @@ class ColaPersistente:
             CREATE TABLE IF NOT EXISTS cola (
                 puuid TEXT PRIMARY KEY,
                 fecha_agregado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                procesado INTEGER DEFAULT 0
+                procesado INTEGER DEFAULT 0,
+                region TEXT DEFAULT 'americas'
             )
         """)
+        cur.execute("ALTER TABLE cola ADD COLUMN IF NOT EXISTS region TEXT DEFAULT 'americas'")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_cola_region ON cola(region, procesado)")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS checkpoint (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -263,25 +316,46 @@ class ColaPersistente:
             cur.execute("INSERT INTO checkpoint(id, total_descargadas, total_errores) VALUES(1, 0, 0)")
         conn.commit()
 
-    def push(self, puuid: str):
+    def push(self, puuid: str, region: str = "americas"):
         with self.lock:
             try:
                 conn = self._get_conn()
                 cur = conn.cursor()
                 cur.execute(
-                    "INSERT INTO cola(puuid) VALUES(%s) ON CONFLICT (puuid) DO NOTHING",
-                    (puuid,)
+                    "INSERT INTO cola(puuid, region) VALUES(%s, %s) ON CONFLICT (puuid) DO NOTHING",
+                    (puuid, region)
                 )
                 conn.commit()
             except Exception:
                 self._reset_conn()
 
-    def pop(self) -> str | None:
+    def push_many(self, puuids: list, region: str):
+        """Inserta varios PUUIDs en un solo roundtrip (crawling de participantes).
+        Los ya conocidos (incluso procesados) se ignoran."""
+        if not puuids:
+            return
         with self.lock:
             try:
                 conn = self._get_conn()
                 cur = conn.cursor()
-                cur.execute("SELECT puuid FROM cola WHERE procesado=0 ORDER BY fecha_agregado LIMIT 1")
+                execute_values(cur,
+                    "INSERT INTO cola(puuid, region) VALUES %s ON CONFLICT (puuid) DO NOTHING",
+                    [(p, region) for p in puuids])
+                conn.commit()
+            except Exception:
+                self._reset_conn()
+
+    def pop(self, region: str | None = None) -> str | None:
+        with self.lock:
+            try:
+                conn = self._get_conn()
+                cur = conn.cursor()
+                if region:
+                    cur.execute(
+                        "SELECT puuid FROM cola WHERE procesado=0 AND region=%s "
+                        "ORDER BY fecha_agregado LIMIT 1", (region,))
+                else:
+                    cur.execute("SELECT puuid FROM cola WHERE procesado=0 ORDER BY fecha_agregado LIMIT 1")
                 row = cur.fetchone()
                 if row:
                     puuid = row[0]
@@ -292,32 +366,45 @@ class ColaPersistente:
                 self._reset_conn()
         return None
 
-    def push_back(self, puuid: str):
-        """Re-encola un PUUID cuyo fetch falló (resetea procesado=0)."""
+    def push_back(self, puuid: str, region: str = "americas"):
+        """Re-encola un PUUID cuyo fetch falló (al final de la cola)."""
         with self.lock:
             try:
                 conn = self._get_conn()
                 cur = conn.cursor()
                 cur.execute(
-                    "INSERT INTO cola(puuid, procesado) VALUES(%s, 0) "
+                    "INSERT INTO cola(puuid, procesado, region) VALUES(%s, 0, %s) "
                     "ON CONFLICT (puuid) DO UPDATE "
                     "SET procesado=0, fecha_agregado=CURRENT_TIMESTAMP",
-                    (puuid,)
+                    (puuid, region)
                 )
                 conn.commit()
             except Exception:
                 self._reset_conn()
 
-    def size(self) -> int:
+    def size(self, region: str | None = None) -> int:
         with self.lock:
             try:
                 conn = self._get_conn()
                 cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM cola WHERE procesado=0")
+                if region:
+                    cur.execute("SELECT COUNT(*) FROM cola WHERE procesado=0 AND region=%s", (region,))
+                else:
+                    cur.execute("SELECT COUNT(*) FROM cola WHERE procesado=0")
                 return cur.fetchone()[0]
             except Exception:
                 self._reset_conn()
                 return 0
+
+    def pendientes_aprox(self, region: str) -> int:
+        """Tamaño de cola con cache de 60s — evita un COUNT remoto por lote."""
+        ahora = time.monotonic()
+        cacheado = self._size_cache.get(region)
+        if cacheado is not None and ahora - cacheado[1] < 60:
+            return cacheado[0]
+        n = self.size(region)
+        self._size_cache[region] = (n, ahora)
+        return n
 
     def checkpoint(self, descargadas: int, errores: int):
         with self.lock:
@@ -441,9 +528,9 @@ def obtener_version_riot() -> tuple:
         return ("14.10", "14.10.1")
 
 
-def epoch_medianoche_hoy() -> int:
-    hoy = datetime.now(tz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    return int(hoy.timestamp())
+def epoch_inicio_ventana() -> int:
+    """Epoch desde el que se piden match IDs (DIAS_VENTANA_IDS días atrás)."""
+    return int(time.time()) - DIAS_VENTANA_IDS * 86400
 
 
 def es_bota(item_id: str) -> bool:
@@ -475,12 +562,13 @@ def _get_session() -> requests.Session:
 
 
 def peticion_segura(url: str) -> dict | list | None:
-    if API_KEY_INVALIDA.is_set():
+    if API_KEY_INVALIDA.is_set() or DETENER.is_set():
         return None
     limiter = _limiter_for(url)
     for intento in range(4):
         try:
-            limiter.acquire()
+            if not limiter.acquire():
+                return None
             resp = _get_session().get(url, timeout=10)
             if resp.status_code == 200:
                 return resp.json()
@@ -528,10 +616,9 @@ def transaction(conn):
 # SIEMBRA  —  Re-seeding inteligente por plataforma
 # ═══════════════════════════════════════════════════════════════
 
-_platform_yield = {}
-
-
-def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> int:
+def sembrar_desde_high_elo(cola: ColaPersistente, region: str, platforms: list,
+                           jugadores_max: int = 200) -> int:
+    """Siembra jugadores de Master/GM/Challenger de las plataformas de una región."""
     ligas = {
         "CHALLENGER": "challengerleagues",
         "GRANDMASTER": "grandmasterleagues",
@@ -539,7 +626,7 @@ def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> i
     }
 
     tareas = []
-    for platform in PLATFORMS:
+    for platform in platforms:
         for nombre_liga, endpoint in ligas.items():
             url = f"https://{platform}.api.riotgames.com/lol/league/v4/{endpoint}/by-queue/RANKED_SOLO_5x5"
             tareas.append((platform, nombre_liga, url))
@@ -563,37 +650,27 @@ def sembrar_desde_high_elo(cola: ColaPersistente, jugadores_max: int = 200) -> i
         if agregados >= jugadores_max:
             break
         if not datos or "entries" not in datos:
-            print(f"  {platform.upper()} {nombre_liga}: sin datos")
+            print(f"  [{region}] {platform.upper()} {nombre_liga}: sin datos")
             continue
         muestra = min(SEMILLA_POR_PLATAFORMA, len(datos["entries"]))
         entradas = random.sample(datos["entries"], muestra)
-        n = 0
-        for e in entradas:
-            if e.get("puuid") and agregados < jugadores_max:
-                cola.push(e["puuid"])
-                n += 1
-                agregados += 1
-        _platform_yield[platform] = _platform_yield.get(platform, 0) + n
-        print(f"  {platform.upper()} {nombre_liga}: +{n} jugadores")
+        puuids = [e["puuid"] for e in entradas if e.get("puuid")]
+        puuids = puuids[: jugadores_max - agregados]
+        cola.push_many(puuids, region)
+        agregados += len(puuids)
+        print(f"  [{region}] {platform.upper()} {nombre_liga}: +{len(puuids)} jugadores")
     return agregados
-
-
-def _mejores_plataformas(top_n: int = 2) -> list:
-    if not _platform_yield:
-        return PLATFORMS[:top_n]
-    sorted_plat = sorted(_platform_yield.items(), key=lambda kv: kv[1], reverse=True)
-    return [p for p, _ in sorted_plat[:top_n]]
 
 
 # ═══════════════════════════════════════════════════════════════
 # PROCESAMIENTO
 # ═══════════════════════════════════════════════════════════════
 
-def procesar_jugador(puuid: str, start_time: int = 0) -> list | None:
-    """Retorna la lista de match IDs (puede ser [] si el jugador no jugó hoy)
-    o None si la petición falló — el caller decide si re-encolar."""
+def procesar_jugador(puuid: str, region: str, start_time: int = 0) -> list | None:
+    """Retorna la lista de match IDs (puede ser [] si el jugador no jugó en la
+    ventana) o None si la petición falló — el caller decide si re-encolar."""
     base = (
-        f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/"
+        f"https://{region}.api.riotgames.com/lol/match/v5/matches/"
         f"by-puuid/{puuid}/ids?queue=420&start=0&count={COUNT_POR_JUGADOR}"
     )
     if start_time > 0:
@@ -604,10 +681,11 @@ def procesar_jugador(puuid: str, start_time: int = 0) -> list | None:
     return match_ids if isinstance(match_ids, list) else []
 
 
-def descargar_partida(match_id: str) -> tuple | None:
-    """Descarga y valida una partida. Retorna (match_row, participants_rows, champions, data_bytes) o None."""
+def descargar_partida(match_id: str, region: str) -> tuple | None:
+    """Descarga y valida una partida.
+    Retorna (match_row, participants_rows, champions, data_bytes, puuids) o None."""
     try:
-        url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        url = f"https://{region}.api.riotgames.com/lol/match/v5/matches/{match_id}"
         data = peticion_segura(url)
         if not data or "info" not in data:
             return None
@@ -633,7 +711,7 @@ def descargar_partida(match_id: str) -> tuple | None:
                     necesita_timeline = True
                     break
             if necesita_timeline:
-                url_tl = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+                url_tl = f"https://{region}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
                 timeline = peticion_segura(url_tl)
                 if timeline and "info" in timeline:
                     for frame in timeline["info"].get("frames", []):
@@ -685,7 +763,10 @@ def descargar_partida(match_id: str) -> tuple | None:
 
         match_row = (match_id, version, info.get("gameDuration", 0), patch)
         data_bytes = len(json.dumps(data))
-        return (match_row, participants_rows, champions, data_bytes)
+        # PUUIDs de los 10 participantes: alimentan la cola (crawling) sin
+        # gastar requests extra — son jugadores del mismo nivel que la partida.
+        puuids = data.get("metadata", {}).get("participants", [])
+        return (match_row, participants_rows, champions, data_bytes, puuids)
     except Exception:
         return None
 
@@ -700,7 +781,7 @@ def insertar_lote_datos(datos: list) -> int:
             cur = conn.cursor()
             match_rows = []
             all_parts = []
-            for match_row, parts_rows, _, _ in datos:
+            for match_row, parts_rows, *_ in datos:
                 match_rows.append(match_row)
                 all_parts.extend(parts_rows)
 
@@ -721,11 +802,13 @@ def insertar_lote_datos(datos: list) -> int:
         return 0
 
 
-def descargar_lote(match_ids: list) -> int:
-    """Descarga un lote de partidas en paralelo y las inserta en batch. Retorna cuántas nuevas."""
+def descargar_lote(match_ids: list, region: str) -> tuple[int, list]:
+    """Descarga un lote de partidas en paralelo y las inserta en batch.
+    Retorna (cuántas nuevas, PUUIDs de participantes para el crawling)."""
     descargados = []
+    puuids_vistos = set()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures_map = {pool.submit(descargar_partida, mid): mid for mid in match_ids}
+        futures_map = {pool.submit(descargar_partida, mid, region): mid for mid in match_ids}
         for future in as_completed(futures_map):
             mid = futures_map[future]
             DASH.mark_known(mid)
@@ -734,23 +817,14 @@ def descargar_lote(match_ids: list) -> int:
                 if result:
                     descargados.append(result)
                     DASH.add_match(mid, result[2], result[3])
+                    puuids_vistos.update(result[4])
             except Exception:
                 DASH.add_error()
 
     if not descargados:
-        return 0
+        return 0, []
 
-    return insertar_lote_datos(descargados)
-
-
-def _progress_bar(current: int, total: int, s: dict, width: int = 40) -> str:
-    pct = min(current / max(total, 1), 1.0)
-    filled = int(width * pct)
-    bar = "█" * filled + "░" * (width - filled)
-    return (
-        f"\r [{bar}] {current}/{total} | {s['elapsed']} | {s['rpm']} rpm | "
-        f"{s['champions']} champs | {s['errors']} err"
-    )
+    return insertar_lote_datos(descargados), list(puuids_vistos)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -761,24 +835,25 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     global PARCHE_ACTUAL, VERSION_COMPLETA
 
     print("\n" + "═" * 55)
-    print("  LOLLECT v3 — Motor de Recolección Masiva")
+    print("  LOLLECT v4 — Motor de Recolección Masiva Multi-Región")
     print("═" * 55)
 
     PARCHE_ACTUAL, VERSION_COMPLETA = obtener_version_riot()
-    midnight = epoch_medianoche_hoy()
+    inicio_ventana = epoch_inicio_ventana()
     tier_label = "Production" if API_KEY_TIER == "production" else "Development"
 
     print(f"  Parche activo: {PARCHE_ACTUAL} ({VERSION_COMPLETA})")
-    print(f"  Filtrando SOLO partidas de HOY (medianoche UTC) — parche activo")
+    print(f"  Ventana de IDs: últimos {DIAS_VENTANA_IDS} días — solo se guarda el parche activo")
     print(f"  API Key tier: {tier_label}")
     if API_KEY_TIER == "production":
-        print(f"  Rate Limiters:   Match=500/10s+2000/10min | League=500/10s+2000/10min | Timeline=500/10s+2000/10min")
+        print(f"  Rate Limiter:    500 req/10s + 30000 req/10min POR HOST")
     else:
-        print(f"  Rate Limiter:    20 req/s + 100 req/120s (compartido — Dev Key)")
-    print(f"  Meta: {meta:,} partidas  |  Workers: {MAX_WORKERS}  |  Batch: {BATCH_SIZE}")
+        print(f"  Rate Limiter:    20 req/s + 100 req/120s POR HOST (Dev Key)")
+    print(f"  Meta: {meta:,} partidas  |  Workers/región: {MAX_WORKERS}  |  Batch: {BATCH_SIZE}")
     tl_mode = "activo (2× más lento)" if USAR_TIMELINE else "desactivado (2× más rápido)"
     print(f"  Checkpoint: {CHECKPOINT_EVERY}  |  Timeline: {tl_mode}  |  IDs/jugador: {COUNT_POR_JUGADOR}")
-    print(f"  Plataformas: {', '.join(PLATFORMS)}  |  Región: {REGION_ROUTING}")
+    for region, plats in REGIONES.items():
+        print(f"  Región {region}: {', '.join(plats)}")
     print()
 
     if not API_KEY:
@@ -818,109 +893,147 @@ def ejecutar_recoleccion_masiva(meta: int = 20000, reset: bool = False):
     except Exception:
         print("(no disponibles)")
 
-    if cola.size() < 50:
-        print(f"\nSembrando cola desde High Elo (Challenger/GM/Master, max {JUGADORES_SEMILLA})...")
-        sembrados = sembrar_desde_high_elo(cola, JUGADORES_SEMILLA)
-        print(f"   {sembrados} jugadores agregados\n")
+    # ── Estado compartido entre las regiones ──
+    estado_lock = threading.Lock()
+    estado = {"total": total_base, "checkpoint": total_base, "jugadores": 0}
+    DETENER.clear()
 
-    if cola.size() == 0:
-        print("Cola vacía. Nada que recolectar.")
-        return
+    def _total() -> int:
+        with estado_lock:
+            return estado["total"]
 
-    total_descargadas = total_base
-    buffer_match_ids = []
-    last_checkpoint = total_descargadas
-    jugadores_procesados = 0
+    def _registrar(n: int):
+        toca_checkpoint = False
+        with estado_lock:
+            estado["total"] += n
+            if estado["total"] >= meta:
+                DETENER.set()
+            if estado["total"] - estado["checkpoint"] >= CHECKPOINT_EVERY:
+                estado["checkpoint"] = estado["total"]
+                toca_checkpoint = True
+        if toca_checkpoint:
+            cola.checkpoint(_total(), DASH.snapshot()["errors"])
 
-    def _fetch_player_ids(puuid):
-        ids = procesar_jugador(puuid, start_time=midnight)
-        if ids is None:
-            # Fallo real de la petición → reintentar más tarde (al final de la cola).
-            cola.push_back(puuid)
-            return []
-        # [] legítimo (el jugador no jugó hoy): NO re-encolar, sería un bucle
-        # infinito quemando el rate limit.
-        return ids
+    def _worker_region(region: str, platforms: list):
+        """Pipeline completo de una región: siembra → IDs por jugador → descarga.
+        Cada región corre en paralelo con su PROPIO presupuesto de rate limit."""
+        buffer_ids: list = []
+        ultimo_reseed = 0.0
+        reseeds_inutiles = 0
 
-    def _collect_new_ids(ids):
-        if not ids:
-            return
-        for mid in ids:
-            if not DASH.is_match_known(mid):
-                buffer_match_ids.append(mid)
+        def _fetch_ids(puuid):
+            ids = procesar_jugador(puuid, region, start_time=inicio_ventana)
+            if ids is None:
+                # Fallo real de la petición → reintentar más tarde (al final de la cola).
+                cola.push_back(puuid, region)
+                return []
+            # [] legítimo (sin partidas en la ventana): NO re-encolar, sería un
+            # bucle infinito quemando el rate limit.
+            return ids
 
-    def _process_batch(force: bool = False):
-        nonlocal total_descargadas, last_checkpoint
-        umbral = 1 if force else BATCH_SIZE
-        while len(buffer_match_ids) >= umbral and total_descargadas < meta:
-            lote = buffer_match_ids[:BATCH_SIZE]
-            del buffer_match_ids[:BATCH_SIZE]
-            n = descargar_lote(lote)
-            total_descargadas += n
-            if total_descargadas - last_checkpoint >= CHECKPOINT_EVERY:
-                last_checkpoint = total_descargadas
-                cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
-            print(_progress_bar(total_descargadas, meta, DASH.snapshot()), end="", flush=True)
+        def _procesar_lotes(force: bool = False):
+            umbral = 1 if force else BATCH_SIZE
+            while len(buffer_ids) >= umbral and not DETENER.is_set():
+                lote = buffer_ids[:BATCH_SIZE]
+                del buffer_ids[:BATCH_SIZE]
+                n, puuids = descargar_lote(lote, region)
+                # Crawling: los participantes de cada partida alimentan la cola
+                # (mismo nivel high elo, cero requests extra).
+                if puuids and cola.pendientes_aprox(region) < MAX_COLA_POR_REGION:
+                    cola.push_many(puuids, region)
+                _registrar(n)
+
+        try:
+            if cola.size(region) < 50 and not DETENER.is_set():
+                sembrar_desde_high_elo(cola, region, platforms, JUGADORES_SEMILLA)
+
+            with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as pool:
+                activos = {}
+
+                def _fill() -> bool:
+                    """Rellena el pool de jugadores. Retorna False si la cola se agotó."""
+                    while len(activos) < PLAYER_FETCH_WORKERS and not DETENER.is_set():
+                        p = cola.pop(region)
+                        if not p:
+                            return False
+                        activos[pool.submit(_fetch_ids, p)] = p
+                    return True
+
+                _fill()
+                while not DETENER.is_set() and not API_KEY_INVALIDA.is_set():
+                    if not activos:
+                        # Cola de la región agotada: bajar lo que haya y re-sembrar.
+                        _procesar_lotes(force=True)
+                        ahora = time.monotonic()
+                        if ahora - ultimo_reseed >= 90:
+                            ultimo_reseed = ahora
+                            print(f"\n  [{region}] re-sembrando cola...")
+                            sembrar_desde_high_elo(cola, region, platforms,
+                                                   max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
+                            if _fill() or activos:
+                                reseeds_inutiles = 0
+                                continue
+                            reseeds_inutiles += 1
+                            if reseeds_inutiles >= 3:
+                                break  # región sin jugadores nuevos que procesar
+                            continue
+                        if DETENER.wait(10):
+                            break
+                        _fill()
+                        continue
+
+                    done, _ = wait(set(activos.keys()), return_when=FIRST_COMPLETED, timeout=10)
+                    for f in done:
+                        try:
+                            ids = f.result()
+                            for mid in ids:
+                                if not DASH.is_match_known(mid):
+                                    buffer_ids.append(mid)
+                        except Exception:
+                            DASH.add_error()
+                        activos.pop(f, None)
+                        with estado_lock:
+                            estado["jugadores"] += 1
+
+                    _procesar_lotes()
+                    _fill()
+
+                # Descargar lo que quedó en el buffer (< BATCH_SIZE).
+                if not API_KEY_INVALIDA.is_set():
+                    _procesar_lotes(force=True)
+        except Exception:
+            DASH.add_error()
+
+    hilos = []
+    for region, plats in REGIONES.items():
+        t = threading.Thread(target=_worker_region, args=(region, plats),
+                             daemon=True, name=f"region-{region}")
+        t.start()
+        hilos.append(t)
 
     try:
-        with ThreadPoolExecutor(max_workers=PLAYER_FETCH_WORKERS) as player_pool:
-            active_futures = {}
-            ultimo_reseed = 0.0
-
-            def _fill_pool() -> bool:
-                """Rellena el pool de jugadores. Retorna False si la cola se agotó."""
-                while len(active_futures) < PLAYER_FETCH_WORKERS:
-                    p = cola.pop()
-                    if not p:
-                        return False
-                    active_futures[player_pool.submit(_fetch_player_ids, p)] = p
-                return True
-
-            _fill_pool()
-
-            while active_futures and total_descargadas < meta:
-                if API_KEY_INVALIDA.is_set():
-                    break
-
-                done, _ = wait(set(active_futures.keys()), return_when=FIRST_COMPLETED)
-                for f in done:
-                    try:
-                        ids = f.result()
-                        _collect_new_ids(ids)
-                    except Exception:
-                        DASH.add_error()
-                    del active_futures[f]
-                    jugadores_procesados += 1
-
-                _process_batch()
-
-                # Re-sembrar SOLO si la cola se agotó, con cooldown de 90s para
-                # no quemar el rate limit en llamadas a ligas en bucle.
-                if not _fill_pool() and total_descargadas < meta:
-                    ahora = time.monotonic()
-                    if ahora - ultimo_reseed >= 90:
-                        ultimo_reseed = ahora
-                        print(f"\nRe-sembrando cola (agotada)...")
-                        sembrar_desde_high_elo(cola, max(100, JUGADORES_SEMILLA // RE_SEED_FRACCION))
-                        _fill_pool()
-
-                print(
-                    f"\r ⏳ {total_descargadas}/{meta} partidas | "
-                    f"{jugadores_procesados} jugadores | "
-                    f"buffer: {len(buffer_match_ids)} IDs   ",
-                    end="", flush=True,
-                )
-
-            # Descargar lo que quedó en el buffer (< BATCH_SIZE): antes se perdía.
-            if not API_KEY_INVALIDA.is_set():
-                _process_batch(force=True)
-
+        while any(t.is_alive() for t in hilos):
+            time.sleep(2)
+            s = DASH.snapshot()
+            with estado_lock:
+                tot, jug = estado["total"], estado["jugadores"]
+            print(
+                f"\r ⏳ {tot}/{meta} partidas | {s['rpm']} rpm | {jug} jugadores | "
+                f"{s['errors']} err | {s['rate_limits']} × 429   ",
+                end="", flush=True,
+            )
     except KeyboardInterrupt:
         print("\n\nPausado. Guardando checkpoint...")
+        DETENER.set()
+        for t in hilos:
+            t.join(timeout=20)
     finally:
-        cola.checkpoint(total_descargadas, DASH.snapshot()["errors"])
+        DETENER.set()
+        cola.checkpoint(_total(), DASH.snapshot()["errors"])
         cola.close()
         _close_thread_connections()
+
+    total_descargadas = _total()
 
     s = DASH.snapshot()
     print("\n\n" + "═" * 55)

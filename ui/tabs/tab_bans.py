@@ -125,28 +125,3 @@ class BansTabMixin:
         except Exception as e:
             print(f"[Logros] Error: {e}")
 
-if __name__ == "__main__":
-    import signal
-    app = QApplication(sys.argv)
-    app.setApplicationName("NEXUS")
-    app.setFont(QFont("Segoe UI", 10))
-
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-
-    from setup import verificar_datos_iniciales
-    if not verificar_datos_iniciales():
-        from src.setup_wizard import SetupWizard
-        wizard = SetupWizard()
-        wizard.exec()
-        if not wizard.success:
-            sys.exit(1)
-        from src.db_manager import inicializar_db, ConexionDBError
-        try:
-            inicializar_db()
-        except ConexionDBError:
-            pass
-
-    window = LoLRecommenderApp()
-    window.show()
-    sys.exit(app.exec())
-

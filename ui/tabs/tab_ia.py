@@ -20,7 +20,7 @@ class IATabMixin:
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
 
-        btn_swap = QPushButton("⇄")
+        btn_swap = QPushButton("↔")
         btn_swap.setFixedSize(28, 28)
         btn_swap.setToolTip("Intercambiar aliado / enemigo")
         btn_swap.setStyleSheet(f"""
@@ -139,7 +139,7 @@ class IATabMixin:
             row.setSpacing(4)
             lbl = QLabel(lbl_txt)
             lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 8px; font-weight: bold;")
-            lbl.setFixedWidth(52)
+            lbl.setFixedWidth(72)
             row.addWidget(lbl)
             bar = QProgressBar()
             bar.setRange(0, 100); bar.setValue(50)
@@ -223,6 +223,10 @@ class IATabMixin:
             ("Caitlyn vs Jhin", "BOTTOM", "Caitlyn", "Jhin"),
             ("Lee Sin vs Viego", "JUNGLE", "Lee Sin", "Viego"),
         ]
+
+    @staticmethod
+    def _difficulty(val):
+        return {1: "Facil", 2: "Media", 3: "Dificil"}.get(val, "?")
 
     def _preset_matchup(self, rol_api, aliado, enemigo):
         rol_ui = API_TO_ROL.get(rol_api, rol_api)
@@ -417,13 +421,18 @@ class IATabMixin:
         self.ly_items_1v1.addWidget(tit)
         try:
             items = obtener_items_situacionales(aliado, rol_api, [enemigo])
-            for it in items[:4]:
-                lbl = QLabel(f"• {it.get('nombre', '?')}")
-                lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
-                if it.get("prioridad") == 1:
-                    lbl.setStyleSheet(f"color: {RED_WR}; font-size: 10px; font-weight: bold; background: transparent;")
-                lbl.setToolTip(f"{it.get('razon', '')} ({it.get('categoria', '')})")
-                self.ly_items_1v1.addWidget(lbl)
+            if items:
+                for it in items[:4]:
+                    lbl = QLabel(f"• {it.get('nombre', '?')}")
+                    lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
+                    if it.get("prioridad") == 1:
+                        lbl.setStyleSheet(f"color: {RED_WR}; font-size: 10px; font-weight: bold; background: transparent;")
+                    lbl.setToolTip(f"{it.get('razon', '')} ({it.get('categoria', '')})")
+                    self.ly_items_1v1.addWidget(lbl)
+            else:
+                no_items = QLabel("Sin datos especificos")
+                no_items.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px; background: transparent;")
+                self.ly_items_1v1.addWidget(no_items)
         except Exception as e:
             err = QLabel("No disponible")
             err.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px;")
@@ -456,7 +465,7 @@ class IATabMixin:
         try:
             spells = obtener_top_hechizos(aliado, rol_api)
             for sid in spells[:2]:
-                sname = SPELLS_DICT.get(sid, {}).get("name", f"Hechizo {sid}")
+                sname = SPELLS_DICT.get(int(sid), {}).get("nombre", f"Hechizo {sid}")
                 lbl = QLabel(f"• {sname}")
                 lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
                 self.ly_spells_1v1.addWidget(lbl)
@@ -470,51 +479,46 @@ class IATabMixin:
         def _barra_html(val_a, val_e, max_v, label):
             pct_a = min(100, int(val_a / max_v * 100))
             pct_e = min(100, int(val_e / max_v * 100))
-            delta = val_a - val_e
-            if delta > 0:
-                delta_str = f'<span style="color:{GREEN_WR};">(+{delta})</span>'
-            elif delta < 0:
-                delta_str = f'<span style="color:{RED_WR};">({delta})</span>'
-            else:
-                delta_str = '<span style="color:#7a6f68;">(=)</span>'
             return (
                 f'<tr>'
-                f'<td width="120" style="color:{TEXT_MUTED};font-size:10px;padding:2px 4px;">{label}</td>'
-                f'<td width="140"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:12px;width:100%;">'
-                f'<div style="background:{GREEN_WR};height:12px;width:{pct_a}%;border-radius:3px 0 0 3px;"></div></div></td>'
-                f'<td width="24" style="color:{TEXT_WHITE};font-size:10px;text-align:center;font-weight:700;">{val_a}</td>'
-                f'<td width="18" style="text-align:center;">{delta_str}</td>'
-                f'<td width="24" style="color:{TEXT_WHITE};font-size:10px;text-align:center;font-weight:700;">{val_e}</td>'
-                f'<td width="140"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:12px;width:100%;">'
-                f'<div style="background:{RED_WR};height:12px;width:{pct_e}%;border-radius:0 3px 3px 0;float:right;"></div></div></td>'
+                f'<td style="color:{TEXT_MUTED};font-size:10px;padding:3px 8px;text-align:right;white-space:nowrap;">{label}</td>'
+                f'<td style="width:35%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:14px;">'
+                f'<div style="background:{GREEN_WR};height:14px;width:{pct_a}%;border-radius:3px;"></div></div></td>'
+                f'<td style="color:{TEXT_WHITE};font-size:10px;text-align:center;font-weight:700;width:24px;">{val_a}</td>'
+                f'<td style="color:{RED_WR};font-size:10px;text-align:center;font-weight:700;width:24px;">{val_e}</td>'
+                f'<td style="width:35%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:14px;">'
+                f'<div style="background:{RED_WR};height:14px;width:{pct_e}%;border-radius:3px;"></div></div></td>'
                 f'</tr>'
             )
 
         html = f"""
         <div style="font-family:{FONT_FAMILY};font-size:11px;">
         <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
-        <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;">
+        <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;text-align:center;">
             ⚡ STATS COMPARATIVAS
         </p>
-        <p style="color:{TEXT_MUTED};font-size:9px;margin:2px 0;">
-            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{aliado[:10]:<10} <span style="color:{GREEN_WR};">verde</span> → DELTA ← <span style="color:{RED_WR};">rojo</span> {enemigo[:10]:<10}
-        </p>
-        <table cellspacing="1" style="margin:6px 0;">
+        <table cellspacing="2" style="margin:6px auto;">
             {_barra_html(mob_a, mob_e, 5, "Movilidad")}
             {_barra_html(cc_a, cc_e, 5, "Control (CC)")}
             {_barra_html(early_a, early_e, 3, "Early Game")}
             {_barra_html(scale_a, scale_e, 4, "Escalado")}
         </table>
-        <p style="color:{TEXT_MUTED};font-size:10px;margin:4px 0;">
-            Daño: <b style="color:{ACCENT_TEAL};">{aliado} {t_a.get('damage_type','?')}</b>
-            &nbsp;vs&nbsp;
-            <b style="color:{YELLOW_WR};">{enemigo} {t_e.get('damage_type','?')}</b>
-            &nbsp;&nbsp;|&nbsp;&nbsp;
-            Clase: <b style="color:{ACCENT_TEAL};">{t_a.get('champion_class','?')}</b>
-            &nbsp;vs&nbsp;
-            <b style="color:{YELLOW_WR};">{t_e.get('champion_class','?')}</b>
-            &nbsp;&nbsp;|&nbsp;&nbsp;
-            Dificultad: <b>{t_a.get('difficulty','?')}</b> vs <b>{t_e.get('difficulty','?')}</b>
+        <p style="color:{TEXT_MUTED};font-size:10px;margin:4px 0;text-align:center;">
+            <span style="color:{GREEN_WR};">{aliado}</span>
+            &nbsp;&nbsp;
+            Daño: {t_a.get('damage_type','?')}
+            &nbsp;|&nbsp;
+            Clase: {t_a.get('champion_class','?')}
+            &nbsp;|&nbsp;
+            {self._difficulty(t_a.get('difficulty', 2))}
+            &nbsp;&nbsp;VS&nbsp;&nbsp;
+            <span style="color:{RED_WR};">{enemigo}</span>
+            &nbsp;&nbsp;
+            Daño: {t_e.get('damage_type','?')}
+            &nbsp;|&nbsp;
+            Clase: {t_e.get('champion_class','?')}
+            &nbsp;|&nbsp;
+            {self._difficulty(t_e.get('difficulty', 2))}
         </p>
         <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
         <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;">

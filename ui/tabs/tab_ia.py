@@ -78,7 +78,19 @@ class IATabMixin:
         # ===== HUD DE RESULTADO =====
         hud_panel, l_hud = self.crear_panel("RESULTADO PREDICTIVO (IA)")
         l_hud.setAlignment(Qt.AlignTop)
-        l_hud.setSpacing(8)
+        l_hud.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ border: none; background-color: transparent; }}")
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet("background-color: transparent;")
+        scroll_lay = QVBoxLayout(scroll_content)
+        scroll_lay.setAlignment(Qt.AlignTop)
+        scroll_lay.setSpacing(8)
+        scroll_lay.setContentsMargins(0, 6, 0, 0)
+        scroll.setWidget(scroll_content)
+        l_hud.addWidget(scroll)
 
         batalla_layout = QHBoxLayout()
         batalla_layout.setSpacing(16)
@@ -94,7 +106,9 @@ class IATabMixin:
         l_al.setAlignment(Qt.AlignCenter)
         self.img_aliado_1v1 = QLabel()
         self.img_aliado_1v1.setAlignment(Qt.AlignCenter)
-        self.img_aliado_1v1.setFixedSize(90, 90)
+        self.img_aliado_1v1.setScaledContents(True)
+        self.img_aliado_1v1.setMaximumSize(120, 120)
+        self.img_aliado_1v1.setMinimumSize(60, 60)
         l_al.addWidget(self.img_aliado_1v1, alignment=Qt.AlignCenter)
         self.lbl_nombre_aliado_1v1 = QLabel("--")
         self.lbl_nombre_aliado_1v1.setAlignment(Qt.AlignCenter)
@@ -180,7 +194,9 @@ class IATabMixin:
         l_en.setAlignment(Qt.AlignCenter)
         self.img_enemigo_1v1 = QLabel()
         self.img_enemigo_1v1.setAlignment(Qt.AlignCenter)
-        self.img_enemigo_1v1.setFixedSize(90, 90)
+        self.img_enemigo_1v1.setScaledContents(True)
+        self.img_enemigo_1v1.setMaximumSize(120, 120)
+        self.img_enemigo_1v1.setMinimumSize(60, 60)
         l_en.addWidget(self.img_enemigo_1v1, alignment=Qt.AlignCenter)
         self.lbl_nombre_enemigo_1v1 = QLabel("--")
         self.lbl_nombre_enemigo_1v1.setAlignment(Qt.AlignCenter)
@@ -189,7 +205,7 @@ class IATabMixin:
         col_enemigo.addWidget(fr_en)
         batalla_layout.addLayout(col_enemigo, 1)
 
-        l_hud.addLayout(batalla_layout)
+        scroll_lay.addLayout(batalla_layout)
 
         # ===== CARDS DE RECOMENDACIONES =====
         cards_row = QHBoxLayout()
@@ -216,7 +232,7 @@ class IATabMixin:
         self.ly_spells_1v1.setContentsMargins(6, 4, 6, 4)
         cards_row.addWidget(self.fr_spells_1v1, 1)
 
-        l_hud.addLayout(cards_row)
+        scroll_lay.addLayout(cards_row)
 
         # Analisis de la IA
         self.lbl_analisis_ia = QLabel("Selecciona los campeones y presiona Simular.")
@@ -224,8 +240,8 @@ class IATabMixin:
         self.lbl_analisis_ia.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.lbl_analisis_ia.setWordWrap(True)
         self.lbl_analisis_ia.setTextFormat(Qt.RichText)
-        self.lbl_analisis_ia.setMinimumHeight(160)
-        l_hud.addWidget(self.lbl_analisis_ia)
+        self.lbl_analisis_ia.setMinimumHeight(80)
+        scroll_lay.addWidget(self.lbl_analisis_ia)
         layout.addWidget(hud_panel, 1)
 
         self.actualizar_listas_ia(UI_ROLES[0])

@@ -15,14 +15,6 @@ class BansTabMixin:
         self.cbbanrol.addItems(UI_ROLES)
         ctrls.addWidget(self.cbbanrol)
 
-        self.rb_ban_global = QRadioButton("Global")
-        self.rb_ban_personal = QRadioButton("Personal")
-        self.rb_ban_global.setChecked(True)
-        self.rb_ban_global.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px;")
-        self.rb_ban_personal.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px;")
-        ctrls.addWidget(self.rb_ban_global)
-        ctrls.addWidget(self.rb_ban_personal)
-        
         btn_analizar = QPushButton("ANALIZAR BANS DEL META")
         btn_analizar.clicked.connect(self.buscar_baneos)
         ctrls.addWidget(btn_analizar)
@@ -42,12 +34,7 @@ class BansTabMixin:
 
     def buscar_baneos(self):
         self.treebans.setRowCount(0)
-        modo_personal = self.rb_ban_personal.isChecked()
-
-        if modo_personal and hasattr(self, 'historial_games') and self.historial_games:
-            results = self._tierlist_personal(ROL_TO_API[self.cbbanrol.currentText()])
-        else:
-            results = obtenermejoresbaneos(ROL_TO_API[self.cbbanrol.currentText()], min_partidas=20)
+        results = obtenermejoresbaneos(ROL_TO_API[self.cbbanrol.currentText()], min_partidas=20)
 
         if not results:
             QMessageBox.information(self, "Aviso", "No hay datos suficientes para ese rol.")
@@ -68,34 +55,6 @@ class BansTabMixin:
             self.treebans.setItem(row, 0, item_champ)
             self.treebans.setItem(row, 1, item_ban)
             self.treebans.setItem(row, 2, QTableWidgetItem(str(partidas)))
-
-    def _tierlist_personal(self, rol_api):
-        from collections import Counter
-        champ_vs = Counter()
-        for g in getattr(self, 'historial_games', []) or []:
-            role = (g.get("role") or g.get("lane") or "").upper()
-            api_role = role
-            if role in ("SUPPORT",): api_role = "UTILITY"
-            elif role in ("BOT", "ADC"): api_role = "BOTTOM"
-            elif role in ("JUNGLA",): api_role = "JUNGLE"
-            elif role in ("MID",): api_role = "MIDDLE"
-            if api_role != rol_api:
-                continue
-            champ_list = g.get("enemyTeam", [])
-            if not champ_list:
-                continue
-            for c in champ_list:
-                name = c.get("championName") or c.get("championId", "")
-                if name:
-                    champ_vs[name] += 1
-        total = sum(champ_vs.values())
-        if total < 5:
-            return []
-        results = []
-        for champ, count in champ_vs.most_common(15):
-            rate = round(count / total * 100, 1)
-            results.append((champ, rate, count))
-        return results
 
     def _cargar_logros(self):
         try:

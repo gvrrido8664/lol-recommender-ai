@@ -537,12 +537,7 @@ class PerfilTabMixin:
             # Intentar cache primero
             cached = self._load_season_cache(puuid)
             if cached:
-                existing_gids = set()
-                for g in all_games:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    existing_gids.add(gid)
+                existing_gids = {self._gid_or_fallback(g) for g in all_games}
                 nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
                 if nuevos_cache:
                     self.season_partial.emit(nuevos_cache)
@@ -569,6 +564,9 @@ class PerfilTabMixin:
         gid = str(g.get("gameId", ""))
         if not gid:
             gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+            return gid
+        if '_' in gid:
+            gid = gid.rsplit('_', 1)[-1]
         return gid
 
     # ================= CARGA DE PERFIL (HILO SEGUNDARIO) =================
@@ -644,6 +642,9 @@ class PerfilTabMixin:
                 gid = str(g.get("gameId", "") or "")
                 if not gid:
                     gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    return gid
+                if '_' in gid:
+                    gid = gid.rsplit('_', 1)[-1]
                 return gid
 
             if all_games and self.lcu and self.lcu.port:
@@ -799,9 +800,7 @@ class PerfilTabMixin:
             seen = set()
             games_dedup = []
             for g in games:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                gid = self._gid_or_fallback(g)
                 if gid and gid not in seen:
                     seen.add(gid)
                     games_dedup.append(g)

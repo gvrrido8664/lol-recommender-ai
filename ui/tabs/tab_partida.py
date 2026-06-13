@@ -416,17 +416,10 @@ class PartidaTabMixin:
         try:
             if not hasattr(self, 'all_games_season'):
                 self.all_games_season = []
-            seen = set()
-            for g in self.all_games_season:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                seen.add(gid)
+            seen = {self._gid_or_fallback(g) for g in self.all_games_season}
             nuevos = 0
             for g in batch:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                gid = self._gid_or_fallback(g)
                 if gid and gid not in seen:
                     seen.add(gid)
                     self.all_games_season.append(g)
@@ -435,16 +428,9 @@ class PartidaTabMixin:
             if nuevos > 0:
                 if not hasattr(self, 'historial_games'):
                     self.historial_games = []
-                hseen = set()
-                for g in self.historial_games:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    hseen.add(gid)
+                hseen = {self._gid_or_fallback(g) for g in self.historial_games}
                 for g in batch:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    gid = self._gid_or_fallback(g)
                     if gid and gid not in hseen:
                         hseen.add(gid)
                         self.historial_games.append(g)

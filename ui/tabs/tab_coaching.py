@@ -272,7 +272,7 @@ class CoachingTabMixin:
             if hasattr(self, 'historial_games') and self.historial_games:
                 try:
                     datos_fatiga = analizar_fatiga(self.historial_games)
-                except:
+                except Exception:
                     pass
 
             datos_extra = self._generar_datos_perfil_jugador()

@@ -20,12 +20,12 @@ class IATabMixin:
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
 
-        btn_swap = QPushButton("↔")
-        btn_swap.setFixedSize(28, 28)
+        btn_swap = QPushButton("⬌⬎")
+        btn_swap.setFixedSize(36, 28)
         btn_swap.setToolTip("Intercambiar aliado / enemigo")
         btn_swap.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD_HOVER}; color: {TEXT_WHITE}; border: 1px solid {BORDER_SUBTLE};
-                           border-radius: 4px; font-size: 14px; font-weight: bold; }}
+                           border-radius: 4px; font-size: 16px; font-weight: bold; padding: 0px; }}
             QPushButton:hover {{ background-color: {ACCENT_RED}; }}
         """)
         btn_swap.clicked.connect(self._swap_matchup)
@@ -477,17 +477,17 @@ class IATabMixin:
 
         # === ANALISIS HTML ===
         def _barra_html(val_a, val_e, max_v, label):
-            pct_a = min(100, int(val_a / max_v * 100))
-            pct_e = min(100, int(val_e / max_v * 100))
+            pct_a = min(100, int(val_a / max(1, max_v) * 100))
+            pct_e = min(100, int(val_e / max(1, max_v) * 100))
             return (
                 f'<tr>'
-                f'<td style="color:{TEXT_MUTED};font-size:10px;padding:3px 8px;text-align:right;white-space:nowrap;">{label}</td>'
-                f'<td style="width:35%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:14px;">'
-                f'<div style="background:{GREEN_WR};height:14px;width:{pct_a}%;border-radius:3px;"></div></div></td>'
-                f'<td style="color:{TEXT_WHITE};font-size:10px;text-align:center;font-weight:700;width:24px;">{val_a}</td>'
-                f'<td style="color:{RED_WR};font-size:10px;text-align:center;font-weight:700;width:24px;">{val_e}</td>'
-                f'<td style="width:35%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:3px;height:14px;">'
-                f'<div style="background:{RED_WR};height:14px;width:{pct_e}%;border-radius:3px;"></div></div></td>'
+                f'<td style="color:{TEXT_SECONDARY};font-size:11px;padding:4px 6px;font-weight:600;white-space:nowrap;min-width:80px;">{label}</td>'
+                f'<td style="width:38%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:4px;height:20px;width:100%;">'
+                f'<div style="background:{GREEN_WR};height:20px;width:{pct_a}%;border-radius:4px;"></div></div></td>'
+                f'<td style="color:{TEXT_WHITE};font-size:11px;text-align:center;font-weight:700;width:26px;">{val_a}</td>'
+                f'<td style="color:{RED_WR};font-size:11px;text-align:center;font-weight:700;width:26px;">{val_e}</td>'
+                f'<td style="width:38%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:4px;height:20px;width:100%;">'
+                f'<div style="background:{RED_WR};height:20px;width:{pct_e}%;border-radius:4px;"></div></div></td>'
                 f'</tr>'
             )
 
@@ -497,14 +497,14 @@ class IATabMixin:
         <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;text-align:center;">
             ⚡ STATS COMPARATIVAS
         </p>
-        <table cellspacing="2" style="margin:6px auto;">
+        <table cellspacing="3" style="margin:6px 0;width:100%;">
             {_barra_html(mob_a, mob_e, 5, "Movilidad")}
             {_barra_html(cc_a, cc_e, 5, "Control (CC)")}
             {_barra_html(early_a, early_e, 3, "Early Game")}
             {_barra_html(scale_a, scale_e, 4, "Escalado")}
         </table>
         <p style="color:{TEXT_MUTED};font-size:10px;margin:4px 0;text-align:center;">
-            <span style="color:{GREEN_WR};">{aliado}</span>
+            <span style="color:{GREEN_WR};font-size:11px;">{aliado}</span>
             &nbsp;&nbsp;
             Daño: {t_a.get('damage_type','?')}
             &nbsp;|&nbsp;
@@ -512,7 +512,7 @@ class IATabMixin:
             &nbsp;|&nbsp;
             {self._difficulty(t_a.get('difficulty', 2))}
             &nbsp;&nbsp;VS&nbsp;&nbsp;
-            <span style="color:{RED_WR};">{enemigo}</span>
+            <span style="color:{RED_WR};font-size:11px;">{enemigo}</span>
             &nbsp;&nbsp;
             Daño: {t_e.get('damage_type','?')}
             &nbsp;|&nbsp;

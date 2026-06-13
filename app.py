@@ -89,6 +89,7 @@ class LoLRecommenderApp(QMainWindow):
     meta_builds_listo = Signal(list, dict, str, str)  # (resultados, builds_data, rol_api, enemigo)
     postgame_ready = Signal(dict)
     season_partial = Signal(list)  # streaming: batch de partidas de Riot descargadas
+    db_listo = Signal(bool)  # inicializacion de la BD terminada en hilo de fondo (ok/fallo)
 
     def __init__(self):
         super().__init__()
@@ -159,15 +160,14 @@ class LoLRecommenderApp(QMainWindow):
         self._actualizando_radar = False
         self._cargando_meta = False
 
-        from src.db_manager import ConexionDBError
-        self._db_conectado = True
-        try:
-            inicializar_db()
-        except ConexionDBError as e:
-            self._db_conectado = False
-            print(f"[NEXUS] ERROR de conexion a PostgreSQL: {e}")
-            print("[NEXUS] La app funcionara con funcionalidad limitada.")
-            print("[NEXUS] Verifica tu conexion a internet y que el servidor este accesible.")
+        # inicializar_db() hace CREATE TABLE IF NOT EXISTS + migraciones y tarda
+        # ~8s (handshake TLS a Render). Se ejecuta en un hilo de fondo para que la
+        # ventana aparezca al instante en vez de congelarse en el arranque.
+        # Las tablas ya existen en BD, asi que las queries durante este lapso
+        # funcionan normalmente via el pool de conexiones.
+        self._db_conectado = True  # optimista; se corrige si falla
+        self.db_listo.connect(self._on_db_listo)
+        threading.Thread(target=self._inicializar_db_background, daemon=True).start()
 
         self._limpiar_cache_antiguo()
 
@@ -1885,6 +1885,25 @@ class LoLRecommenderApp(QMainWindow):
         os.makedirs(base, exist_ok=True)
         safe_puuid = puuid.replace("-", "_")
         return os.path.join(base, f"season_cache_{safe_puuid}.json")
+
+    def _inicializar_db_background(self):
+        """Inicializa la BD en un hilo de fondo. No toca la UI: solo emite la senal."""
+        from src.db_manager import ConexionDBError
+        try:
+            inicializar_db()
+            self.db_listo.emit(True)
+        except ConexionDBError as e:
+            print(f"[NEXUS] ERROR de conexion a PostgreSQL: {e}")
+            print("[NEXUS] La app funcionara con funcionalidad limitada.")
+            print("[NEXUS] Verifica tu conexion a internet y que el servidor este accesible.")
+            self.db_listo.emit(False)
+        except Exception as e:
+            print(f"[NEXUS] Error inesperado inicializando BD: {e}")
+            self.db_listo.emit(False)
+
+    def _on_db_listo(self, ok: bool):
+        """Handler en el hilo de UI cuando termina la inicializacion de la BD."""
+        self._db_conectado = ok
 
     def _limpiar_cache_antiguo(self):
         cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")

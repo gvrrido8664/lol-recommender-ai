@@ -118,7 +118,7 @@ class BansTabMixin:
             else:
                 for lg in conseguidos:
                     lbl = QLabel(f"{lg['emoji']} {lg['nombre']}")
-                    lbl.setStyleSheet(f"color: {TEXT_LIGHT}; font-size: 11px; background: #1a2744; border-radius: 4px; padding: 2px 6px;")
+                    lbl.setStyleSheet(f"color: {TEXT_LIGHT}; font-size: 11px; background: #211a28; border-radius: 4px; padding: 2px 6px;")
                     lbl.setToolTip(lg['desc'])
                     self.fr_logros.addWidget(lbl)
             self.fr_logros.addStretch()

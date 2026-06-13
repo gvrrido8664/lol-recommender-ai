@@ -92,8 +92,8 @@ class PerfilTabMixin:
         self.tb_season_champs.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.tb_season_champs.setStyleSheet("""
             QTableWidget { border: none; background-color: transparent; }
-            QHeaderView::section { background-color: #152040; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 10px; }
-            QTableWidget::item { border-bottom: 1px solid #1e2535; padding: 0px; }
+            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 10px; }
+            QTableWidget::item { border-bottom: 1px solid #1f1a26; padding: 0px; }
         """)
         self.tb_season_champs.verticalScrollBar().valueChanged.connect(self._on_scroll_season)
         self.l_season.addWidget(self.tb_season_champs)
@@ -130,7 +130,7 @@ class PerfilTabMixin:
         
         self.lbl_fatiga_barra = QFrame()
         self.lbl_fatiga_barra.setFixedHeight(4)
-        self.lbl_fatiga_barra.setStyleSheet("background-color: #2a3050; border-radius: 2px;")
+        self.lbl_fatiga_barra.setStyleSheet("background-color: #2f2535; border-radius: 2px;")
         l_texto_estado.addWidget(self.lbl_fatiga_barra)
         
         l_estado.addWidget(fr_texto_estado, 1)
@@ -809,7 +809,7 @@ class PerfilTabMixin:
                 print(f"[Perfil] DEDUP historial: {len(games)} -> {len(games_dedup)} partidas unicas")
             games = games_dedup
             self.historial_games = games
-            # Guardar all_games_season si viene del fetch (paginación ya hecha en hilo secundario)
+            self.maestrias = data.get("maestrias", [])
             self.all_games_season = data.get("all_games_season", list(games))
             self._renderizar_historial(games)
         except Exception as e:
@@ -1246,7 +1246,7 @@ class PerfilTabMixin:
             ("🔥", "Concentrado", "{RED_DANGER}", "Concentrado: enfoque total"),
             ("😐", "Normal", "{TEXT_SUBTLE}", "Normal: estado neutro"),
             ("😤", "Tilted", "{YELLOW_WARNING}", "Tilted: frustrado"),
-            ("😴", "Cansado", "#3b82f6", "Cansado: fatiga"),
+            ("😴", "Cansado", "#f0b232", "Cansado: fatiga"),
         ]
 
         for emoji, estado, color, tooltip in estados:
@@ -1260,7 +1260,7 @@ class PerfilTabMixin:
                 """)
             else:
                 btn.setStyleSheet(f"""
-                    QPushButton {{ background-color: transparent; color: {BG_BORDER}; border: 1px solid #1e293b; 
+                    QPushButton {{ background-color: transparent; color: {BG_BORDER}; border: 1px solid #251d2b; 
                                    border-radius: 3px; font-size: 13px; padding: 0px; }}
                     QPushButton:hover {{ background-color: {color}; color: #fff; border: 1px solid {color}; }}
                 """)

@@ -158,7 +158,7 @@ class IATabMixin:
             """
         else:
             return f"""
-                QProgressBar {{ background-color: {BG_DARK}; border: 1px solid #1a2744; border-radius: 4px; }}
+                QProgressBar {{ background-color: {BG_DARK}; border: 1px solid #211a28; border-radius: 4px; }}
                 QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 3px; }}
             """
 

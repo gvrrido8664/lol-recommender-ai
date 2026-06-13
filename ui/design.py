@@ -10,16 +10,16 @@ de una migracion previa; se conservan tal cual para no cambiar el comportamiento
 Se corrigen en la fase de tema.
 """
 
-BG_DARK = "#05080f"
-BG_PANEL = "#0c101a"
-BG_CARD = "#111827"
+BG_DARK = "#0d0b10"
+BG_PANEL = "#16131c"
+BG_CARD = "#1b1620"
 BORDER_ACCENT = "#e63946"
 BORDER_SUBTLE = "{BG_CARD_HOVER}"
 TEXT_WHITE = "{TEXT_PRIMARY}"
 TEXT_MUTED = "{TEXT_SUBTLE}"
 TEXT_GOLD = "{TEXT_SURFACE}"
 ACCENT_RED = "#e63946"
-ACCENT_TEAL = "#2dd4bf"
+ACCENT_TEAL = "#f0b232"  # acento de datos: ahora oro/ámbar (nombre conservado por compatibilidad)
 RED_WR = "{RED_DANGER}"
 GREEN_WR = "{GREEN_SUCCESS}"
 YELLOW_WR = "{YELLOW_WARNING}"

@@ -16,8 +16,8 @@ class LPGraphWidget(QWidget):
     ]
     TIER_COLORS = {
         "Iron": "#6b7280", "Bronze": "#b45309", "Silver": "{TEXT_MUTED}",
-        "Gold": "{YELLOW_WARNING}", "Plat": "#14b8a6", "Emerald": "{GREEN_SUCCESS}",
-        "Diamond": "#818cf8", "Master+": "#e879f9",
+        "Gold": "{YELLOW_WARNING}", "Plat": "#c89b3c", "Emerald": "{GREEN_SUCCESS}",
+        "Diamond": "#f0b232", "Master+": "#e879f9",
     }
 
     def __init__(self, parent=None):

@@ -68,3 +68,7 @@ icono_app.ico
 # Version
 version.txt
 app_version.txt
+
+# Cache de temporada (runtime)
+season_cache_*.json
+ui/tabs/data/

@@ -49,10 +49,10 @@ class CountersTabMixin:
         self.tree_counters.setIconSize(QSize(28, 28))
         self.tree_counters.verticalHeader().setVisible(False)
         self.tree_counters.setStyleSheet("""
-            QTableWidget { border: 1px solid #1e293b; border-radius: 4px; background-color: transparent; }
+            QTableWidget { border: 1px solid #251d2b; border-radius: 4px; background-color: transparent; }
             QTableWidget::item { padding: 2px 6px; }
-            QHeaderView::section { background-color: #152040; border: none; border-bottom: 1px solid #e63946; color: #e63946; font-weight: bold; padding: 6px; }
-            QTableWidget::item:selected { background-color: #1e293b; }
+            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #e63946; color: #e63946; font-weight: bold; padding: 6px; }
+            QTableWidget::item:selected { background-color: #251d2b; }
         """)
         split_layout.addWidget(self.tree_counters, 1)
         

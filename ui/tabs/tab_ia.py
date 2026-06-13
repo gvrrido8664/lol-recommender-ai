@@ -370,9 +370,9 @@ class IATabMixin:
             self.lbl_confianza_1v1.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 9px;")
 
         # === BARRAS COMPARATIVAS (6 barras) ===
+        t_a = obtener_tag(aliado)
+        t_e = obtener_tag(enemigo)
         try:
-            t_a = obtener_tag(aliado)
-            t_e = obtener_tag(enemigo)
             _EM = {"weak": 1, "neutral": 2, "strong": 3}
             _SM = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
 

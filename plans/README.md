@@ -19,7 +19,7 @@ Contexto del repo (común a todos los planes): app de escritorio **PySide6**
 | Plan | Título | Prioridad | Esfuerzo | Depende de | Estado |
 |------|--------|-----------|----------|------------|--------|
 | 001  | Rotar y purgar secretos expuestos | P1 | M | — | DONE |
-| 002  | Crear CLAUDE.md (arquitectura + comandos) | P2 | S | — | TODO |
+| 002  | Crear CLAUDE.md (arquitectura + comandos) | P2 | S | — | DONE |
 | 003  | Suite pytest sobre conftest existente | P1 | M | — | TODO |
 | 004  | Reemplazar `except:` desnudos por específicos | P2 | M | 003 | TODO |
 | 005  | Eliminar dependencias muertas | P3 | S | — | TODO |

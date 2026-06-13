@@ -1,8 +1,8 @@
-import sqlite3
 import os
 import json
 from .db_manager import obtener_conexion, DATA_DIR
 from .riot_api import cargar_objetos, cargar_campeones
+from .roles import POS_EQUIVALENTES as pos_equivalentes, normalizar_posicion
 from .tags_champions import (
     obtener_dano, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte,
     obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica
@@ -70,22 +70,6 @@ def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
 
     return resultado
 
-# FIX: Diccionario de excepciones para el cálculo AD/AP perfecto
-AP_EXCEPTIONS = {"Sylas", "Akali", "Diana", "Ekko", "Evelynn", "Fizz", "Gwen", "Katarina", 
-                 "Mordekaiser", "Nidalee", "Rumble", "Shaco", "Singed", "Vladimir", "Zac", 
-                 "Gragas", "Elise", "Volibear", "Kennen", "Teemo", "Azir", "Kassadin", "Leblanc"}
-
-# Tanques que hacen daño AP (para el cálculo AD/AP)
-AP_TANKS = {"Amumu", "ChoGath", "Galio", "Malphite", "Maokai", "Nunu", "Ornn",
-            "Rammus", "Sejuani", "Shen", "Sion", "Zac", "Skarner"}
-
-# Campeones con tag "Fighter" que NO son frontlane (asesinos, duelistas frágiles)
-FRONTLANE_EXCLUDE = {"Fizz", "KhaZix", "MasterYi", "Quinn", "Rengar", "Shaco",
-                     "Tryndamere", "Yasuo", "Yone", "Fiora", "Gwen", "Irelia",
-                     "Kayn", "LeeSin", "Nidalee", "Riven", "Viego", "BelVeth",
-                     "Elise", "Evelynn", "Katarina", "Akali", "Sylas", "Diana",
-                     "Ekko", "Kassadin", "Leblanc"}
-
 def obtener_campeones_por_rol(rol_api, min_partidas=20):
     conn = obtener_conexion()
     cur = conn.cursor()
@@ -93,9 +77,9 @@ def obtener_campeones_por_rol(rol_api, min_partidas=20):
     cur.execute("""
         SELECT champion
         FROM participantes
-        WHERE team_position = ?
+        WHERE team_position = %s
         GROUP BY champion
-        HAVING COUNT(*) >= ?
+        HAVING COUNT(*) >= %s
         ORDER BY COUNT(*) DESC
         LIMIT 45
     """, (rol_api, min_partidas))
@@ -124,14 +108,14 @@ def obtener_counters(carril, enemigo, min_partidas=20):
             COUNT(*) AS partidas
         FROM participantes p1
         JOIN participantes p2 ON p1.match_id = p2.match_id
-        WHERE p1.champion = ? AND p1.team_position = ? AND p2.team_position = p1.team_position AND p1.team != p2.team
+        WHERE p1.champion = %s AND p1.team_position = %s AND p2.team_position = p1.team_position AND p1.team != p2.team
         GROUP BY p2.champion
-        HAVING COUNT(*) >= ?
+        HAVING COUNT(*) >= %s
         ORDER BY winrate DESC
         LIMIT 50
     """
     cur.execute(consulta, (enemigo, carril, min_partidas))
-    resultados = [(row["counter_champ"], row["winrate"], row["partidas"]) for row in cur.fetchall() if row["counter_champ"] in campeones_validos]
+    resultados = [(row["counter_champ"], float(row["winrate"]), int(row["partidas"])) for row in cur.fetchall() if row["counter_champ"] in campeones_validos]
     conn.close()
     return resultados
 
@@ -145,14 +129,14 @@ def obtener_peores_matchups(campeon, carril, min_partidas=20):
             COUNT(*) AS partidas
         FROM participantes p1
         JOIN participantes p2 ON p1.match_id = p2.match_id
-        WHERE p1.champion = ? AND p1.team_position = ? AND p2.team_position = p1.team_position AND p1.team != p2.team
+        WHERE p1.champion = %s AND p1.team_position = %s AND p2.team_position = p1.team_position AND p1.team != p2.team
         GROUP BY p2.champion
-        HAVING COUNT(*) >= ?
+        HAVING COUNT(*) >= %s
         ORDER BY enemy_winrate DESC
         LIMIT 10
     """
     cur.execute(consulta, (campeon, carril, min_partidas))
-    resultados = [(row["counter_champ"], row["enemy_winrate"], row["partidas"]) for row in cur.fetchall()]
+    resultados = [(row["counter_champ"], float(row["enemy_winrate"]), int(row["partidas"])) for row in cur.fetchall()]
     conn.close()
     return resultados
 
@@ -178,11 +162,11 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
     if conn_owned:
         conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND team_position = ? AND items != ''", (campeon, carril))
+    cur.execute("SELECT items, win FROM participantes WHERE champion = %s AND team_position = %s AND items != ''", (campeon, carril))
     filas = cur.fetchall()
     
     if not filas:
-        cur.execute("SELECT items, win FROM participantes WHERE champion = ? AND items != ''", (campeon,))
+        cur.execute("SELECT items, win FROM participantes WHERE champion = %s AND items != ''", (campeon,))
         filas = cur.fetchall()
 
     if not filas:
@@ -229,7 +213,7 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
 
     build_final = []
     if not botas_count:
-        cur.execute("SELECT items FROM participantes WHERE team_position = ? AND items != ''", (carril,))
+        cur.execute("SELECT items FROM participantes WHERE team_position = %s AND items != ''", (carril,))
         for row in cur.fetchall():
             ids = [x.strip() for x in row["items"].split(",") if x and x.strip() != "0"]
             for iid in ids:
@@ -245,7 +229,7 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
 
     item_supp_mejorado = None
     if carril == "UTILITY":
-        cur.execute("SELECT items FROM participantes WHERE champion = ? AND team_position = 'UTILITY' AND items != ''", (campeon,))
+        cur.execute("SELECT items FROM participantes WHERE champion = %s AND team_position = 'UTILITY' AND items != ''", (campeon,))
         supp_count_champ = {}
         for row in cur.fetchall():
             for iid in [x.strip() for x in row["items"].split(",") if x and x.strip() != "0"]:
@@ -305,10 +289,10 @@ def obtener_top_runas(campeon, carril, conn=None):
     if conn_owned:
         conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT runes FROM participantes WHERE champion = ? AND team_position = ? AND runes != ''", (campeon, carril))
+    cur.execute("SELECT runes FROM participantes WHERE champion = %s AND team_position = %s AND runes != ''", (campeon, carril))
     filas = cur.fetchall()
     if not filas:
-        cur.execute("SELECT runes FROM participantes WHERE champion = ? AND runes != ''", (campeon,))
+        cur.execute("SELECT runes FROM participantes WHERE champion = %s AND runes != ''", (campeon,))
         filas = cur.fetchall()
     if conn_owned:
         conn.close()
@@ -336,10 +320,10 @@ def obtener_top_hechizos(campeon, carril, conn=None):
         conn = obtener_conexion()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT spells FROM participantes WHERE champion = ? AND team_position = ? AND spells != ''", (campeon, carril))
+        cur.execute("SELECT spells FROM participantes WHERE champion = %s AND team_position = %s AND spells != ''", (campeon, carril))
         filas = cur.fetchall()
         if not filas:
-            cur.execute("SELECT spells FROM participantes WHERE champion = ? AND spells != ''", (campeon,))
+            cur.execute("SELECT spells FROM participantes WHERE champion = %s AND spells != ''", (campeon,))
             filas = cur.fetchall()
     except:
         if conn_owned:
@@ -360,10 +344,10 @@ def obtenermejoresbaneos(carril, min_partidas=20):
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("""
-        SELECT champion, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM participantes WHERE team_position = ?), 1) AS banrate, COUNT(*) AS partidas
-        FROM participantes WHERE team_position = ? GROUP BY champion HAVING COUNT(*) >= ? ORDER BY COUNT(*) DESC LIMIT 10
+        SELECT champion, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM participantes WHERE team_position = %s), 1) AS banrate, COUNT(*) AS partidas
+        FROM participantes WHERE team_position = %s GROUP BY champion HAVING COUNT(*) >= %s ORDER BY COUNT(*) DESC LIMIT 10
     """, (carril, carril, min_partidas))
-    resultados = [(row["champion"], row["banrate"], row["partidas"]) for row in cur.fetchall()]
+    resultados = [(row["champion"], float(row["banrate"]), int(row["partidas"])) for row in cur.fetchall()]
     conn.close()
     return resultados
 
@@ -400,8 +384,8 @@ def analizar_composicion(aliados):
 
     total_dmg = ad_count + ap_count
     if total_dmg > 0:
-        pct_ad = min(100, int((ad_count / total_dmg) * 100))
-        pct_ap = min(100, int((ap_count / total_dmg) * 100))
+        pct_ad = min(100, round((ad_count / total_dmg) * 100))
+        pct_ap = min(100, round((ap_count / total_dmg) * 100))
     else:
         pct_ad, pct_ap = 50, 50
 
@@ -455,13 +439,13 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
 
         wr = 50.0
         if enemigos:
-            placeholders = ",".join(["?"]*len(enemigos))
+            placeholders = ",".join(["%s"]*len(enemigos))
             
             # Query 1: WR vs enemigos en LA MISMA LÍNEA (lane-specific, mas preciso)
             cur.execute(
                 f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1), COUNT(*) "
                 f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
-                f"WHERE p1.champion = ? AND p1.team_position = ? "
+                f"WHERE p1.champion = %s AND p1.team_position = %s "
                 f"AND p2.champion IN ({placeholders}) AND p2.team_position = p1.team_position "
                 f"AND p1.team != p2.team",
                 [c, rol] + enemigos
@@ -473,20 +457,20 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
                 cur.execute(
                     f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1), COUNT(*) "
                     f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
-                    f"WHERE p1.champion = ? AND p1.team_position = ? "
+                    f"WHERE p1.champion = %s AND p1.team_position = %s "
                     f"AND p2.champion IN ({placeholders}) AND p1.team != p2.team",
                     [c, rol] + enemigos
                 )
                 row = cur.fetchone()
             
             if row and row[0]:
-                n = row[1]
-                wr_raw = row[0]
+                n = int(row[1])
+                wr_raw = float(row[0])
                 if n < 3:
                     # Suavizado bayesiano: prior del campeon en ese rol (no 50% fijo)
                     cur.execute(
                         "SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes "
-                        "WHERE champion = ? AND team_position = ?", (c, rol))
+                        "WHERE champion = %s AND team_position = %s", (c, rol))
                     prior_row = cur.fetchone()
                     prior = float(prior_row[0]) if prior_row and prior_row[0] else 50.0
                     wr = round((wr_raw * n + prior * (3 - n)) / 3, 1)
@@ -542,21 +526,14 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
         en_pos = dict(zip(enemigos, pos_enemigos))
         
         # Mapa de posiciones equivalentes para emparejar
-        pos_equivalentes = {
-            "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
-            "MIDDLE": "MIDDLE", "MID": "MIDDLE",
-            "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
-            "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
-        }
-        
         wr_por_lane = []
         
         for aliado, pos_al in al_pos.items():
             # Buscar enemigo en la misma posición
-            pos_norm = pos_equivalentes.get(pos_al.upper(), pos_al.upper())
+            pos_norm = normalizar_posicion(pos_al)
             enemigo_lane = None
             for en, pos_en in en_pos.items():
-                if pos_equivalentes.get(pos_en.upper(), pos_en.upper()) == pos_norm:
+                if normalizar_posicion(pos_en) == pos_norm:
                     enemigo_lane = en
                     break
             
@@ -565,17 +542,16 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
                     SELECT ROUND(SUM(p1.win)*100.0/COUNT(*), 1) as wr, COUNT(*) as partidas
                     FROM participantes p1
                     JOIN participantes p2 ON p1.match_id = p2.match_id
-                    WHERE p1.champion = ? AND p1.team_position = ?
-                      AND p2.champion = ? AND p2.team_position = ?
+                    WHERE p1.champion = %s AND p1.team_position = %s
+                      AND p2.champion = %s AND p2.team_position = %s
                       AND p1.team != p2.team
                 """, (aliado, pos_al, enemigo_lane, pos_norm))
                 row = cur.fetchone()
                 if row and row["wr"] is not None:
-                    n = row["partidas"]
-                    if n >= 50:
-                        wr_por_lane.append(row["wr"])
-                    elif n >= 10:
-                        wr_por_lane.append(row["wr"] * 0.7 + 50 * 0.3)
+                    n = int(row["partidas"])
+                    wr_single = float(row["wr"])
+                    K = 3
+                    wr_por_lane.append((wr_single * n + 50.0 * K) / (n + K))
                 else:
                     wr_por_lane.append(50.0)
             else:

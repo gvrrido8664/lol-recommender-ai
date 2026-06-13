@@ -94,6 +94,10 @@ def actualizar_datos_riot():
         with open(CACHE_SPELLS, "w", encoding="utf-8") as f: json.dump(diccionario_hechizos, f, ensure_ascii=False, indent=2)
     except Exception as e: print(f"❌ Error descargando hechizos: {e}")
 
+def normalizar_nombre_champ(nombre: str) -> str:
+    return "Wukong" if nombre == "MonkeyKing" else nombre
+
+
 def cargar_campeones():
     if not os.path.exists(CACHE_CHAMPS): actualizar_datos_riot()
     with open(CACHE_CHAMPS, "r", encoding="utf-8") as f: return json.load(f)

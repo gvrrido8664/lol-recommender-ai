@@ -3,13 +3,78 @@ import joblib
 import json
 import numpy as np
 
+from src.tags_champions import obtener_tag
+
+_EARLY_MAP = {"weak": 1, "neutral": 2, "strong": 3}
+_SCALING_MAP = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
+
+
+def extraer_features_equipo(champs):
+    n = max(len(champs), 1)
+    feats = np.zeros(15, dtype=np.float32)
+    cc_sum, mob_sum, early_sum, scale_sum = 0, 0, 0, 0
+    ad_c, ap_c, hy_c = 0, 0, 0
+    tank_c, fighter_c, assassin_c, mage_c, marksman_c, support_c = 0, 0, 0, 0, 0, 0
+    hyper_c = 0
+
+    for champ in champs:
+        tag = obtener_tag(champ)
+        cc_sum += tag.get("cc_level", 1)
+        mob_sum += tag.get("mobility", 2)
+        early_sum += _EARLY_MAP.get(tag.get("early_power", "neutral"), 2)
+        scale_sum += _SCALING_MAP.get(tag.get("scaling", "mid"), 2)
+
+        dmg = tag.get("damage_type", "AD")
+        if dmg == "AD":
+            ad_c += 1
+        elif dmg == "AP":
+            ap_c += 1
+        else:
+            hy_c += 1
+
+        cls = tag.get("champion_class", "Fighter")
+        if cls == "Tank":
+            tank_c += 1
+        elif cls == "Fighter":
+            fighter_c += 1
+        elif cls == "Assassin":
+            assassin_c += 1
+        elif cls == "Mage":
+            mage_c += 1
+        elif cls == "Marksman":
+            marksman_c += 1
+        elif cls == "Support":
+            support_c += 1
+
+        if tag.get("scaling") == "hyper":
+            hyper_c += 1
+
+    feats[0] = cc_sum
+    feats[1] = cc_sum / n
+    feats[2] = mob_sum / n
+    feats[3] = early_sum / n
+    feats[4] = scale_sum / n
+    feats[5] = ad_c
+    feats[6] = ap_c
+    feats[7] = hy_c
+    feats[8] = tank_c
+    feats[9] = fighter_c
+    feats[10] = assassin_c
+    feats[11] = mage_c
+    feats[12] = marksman_c
+    feats[13] = support_c
+    feats[14] = hyper_c
+
+    return feats
+
+
 class MotorIA:
     def __init__(self, ruta_modelo="data/modelo_ia.pkl"):
         self.ruta_modelo = ruta_modelo
         self.todos_los_modelos = {}
         self.modelo_actual = None
-        self.lista_campeones_global = []  # 172 campeones (alfabético)
-        self.lista_nombres_salida = []    # Nombres del rol específico (sincronizada con model.classes_)
+        self.lista_campeones_global = []
+        self.lista_nombres_salida = []
         self.rol_activo = "MIDDLE"
         self._preparar_columnas_globales()
         self.cargar_todo_el_diccionario()
@@ -31,14 +96,19 @@ class MotorIA:
         if isinstance(bloque_rol, dict):
             self.modelo_actual = bloque_rol.get('model')
             self.rol_activo = nuevo_rol
+            self.n_global = bloque_rol.get('n_global', len(self.lista_campeones_global))
+            self.n_feats_equipo = bloque_rol.get('n_feats_equipo', 15)
 
-            # Sincronizar la lista de nombres con las clases internas del modelo
+            if self.lista_campeones_global:
+                self.nombre_a_idx = {nombre: i for i, nombre in enumerate(self.lista_campeones_global)}
+            else:
+                campeones_global = bloque_rol.get('campeones_global', [])
+                self.nombre_a_idx = {nombre: i for i, nombre in enumerate(campeones_global)}
+
             clases = self.modelo_actual.classes_
             if isinstance(clases[0], str):
-                # Las clases ya contienen los nombres directamente
                 self.lista_nombres_salida = list(clases)
             else:
-                # Las clases son números (0,1,2...) => asumimos orden alfabético de nombres
                 lista_original = bloque_rol.get('champs', [])
                 if lista_original:
                     self.lista_nombres_salida = sorted(lista_original)
@@ -49,56 +119,42 @@ class MotorIA:
         if self.modelo_actual is None:
             return []
 
-        # 1. Construir vector de entrada (sin cambios)
         columnas_entrada = self.modelo_actual.n_features_in_
-        input_vector = np.zeros(columnas_entrada)
+        input_vector = np.zeros(columnas_entrada, dtype=np.float32)
+
+        offset_tags = self.n_global
+
         for nombre in enemigos:
-            if nombre in self.lista_campeones_global:
-                idx = self.lista_campeones_global.index(nombre)
-                if idx < columnas_entrada:
-                    input_vector[idx] = 1
+            if nombre in self.nombre_a_idx:
+                idx = self.nombre_a_idx[nombre]
+                if idx < self.n_global:
+                    input_vector[idx] = 1.0
+
+        feats_enemigos = extraer_features_equipo(enemigos)
+        input_vector[offset_tags:offset_tags + self.n_feats_equipo] = feats_enemigos
 
         X = input_vector.reshape(1, -1)
-        probabilidades = self.modelo_actual.predict_proba(X)[0]  # array (n_clases_modelo,)
-        print("=== DIAGNÓSTICO ===")
-        print("Rol activo:", self.rol_activo)
-        print("Clases del modelo:", self.modelo_actual.classes_)
-        print("Cantidad de clases:", len(self.modelo_actual.classes_))
-        bloque = self.todos_los_modelos.get(self.rol_activo, {})
-        champs_rol = bloque.get('champs', [])
-        print("Campeones del rol:", champs_rol[:10], "... total:", len(champs_rol))
-        print("Vector de entrada (suma):", input_vector.sum())
-        print("Probabilidades:", probabilidades)
-        print("=====================")
+        probabilidades = self.modelo_actual.predict_proba(X)[0]
 
-        # 2. Obtener el mapeo exacto: índice en probabilidades -> nombre de campeón
-        clases = self.modelo_actual.classes_  # list/array de strings o enteros
+        clases = self.modelo_actual.classes_
         bloque_rol = self.todos_los_modelos.get(self.rol_activo, {})
         champs_del_rol = bloque_rol.get('champs', [])
 
         if isinstance(clases[0], str):
-            # Caso ideal: las clases ya son nombres
-            idx_to_name = list(clases)  # idx -> nombre
+            idx_to_name = list(clases)
         else:
-            # Clases numéricas: asumimos que corresponden al orden alfabético de champs del rol
             if not champs_del_rol:
                 return []
-            # La codificación típica de LabelEncoder: el entero i corresponde
-            # al i-ésimo nombre en la lista ordenada alfabéticamente.
             nombres_ordenados = sorted(champs_del_rol)
-            # Creamos un mapeo idx (entero) -> nombre SOLO para los índices presentes en el modelo
-            idx_to_name = [nombres_ordenados[i] for i in clases]  # clases son enteros 0,1,2...
+            idx_to_name = [nombres_ordenados[i] for i in clases]
 
-        # 3. Filtrar solo campeones que están en champs_del_rol (seguridad extra)
-        #    y que existan en el modelo (todos los de idx_to_name lo están).
         resultados = []
         set_champs_rol = set(champs_del_rol)
         for i, nombre in enumerate(idx_to_name):
             if nombre in set_champs_rol:
-                winrate = probabilidades[i] * 100  # porcentaje real
+                winrate = probabilidades[i] * 100
                 resultados.append((nombre, winrate))
 
-        # 4. Top 3 por probabilidad
         resultados.sort(key=lambda x: x[1], reverse=True)
         top3 = resultados[:3]
         return [{"campeon": nombre, "winrate": prob} for nombre, prob in top3]

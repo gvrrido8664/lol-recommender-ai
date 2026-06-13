@@ -19,8 +19,10 @@ Cada campeón se define por:
 import json
 import os
 import sys
+import threading
 
 _TAGS_CACHE = None
+_TAGS_LOCK = threading.RLock()
 
 def _get_base_dir():
     if getattr(sys, 'frozen', False):
@@ -654,12 +656,15 @@ def cargar_tags():
     global _TAGS_CACHE
     if _TAGS_CACHE is not None:
         return _TAGS_CACHE
-    if os.path.exists(TAGS_PATH):
-        with open(TAGS_PATH, "r", encoding="utf-8") as f:
-            _TAGS_CACHE = json.load(f)
+    with _TAGS_LOCK:
+        if _TAGS_CACHE is not None:
+            return _TAGS_CACHE
+        if os.path.exists(TAGS_PATH):
+            with open(TAGS_PATH, "r", encoding="utf-8") as f:
+                _TAGS_CACHE = json.load(f)
+            return _TAGS_CACHE
+        _TAGS_CACHE = _generar_tags()
         return _TAGS_CACHE
-    _TAGS_CACHE = _generar_tags()
-    return _TAGS_CACHE
 
 
 def _generar_tags():

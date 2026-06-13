@@ -842,9 +842,15 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
 if __name__ == "__main__":
     import signal
+    from ui.tema_moderno import habilitar_hidpi, aplicar_tema_base
+
+    habilitar_hidpi()  # antes de crear QApplication
     app = QApplication(sys.argv)
     app.setApplicationName("NEXUS")
     app.setFont(QFont("Segoe UI", 10))
+    # Tema base moderno (menus, dialogos, foco) con acento rojo NEXUS.
+    # El QSS propio de la ventana se aplica encima en aplicar_estilos().
+    aplicar_tema_base()
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 

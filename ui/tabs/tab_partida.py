@@ -51,7 +51,7 @@ class PartidaTabMixin:
         self.tb_partida_aliados = QTableWidget()
         self.tb_partida_aliados.setColumnCount(4)
         self.tb_partida_aliados.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
-        self._estilizar_tabla_partida(self.tb_partida_aliados, "{BG_DARK}")
+        self._estilizar_tabla_partida(self.tb_partida_aliados, "#0d0b10")
         tablas_layout.addWidget(self.tb_partida_aliados)
 
         # ── Enemigos ──
@@ -179,7 +179,7 @@ class PartidaTabMixin:
             self.lbl_partida_cs.setText("CS: --")
 
         # Tablas aliados/enemigos
-        self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "{BG_DARK}", yo)
+        self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK, yo)
         self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f", yo)
 
         # Alimentar overlay si está activado
@@ -234,7 +234,7 @@ class PartidaTabMixin:
         aliados = [j for j in jugadores if j.get("team") == "ORDER"]
         enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
 
-        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "{BG_DARK}")
+        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK)
         self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f")
 
         a_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), "0") for j in aliados if self.procesar_nombre_champ(str(j.get("championId", 0)), "0")]
@@ -602,11 +602,11 @@ class PartidaTabMixin:
                 total, avg_k, avg_d = 0, 0.0, 0.0
 
             comentarios = []
-            color = "{TEXT_MUTED}"  # default gray
+            color = "#a39a93"  # default gray
 
             if total < 5:
                 comentarios.append("1a vez?")
-                color = "{TEXT_SUBTLE}"
+                color = "#7a6f68"
             else:
                 if avg_d and avg_d >= 6:
                     comentarios.append("Muchas muertes")
@@ -650,7 +650,7 @@ class PartidaTabMixin:
 
             return " · ".join(comentarios), color
         except:
-            return "—", "{TEXT_MUTED}"
+            return "—", TEXT_MUTED
         finally:
             if close_conn and conn is not None:
                 conn.close()

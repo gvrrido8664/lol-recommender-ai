@@ -644,7 +644,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
         # ── CARD SITUACIONALES ──────────────────────────────────
         if ids_sit:
-            _PRIO_COLOR   = {1: "{RED_DANGER}", 2: "{YELLOW_WARNING}", 3: "{TEXT_SUBTLE}"}
+            _PRIO_COLOR   = {1: "#ef4444", 2: "#f59e0b", 3: "#7a6f68"}
             _PRIO_LABEL   = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
             _CAT_LABEL    = {
                 "anti_heal": "Anti-curación",  "anti_cc": "Anti-CC",
@@ -677,7 +677,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 txt_l.setContentsMargins(0, 0, 0, 0)
                 txt_l.setSpacing(1)
 
-                prio_col = _PRIO_COLOR.get(sit["prioridad"], "{TEXT_SUBTLE}")
+                prio_col = _PRIO_COLOR.get(sit["prioridad"], "#7a6f68")
                 cat_txt  = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
                 lbl_cat = QLabel(f"<span style='color:{prio_col};font-weight:bold;font-size:9px;'>"
                                  f"{_PRIO_LABEL.get(sit['prioridad'],'')}</span>"

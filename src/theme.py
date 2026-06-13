@@ -7,7 +7,7 @@ Antes dispersos en 73 colores hex inline en app.py y coach.py.
 TEXT_PRIMARY = "#f1f5f9"
 TEXT_SECONDARY = "#cbd5e1"
 TEXT_MUTED = "#a39a93"
-TEXT_SUBTLE = "#64748b"
+TEXT_SUBTLE = "#7a6f68"
 TEXT_WHITE = "#ffffff"
 TEXT_LIGHT = "#e2e8f0"
 TEXT_SURFACE = "#f8fafc"

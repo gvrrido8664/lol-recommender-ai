@@ -1,6 +1,21 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from .theme import (TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_SUBTLE, GREEN_SUCCESS, RED_DANGER, YELLOW_WARNING, PURPLE_LIGHT, PURPLE_VIOLET, TEAL_EMERALD, PURPLE_ACCENT)
+from .riot_api import cargar_mapeo_ids
 import json
+
+TEXT_GOLD = "#f8fafc"
+ACCENT_TEAL = "#2dd4bf"
+
+_CHAMP_ID_TO_NAME = None
+
+def _id_to_champ(cid):
+    global _CHAMP_ID_TO_NAME
+    if _CHAMP_ID_TO_NAME is None:
+        _CHAMP_ID_TO_NAME = cargar_mapeo_ids()
+    name = _CHAMP_ID_TO_NAME.get(str(cid), None)
+    if name == "MonkeyKing":
+        return "Wukong"
+    return name or f"Champ{cid}"
 
 def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     """Genera la sección de filosofía de juego basada en los 6 principios del coach.
@@ -157,40 +172,27 @@ def _generar_tips_salud():
     </div>"""
 
 
-def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_perfil=None, datos_fatiga=None):
-    """
-    COACHING PRO — Reporte completo y empático basado en datos reales.
-    Analiza el historial y devuelve un dict con todas las secciones de coaching.
-    
-    Cada sección contiene:
-      - "titulo": nombre de la sección
-      - "icono": emoji
-      - "color": color para el borde
-      - "html": contenido en HTML para mostrar
-      - "prioridad": número (menor = más urgente)
-    """
+def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_perfil=None, datos_fatiga=None, maestrias=None, lp_history=None):
     if not historial_games or len(historial_games) < 3:
         return {
             "secciones": [],
-            "resumen": "Necesito al menos 3 partidas para analizar tu juego. ¡Juega un par más y vuelve! 🎮",
+            "resumen": "Necesito al menos 3 partidas para analizar tu juego. Juega un par mas y vuelve!",
         }
-    
+
     nombre = nombre_invocador or "Invocador"
+    all_games = historial_games
     recent = historial_games[:20]
     total = len(recent)
+    total_all = len(all_games)
     secciones = []
-    
-    # ═══════════════════════════════════════════════════
-    # DATOS BASE
-    # ═══════════════════════════════════════════════════
+
     champ_games = {}
     all_k = []; all_d = []; all_a = []; all_cs = []; all_dur = []
-    all_vision = []
-    wins_count = 0
-    roles_count = {}
-    primer_sangre = 0
-    
-    for g in recent:
+    all_vision = []; all_dmg = []; all_gold = []; all_turrets = []
+    all_dragons = []; all_barons = []; all_cc = []; all_pink = []
+    wins_count = 0; primer_sangre = 0
+
+    for g in all_games:
         part = g.get("participants", [{}])[0]
         stats = part.get("stats", {})
         cid = str(part.get("championId", "0"))
@@ -202,33 +204,60 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         dur = g.get("gameDuration", 0)
         vision = stats.get("visionScore", 0) or stats.get("wardsPlaced", 0)
         fb = stats.get("firstBloodKill", False)
-        
+        dmg = stats.get("totalDamageDealtToChampions", 0)
+        gold = stats.get("goldEarned", 0)
+        turrets = stats.get("turretKills", 0)
+        dragons = stats.get("dragonKills", 0)
+        barons = stats.get("baronKills", 0)
+        cc = stats.get("timeCCingOthers", 0)
+        pink = stats.get("visionWardsBoughtInGame", 0)
+
         if cid not in champ_games:
-            champ_games[cid] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0, "cs": 0}
+            champ_games[cid] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0, "cs": 0, "dmg": 0, "gold": 0}
         cg = champ_games[cid]
         cg["games"] += 1
         if win: cg["wins"] += 1
         cg["kills"] += k; cg["deaths"] += d; cg["assists"] += a; cg["cs"] += cs
-        
+        cg["dmg"] += dmg; cg["gold"] += gold
+
         all_k.append(k); all_d.append(d); all_a.append(a)
-        if dur > 0 and cs > 0:
-            all_cs.append(cs / (dur / 60))
+        if dur > 0:
+            if cs > 0: all_cs.append(cs / (dur / 60))
+            if dmg > 0: all_dmg.append(dmg / (dur / 60))
+            if gold > 0: all_gold.append(gold / (dur / 60))
             all_dur.append(dur)
         if vision > 0: all_vision.append(vision / (dur / 60))
         if win: wins_count += 1
         if fb: primer_sangre += 1
-    
-    avg_k = sum(all_k) / total if total else 0
-    avg_d = sum(all_d) / total if total else 0
-    avg_a = sum(all_a) / total if total else 0
+        if turrets > 0: all_turrets.append(turrets)
+        if dragons > 0: all_dragons.append(dragons)
+        if barons > 0: all_barons.append(barons)
+        if cc > 0: all_cc.append(cc / (dur / 60)) if dur > 0 else None
+        if pink > 0: all_pink.append(pink)
+
+    avg_k = sum(all_k) / total_all if total_all else 0
+    avg_d = sum(all_d) / total_all if total_all else 0
+    avg_a = sum(all_a) / total_all if total_all else 0
     avg_cs = sum(all_cs) / len(all_cs) if all_cs else 0
     avg_vision = sum(all_vision) / len(all_vision) if all_vision else 0
-    wr = (wins_count / total * 100) if total else 0
+    avg_dmg = sum(all_dmg) / len(all_dmg) if all_dmg else 0
+    avg_gold = sum(all_gold) / len(all_gold) if all_gold else 0
+    avg_turrets = sum(all_turrets) / total_all if total_all else 0
+    avg_dragons = sum(all_dragons) / total_all if total_all else 0
+    avg_barons = sum(all_barons) / total_all if total_all else 0
+    avg_cc = sum(all_cc) / len(all_cc) if all_cc else 0
+    avg_pink = sum(all_pink) / total_all if total_all else 0
+    wr = (wins_count / total_all * 100) if total_all else 0
     kda = (sum(all_k) + sum(all_a)) / max(1, sum(all_d))
-    
+
     sorted_champs = sorted(champ_games.items(), key=lambda x: x[1]["games"], reverse=True)
     top3 = sorted_champs[:3]
     unique_champs = len(champ_games)
+
+    dmg_ratio = (sum(d for d in all_dmg) / sum(g for g in all_gold)) if all_dmg and all_gold else 0
+    dmg_vs_taken = sum(stats.get("totalDamageDealtToChampions", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
+    dmg_taken_total = sum(stats.get("totalDamageTaken", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
+    dmg_eff = dmg_vs_taken / max(1, dmg_taken_total)
     
     # ═══════════════════════════════════════════════════
     # SECCIÓN 0: SALUDO Y RESUMEN GENERAL
@@ -255,11 +284,14 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     
     resumen_html = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;">
-    <p style="font-size: 16px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>👋 ¡Hola, {nombre}!</b></p>
+    <p style="font-size: 16px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>👋 Hola, {nombre}!</b></p>
     <p style="font-size: 13px; color: {TEXT_SECONDARY}; margin: 0 0 12px 0;">{tono}</p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
-    📊 <b>{total}</b> partidas analizadas · WR <b style="color:{'{GREEN_SUCCESS}' if wr >= 50 else '{RED_DANGER}'};">{wr:.0f}%</b> · 
+    📊 <b>{total_all}</b> partidas analizadas · WR <b style="color:{GREEN_SUCCESS if wr >= 50 else RED_DANGER};">{wr:.0f}%</b> ·
     KDA <b>{avg_k:.0f}/{avg_d:.0f}/{avg_a:.0f}</b> · CS/min <b>{avg_cs:.1f}</b>
+    </p>
+    <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
+    ⚡ Dano/min <b>{avg_dmg:.0f}</b> · Oro/min <b>{avg_gold:.0f}</b> · Vision/min <b>{avg_vision:.1f}</b>
     </p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 0 0;">{estado_mental}</p>
     </div>
@@ -272,7 +304,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones.append({
         "titulo": "FILOSOFÍA DE JUEGO — Tu Mentalidad",
         "icono": "🧘",
-        "color": "{PURPLE_VIOLET}",
+        "color": "#c084fc",
         "html": filo_html,
         "prioridad": 0,  # Siempre primero
     })
@@ -289,7 +321,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     
     if is_too_wide:
         cp_html += f"""
-        <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>⚠️ Estás jugando demasiados campeones ({unique_champs} en {total} partidas)</b></p>
+        <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>⚠️ Estas jugando demasiados campeones ({unique_champs} en {total_all} partidas)</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
         Esto es lo que pasa: tu cerebro gasta energía adaptándose a cada campeón en vez de enfocarse en el mapa. 
         <b style="color: {GREEN_SUCCESS};">Tu WR con tu top 3 es {top3_wr:.0f}%</b>, pero con el resto cae a 
@@ -315,20 +347,21 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         """
     
     # Mostrar top 3 con stats
-    cp_html += '<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 8px 0 4px 0;"><b>Tu top 3:</b></p>'
+    cp_html += '<p style="font-size: 12px; color: #a39a93; margin: 8px 0 4px 0;"><b>Tu top 3:</b></p>'
     for i, (champ_name, cs_data) in enumerate(top3):
         c_wr = (cs_data["wins"] / cs_data["games"] * 100) if cs_data["games"] > 0 else 0
         c_kda = (cs_data["kills"] + cs_data["assists"]) / max(1, cs_data["deaths"])
         c_cs = cs_data["cs"] / max(1, cs_data["games"])
-        color_wr = "{GREEN_SUCCESS}" if c_wr >= 50 else "{RED_DANGER}"
-        cp_html += f'<p style="font-size: 11px; color: {color_wr}; margin: 2px 0 2px 12px;">{i+1}. {champ_name} — {c_wr:.0f}% WR · KDA {c_kda:.1f} · {cs_data["games"]} partidas</p>'
+        color_wr = "#22c55e" if c_wr >= 50 else "#ef4444"
+        display_name = _id_to_champ(champ_name)
+        cp_html += f'<p style="font-size: 11px; color: {color_wr}; margin: 2px 0 2px 12px;">{i+1}. {display_name} — {c_wr:.0f}% WR · KDA {c_kda:.1f} · {cs_data["games"]} partidas</p>'
     
     cp_html += '</div>'
     
     secciones.append({
         "titulo": "AUDITORÍA DE CHAMPION POOL",
         "icono": "📋",
-        "color": "{YELLOW_WARNING}" if is_too_wide else "{GREEN_SUCCESS}",
+        "color": "#f59e0b" if is_too_wide else "#22c55e",
         "html": cp_html,
         "prioridad": 1 if is_too_wide else 3,
     })
@@ -386,7 +419,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones.append({
         "titulo": "RENDIMIENTO EN FASE DE LÍNEAS",
         "icono": "⚔️",
-        "color": "{RED_DANGER}" if avg_cs < 5 else "{YELLOW_WARNING}" if avg_cs < 6.5 else "{GREEN_SUCCESS}",
+        "color": "#ef4444" if avg_cs < 5 else "#f59e0b" if avg_cs < 6.5 else "#22c55e",
         "html": cs_html,
         "prioridad": 0 if avg_cs < 5 else 2,
     })
@@ -439,7 +472,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones.append({
         "titulo": "TOMA DE DECISIONES Y SUPERVIVENCIA",
         "icono": "🛡️",
-        "color": "{RED_DANGER}" if avg_d > 7 else "{YELLOW_WARNING}" if avg_d > 5 else "{GREEN_SUCCESS}",
+        "color": "#ef4444" if avg_d > 7 else "#f59e0b" if avg_d > 5 else "#22c55e",
         "html": sv_html,
         "prioridad": 0 if avg_d > 6 else 1 if avg_d > 5 else 3,
     })
@@ -483,7 +516,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         secciones.append({
             "titulo": "CONTROL DE VISIÓN",
             "icono": "👁️",
-            "color": "{RED_DANGER}" if avg_vision < 0.5 else "{YELLOW_WARNING}" if avg_vision < 1.0 else "{GREEN_SUCCESS}",
+            "color": "#ef4444" if avg_vision < 0.5 else "#f59e0b" if avg_vision < 1.0 else "#22c55e",
             "html": vis_html,
             "prioridad": 2 if avg_vision < 0.5 else 3,
         })
@@ -549,7 +582,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
                 secciones.append({
                     "titulo": "GESTIÓN DE SESIONES Y FATIGA",
                     "icono": "🧠",
-                    "color": "{RED_DANGER}" if wr_sesion < 40 else "{GREEN_SUCCESS}" if wr_sesion >= 60 else "{YELLOW_WARNING}",
+                    "color": "#ef4444" if wr_sesion < 40 else "#22c55e" if wr_sesion >= 60 else "#f59e0b",
                     "html": fat_html,
                     "prioridad": 1 if wr_sesion < 40 else 3,
                 })
@@ -601,7 +634,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         secciones.append({
             "titulo": "RACHA Y RESILIENCIA",
             "icono": "📈",
-            "color": "{RED_DANGER}" if racha_tipo == 'L' else "{GREEN_SUCCESS}",
+            "color": "#ef4444" if racha_tipo == 'L' else "#22c55e",
             "html": racha_html,
             "prioridad": 1 if racha_tipo == 'L' else 4,
         })
@@ -633,7 +666,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones.append({
         "titulo": "JUGAR POR BLOQUES (3 partidas)",
         "icono": "🧊",
-        "color": "{PURPLE_ACCENT}",
+        "color": "#818cf8",
         "html": bloques_html,
         "prioridad": 4,
     })
@@ -645,7 +678,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones.append({
         "titulo": "PRÁCTICA DELIBERADA",
         "icono": "🦾",
-        "color": "{PURPLE_LIGHT}",
+        "color": "#a78bfa",
         "html": practica_html,
         "prioridad": 5,
     })
@@ -655,15 +688,211 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     salud_html = _generar_tips_salud()
     secciones.append({
-        "titulo": "SALUD MENTAL Y FISIOLOGÍA",
+        "titulo": "SALUD MENTAL Y FISIOLOGIA",
         "icono": "💚",
-        "color": "{TEAL_EMERALD}",
+        "color": "#f0b232",
         "html": salud_html,
         "prioridad": 6,
     })
-    
+
     # ═══════════════════════════════════════════════════
-    # SECCIÓN 6: RECOMENDACIÓN FINAL
+    # SECCION 6: DANO Y EFICIENCIA
+    # ═══════════════════════════════════════════════════
+    if avg_dmg > 0:
+        dmg_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        dmg_html += f'<p style="font-size: 14px; color: {PURPLE_LIGHT}; margin: 0 0 8px 0;"><b>⚡ Dano y Eficiencia en Teamfights</b></p>'
+
+        if avg_dmg < 400:
+            dmg_html += f'<p style="font-size: 12px; color: {RED_DANGER}; margin: 0 0 4px 0;">🔴 Tu dano por minuto es bajo: {avg_dmg:.0f}/min</p>'
+        elif avg_dmg < 700:
+            dmg_html += f'<p style="font-size: 12px; color: {YELLOW_WARNING}; margin: 0 0 4px 0;">🟡 Dano aceptable: {avg_dmg:.0f}/min</p>'
+        else:
+            dmg_html += f'<p style="font-size: 12px; color: {GREEN_SUCCESS}; margin: 0 0 4px 0;">🟢 Excelente dano: {avg_dmg:.0f}/min</p>'
+
+        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">📊 Dano total infligido/recibido: {dmg_vs_taken:,} / {dmg_taken_total:,} (ratio: {dmg_eff:.2f})</p>'
+        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">💰 Eficiencia de oro: {dmg_ratio:.1f} de dano por cada oro generado</p>'
+        if dmg_eff < 0.7:
+            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Recibes mas dano del que infliges. Trabaja en posicionamiento y kiteo.</p>'
+        elif dmg_eff > 1.3:
+            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Infliges mucho mas dano del que recibes. Buen posicionamiento.</p>'
+        dmg_html += '</div>'
+        secciones.append({
+            "titulo": "DANO Y EFICIENCIA",
+            "icono": "⚡",
+            "color": "#a78bfa",
+            "html": dmg_html,
+            "prioridad": 3,
+        })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 7: ORO Y ECONOMIA
+    # ═══════════════════════════════════════════════════
+    if avg_gold > 0:
+        eco_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        eco_html += f'<p style="font-size: 14px; color: {TEXT_GOLD}; margin: 0 0 8px 0;"><b>💰 Economia y Generacion de Oro</b></p>'
+        eco_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Tu generacion de oro promedio es <b>{avg_gold:.0f}/min</b>.</p>'
+
+        if avg_gold < 300:
+            eco_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 Estas generando poco oro. Mejora el farmeo y participa en kills/objetivos.</p>'
+        elif avg_gold < 400:
+            eco_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Oro decente pero con margen de mejora.</p>'
+        else:
+            eco_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Excelente generacion de oro.</p>'
+
+        eco_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 4px 0 0 0;">💡 Prioriza el farmeo seguro sobre las kills arriesgadas. El CS es oro garantizado.</p>'
+        eco_html += '</div>'
+        secciones.append({
+            "titulo": "ORO Y ECONOMIA",
+            "icono": "💰",
+            "color": "#f8fafc",
+            "html": eco_html,
+            "prioridad": 4,
+        })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 8: CONTROL DE OBJETIVOS
+    # ═══════════════════════════════════════════════════
+    obj_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+    obj_html += f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🏆 Control de Objetivos</b></p>'
+    obj_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Promedios por partida:</p>'
+    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🗼 Torres: <b>{avg_turrets:.1f}</b></p>'
+    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🐉 Dragones: <b>{avg_dragons:.1f}</b></p>'
+    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">👹 Barones: <b>{avg_barons:.1f}</b></p>'
+    if avg_dragons < 0.5 and avg_barons < 0.2:
+        obj_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">📝 Participas poco en objetivos. Rotar a dragon/baron con tu equipo gana partidas.</p>'
+    obj_html += '</div>'
+    secciones.append({
+        "titulo": "CONTROL DE OBJETIVOS",
+        "icono": "🏆",
+        "color": "#818cf8",
+        "html": obj_html,
+        "prioridad": 4,
+    })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 9: CONTROL DE MASAS (CC)
+    # ═══════════════════════════════════════════════════
+    if avg_cc > 0:
+        cc_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        cc_html += f'<p style="font-size: 14px; color: {ACCENT_TEAL}; margin: 0 0 8px 0;"><b>🎯 Control de Masas (CC)</b></p>'
+        cc_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Aplicas <b>{avg_cc:.1f}s de CC por minuto</b> a enemigos.</p>'
+        if avg_cc > 30:
+            cc_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS};">🟢 Excelente uso de CC. Tus enemigos no se mueven.</p>'
+        elif avg_cc > 10:
+            cc_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING};">🟡 Buen uso de CC. Si tu campeon tiene mucho CC, aprovechalo mas.</p>'
+        else:
+            cc_html += f'<p style="font-size: 11px; color: {TEXT_MUTED};">📝 Poco CC aplicado. Si tu campeon tiene CC, usalo para peel o engage.</p>'
+        cc_html += '</div>'
+        secciones.append({
+            "titulo": "CONTROL DE MASAS",
+            "icono": "🎯",
+            "color": "#f0b232",
+            "html": cc_html,
+            "prioridad": 5,
+        })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 10: PINK WARDS
+    # ═══════════════════════════════════════════════════
+    pink_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+    pink_html += f'<p style="font-size: 14px; color: {TEAL_EMERALD}; margin: 0 0 8px 0;"><b>🔮 Control Wards (Pinks)</b></p>'
+    pink_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Compras <b>{avg_pink:.1f} Pink Wards</b> por partida en promedio.</p>'
+    if avg_pink < 0.5:
+        pink_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 No compras Pink Wards. 75g que te salvan de regalar 300g.</p>'
+    elif avg_pink < 2:
+        pink_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Compra al menos 1-2 Pinks por partida. Marca la diferencia.</p>'
+    else:
+        pink_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Buen uso de Pinks. Control de vision solido.</p>'
+    pink_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Los Pinks revelan wards enemigos, aseguran objetivos y previenen ganks.</p>'
+    pink_html += '</div>'
+    secciones.append({
+        "titulo": "CONTROL WARDS (PINKS)",
+        "icono": "🔮",
+        "color": "#f0b232",
+        "html": pink_html,
+        "prioridad": 5,
+    })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 11: ARSENAL VS MAESTRIA
+    # ═══════════════════════════════════════════════════
+    if maestrias:
+        mast_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        mast_html += f'<p style="font-size: 14px; color: {TEXT_GOLD}; margin: 0 0 8px 0;"><b>⭐ Tu Arsenal vs. Tus Maestrias</b></p>'
+        mast_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 6px 0;">Tus campeones con mas maestria:</p>'
+        for m in maestrias[:3]:
+            m_id = str(m.get("championId", ""))
+            m_name = _id_to_champ(m_id) if m_id else "?"
+            m_level = m.get("championLevel", 0)
+            m_points = m.get("championPoints", 0)
+            mast_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">⭐ {m_name} — Maestria {m_level} ({m_points:,} pts)</p>'
+
+        top3_ids = {cid for cid, _ in top3}
+        mast_ids = {str(m.get("championId", "")) for m in (maestrias or [])[:3]}
+        overlap = top3_ids & mast_ids
+        if not overlap:
+            mast_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">⚠️ Tus campeones mas jugados NO coinciden con tus maestrias mas altas. Juega lo que mejor dominas.</p>'
+        else:
+            mast_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 6px 0 0 0;">✅ Tus picks mas frecuentes coinciden con tus maestrias. Buen alineamiento.</p>'
+        mast_html += '</div>'
+        secciones.append({
+            "titulo": "ARSENAL VS MAESTRIA",
+            "icono": "⭐",
+            "color": "#f8fafc",
+            "html": mast_html,
+            "prioridad": 3,
+        })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 12: PROGRESION DE LP
+    # ═══════════════════════════════════════════════════
+    if lp_history and len(lp_history) >= 3:
+        lp_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        lp_html += f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>📈 Progresion de ELO (30 dias)</b></p>'
+
+        first = lp_history[0]
+        last = lp_history[-1]
+        lp_delta = last.get("lp_total", 0) - first.get("lp_total", 0)
+        lp_deltas = []
+        for i in range(1, len(lp_history)):
+            lp_deltas.append(lp_history[i].get("lp_total", 0) - lp_history[i-1].get("lp_total", 0))
+        total_wins = sum(e.get("wins", 0) for e in lp_history)
+        total_losses = sum(e.get("losses", 0) for e in lp_history)
+        total_games_lp = total_wins + total_losses
+
+        lp_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">{first.get("fecha","?")} → {last.get("fecha","?")} ({len(lp_history)} dias con datos)</p>'
+        lp_html += f'<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">{last.get("tier","?")} {last.get("division","")} — {last.get("lp",0)} LP</p>'
+
+        if lp_delta > 100:
+            lp_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Subiendo (+{lp_delta} LP en 30 dias). Buen ritmo.</p>'
+        elif lp_delta > 0:
+            lp_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Subiendo lentamente (+{lp_delta} LP). La consistencia paga.</p>'
+        elif lp_delta > -100:
+            lp_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Estable/bajando ({lp_delta} LP). Revision de fundamentos.</p>'
+        else:
+            lp_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 En caida ({lp_delta} LP). Toca revisar que esta fallando.</p>'
+
+        if total_games_lp > 0:
+            lp_wr = total_wins / total_games_lp * 100
+            lp_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0;">📊 {total_games_lp} partidas en 30d · WR {lp_wr:.0f}% ({total_wins}V/{total_losses}D)</p>'
+
+            daily_avg = total_games_lp / max(1, len(lp_history))
+            if daily_avg > 5:
+                lp_html += f'<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 2px 0;">📝 Juegas {daily_avg:.1f} partidas/dia. Considera jugar menos partidas con mas calidad.</p>'
+            elif daily_avg < 1:
+                lp_html += f'<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 2px 0;">📝 Pocas partidas/dia ({daily_avg:.1f}). La mejora requiere volumen controlado.</p>'
+
+        lp_html += '</div>'
+        secciones.append({
+            "titulo": "PROGRESION DE ELO",
+            "icono": "📈",
+            "color": "#818cf8",
+            "html": lp_html,
+            "prioridad": 4,
+        })
+
+    # ═══════════════════════════════════════════════════
+    # SECCION 13: CONSEJO FINAL
     # ═══════════════════════════════════════════════════
     # Identificar el área más urgente
     secciones.sort(key=lambda s: s["prioridad"])
@@ -683,7 +912,12 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         "metricas": {
             "wr": wr, "kda": kda, "avg_cs": avg_cs, "avg_d": avg_d,
             "avg_vision": avg_vision, "unique_champs": unique_champs,
-            "top3_wr": top3_wr, "nivel": nivel
+            "top3_wr": top3_wr, "nivel": nivel,
+            "avg_dmg": avg_dmg, "avg_gold": avg_gold,
+            "avg_turrets": avg_turrets, "avg_dragons": avg_dragons,
+            "avg_barons": avg_barons,
+            "avg_cc": avg_cc, "avg_pink": avg_pink,
+            "dmg_eff": dmg_eff, "total_all": total_all,
         }
     }
 

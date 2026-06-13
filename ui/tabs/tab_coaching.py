@@ -3,7 +3,12 @@
 from ui.contexto import *
 import json
 import os
+import unicodedata
 from datetime import datetime, timedelta
+
+
+def _norm(s):
+    return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii').upper()
 
 
 class CoachingTabMixin:
@@ -67,7 +72,7 @@ class CoachingTabMixin:
             '<div style="font-family: \'Segoe UI\', Arial, sans-serif; text-align: center; padding: 30px;">'
             '<p style="font-size: 48px; margin: 0;">🎓</p>'
             '<p style="font-size: 16px; color: #e63946; font-weight: 700; margin: 12px 0 4px 0;">COACHING PRO</p>'
-            '<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0; line-height: 1.6;">'
+            '<p style="font-size: 12px; color: #a39a93; margin: 0; line-height: 1.6;">'
             'Conecta al cliente de LoL para recibir tu analisis personalizado.<br><br>'
             'Aqui encontraras:<br>'
             '🧘 Filosofia de juego y mentalidad<br>'
@@ -76,7 +81,7 @@ class CoachingTabMixin:
             '🔍 Habitos y patrones detectados<br>'
             '🧠 Gestion de fatiga y sesiones<br>'
             '📈 Progresion de ELO y estadisticas</p>'
-            '<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 14px 0 0 0; font-style: italic;">'
+            '<p style="font-size: 10px; color: #7a6f68; margin: 14px 0 0 0; font-style: italic;">'
             '✨ "Cuando cambia tu forma de pensar el LoL, cambia todo lo demas."</p>'
             '</div>'
         )
@@ -251,38 +256,39 @@ class CoachingTabMixin:
 
         for sec in secciones:
             titulo = sec.get("titulo", "")
+            t = _norm(titulo)
             card = self._crear_card(
                 self._sec_html(sec), sec.get("color", BORDER_SUBTLE)
             )
-            if "FILOSOFIA" in titulo.upper():
+            if "FILOSOFIA" in t:
                 cards_por_tab["Filosofia"].append(card)
-            elif "CHAMPION" in titulo.upper() or "AUDITORIA" in titulo.upper() or "ARSENAL" in titulo.upper() or "MAESTRIA" in titulo.upper():
+            elif "CHAMPION" in t or "AUDITORIA" in t or "ARSENAL" in t or "MAESTRIA" in t:
                 cards_por_tab["Campeones"].append(card)
-            elif "LINEA" in titulo.upper() or "FARMEO" in titulo.upper() or "RENDIMIENTO" in titulo.upper():
+            elif "LINEA" in t or "FARMEO" in t or "RENDIMIENTO" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "SUPERVIVENCIA" in titulo.upper() or "DECISIONES" in titulo.upper() or "TOMA" in titulo.upper():
+            elif "SUPERVIVENCIA" in t or "DECISIONES" in t or "TOMA" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "VISION" in titulo.upper() or "PINKS" in titulo.upper() or "CONTROL WARD" in titulo.upper():
+            elif "VISION" in t or "PINKS" in t or "CONTROL WARD" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "DANO" in titulo.upper() or "EFICIENCIA" in titulo.upper():
+            elif "DANO" in t or "EFICIENCIA" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "ORO" in titulo.upper() or "ECONOMIA" in titulo.upper():
+            elif "ORO" in t or "ECONOMIA" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "OBJETIVOS" in titulo.upper():
+            elif "OBJETIVOS" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "MASAS" in titulo.upper() or "CC" in titulo.upper():
+            elif "MASAS" in t or "CC" in t:
                 cards_por_tab["Rendimiento"].append(card)
-            elif "RACHA" in titulo.upper():
+            elif "RACHA" in t:
                 cards_por_tab["Habitos"].append(card)
-            elif "GESTION" in titulo.upper() or "SESIONES" in titulo.upper() or "FATIGA" in titulo.upper():
+            elif "GESTION" in t or "SESIONES" in t or "FATIGA" in t:
                 cards_por_tab["Gestion"].append(card)
-            elif "BLOQUES" in titulo.upper():
+            elif "BLOQUES" in t:
                 cards_por_tab["Gestion"].append(card)
-            elif "PRACTICA" in titulo.upper() or "DELIBERADA" in titulo.upper():
+            elif "PRACTICA" in t or "DELIBERADA" in t:
                 cards_por_tab["Gestion"].append(card)
-            elif "PROGRESION" in titulo.upper() or "ELO" in titulo.upper() or "LP" in titulo.upper():
+            elif "PROGRESION" in t or "ELO" in t or "LP" in t:
                 cards_por_tab["Gestion"].append(card)
-            elif "SALUD" in titulo.upper() or "FISIOLOGIA" in titulo.upper():
+            elif "SALUD" in t or "FISIOLOGIA" in t:
                 cards_por_tab["Gestion"].append(card)
             else:
                 cards_por_tab["Resumen"].append(card)
@@ -319,17 +325,17 @@ class CoachingTabMixin:
             emocional = datos_extra["emocional"]
             if emocional:
                 emo_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-                emo_html += '<p style="font-size: 13px; color: "{YELLOW_WARNING}"; margin: 0 0 6px 0;"><b>📊 Rendimiento por estado:</b></p>'
+                emo_html += '<p style="font-size: 13px; color: "#f59e0b"; margin: 0 0 6px 0;"><b>📊 Rendimiento por estado:</b></p>'
                 emoji_map = {"Concentrado": "🔥", "Normal": "😐", "Tilted": "😤", "Cansado": "😴"}
                 for estado, data in sorted(emocional.items(), key=lambda x: x[1].get("wr", 0), reverse=True):
                     wr_e = data.get("wr", 0)
                     n = data.get("partidas", 0)
                     emoji = emoji_map.get(estado, "❓")
-                    color_wr = "{GREEN_SUCCESS}" if wr_e >= 50 else "{RED_DANGER}"
+                    color_wr = "#22c55e" if wr_e >= 50 else "#ef4444"
                     emo_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">{emoji} {estado}: <b style="color:{color_wr};">{wr_e}% WR</b> ({n} partidas)</p>'
-                emo_html += '<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 6px 0 0 0;">💡 Etiqueta tus partidas en MI PERFIL para ver estos datos.</p>'
+                emo_html += '<p style="font-size: 10px; color: #7a6f68; margin: 6px 0 0 0;">💡 Etiqueta tus partidas en MI PERFIL para ver estos datos.</p>'
                 emo_html += '</div>'
-                cards_por_tab["Habitos"].append(self._crear_card(emo_html, "{YELLOW_WARNING}"))
+                cards_por_tab["Habitos"].append(self._crear_card(emo_html, "#f59e0b"))
 
         if datos_extra and datos_extra.get("objetivos"):
             objs = datos_extra["objetivos"]

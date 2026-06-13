@@ -254,7 +254,11 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     top3 = sorted_champs[:3]
     unique_champs = len(champ_games)
 
-    dmg_ratio = (sum(d for d in all_dmg) / sum(g for g in all_gold)) if all_dmg and all_gold else 0
+    # Daño a campeones por oro generado: se calcula con TOTALES crudos (no con
+    # listas por-minuto de distinta longitud, que daban un ratio sin sentido).
+    total_dmg_raw = sum(cg["dmg"] for cg in champ_games.values())
+    total_gold_raw = sum(cg["gold"] for cg in champ_games.values())
+    dmg_ratio = (total_dmg_raw / total_gold_raw) if total_gold_raw else 0
     dmg_vs_taken = sum(stats.get("totalDamageDealtToChampions", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
     dmg_taken_total = sum(stats.get("totalDamageTaken", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
     dmg_eff = dmg_vs_taken / max(1, dmg_taken_total)
@@ -288,7 +292,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     <p style="font-size: 13px; color: {TEXT_SECONDARY}; margin: 0 0 12px 0;">{tono}</p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
     📊 <b>{total_all}</b> partidas analizadas · WR <b style="color:{GREEN_SUCCESS if wr >= 50 else RED_DANGER};">{wr:.0f}%</b> ·
-    KDA <b>{avg_k:.0f}/{avg_d:.0f}/{avg_a:.0f}</b> · CS/min <b>{avg_cs:.1f}</b>
+    KDA <b>{avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f}</b> ({kda:.2f}) · CS/min <b>{avg_cs:.1f}</b>
     </p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
     ⚡ Dano/min <b>{avg_dmg:.0f}</b> · Oro/min <b>{avg_gold:.0f}</b> · Vision/min <b>{avg_vision:.1f}</b>
@@ -411,8 +415,8 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         """
     
     # First blood
-    if primer_sangre >= total * 0.3:
-        cs_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 8px 0 0 0;">⚔️ Además, consigues First Blood en el {primer_sangre/total*100:.0f}% de tus partidas. ¡Agresividad bien ejecutada!</p>'
+    if total_all and primer_sangre >= total_all * 0.3:
+        cs_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 8px 0 0 0;">⚔️ Además, consigues First Blood en el {primer_sangre/total_all*100:.0f}% de tus partidas. ¡Agresividad bien ejecutada!</p>'
     
     cs_html += '</div>'
     
@@ -433,8 +437,8 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         sv_html += f"""
         <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Mueres demasiado: {avg_d:.1f} muertes por partida</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        {nombre}, esta es la estadística que más te está frenando. Cada muerte le da <b>300g + asistencia</b> al enemigo. 
-        En 20 partidas con {avg_d:.0f} muertes de media, has regalado aproximadamente <b>{int(avg_d * 300 * total)} de oro</b>.
+        {nombre}, esta es la estadística que más te está frenando. Cada muerte le da <b>300g + asistencia</b> al enemigo.
+        En {total_all} partidas con {avg_d:.1f} muertes de media, has regalado aproximadamente <b>{int(avg_d * 300 * total_all):,} de oro</b>.
         Eso son varios objetos completos.
         </p>
         <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Reglas de oro:</b></p>

@@ -5,9 +5,9 @@ from ui.contexto import *
 
 
 class PartidaTabMixin:
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════
     # PARTIDA EN VIVO (Porofessor-style)
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════
 
     def armar_tab_partida(self):
         layout = QVBoxLayout(self.tab_partida)
@@ -15,7 +15,7 @@ class PartidaTabMixin:
         layout.setSpacing(6)
 
         # Header
-        self.lbl_partida_header = QLabel("ðŸŽ® Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
+        self.lbl_partida_header = QLabel("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
         self.lbl_partida_header.setAlignment(Qt.AlignCenter)
         self.lbl_partida_header.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 16px; padding: 20px;")
         layout.addWidget(self.lbl_partida_header)
@@ -47,14 +47,14 @@ class PartidaTabMixin:
         tablas_layout = QHBoxLayout()
         tablas_layout.setSpacing(8)
 
-        # â”€â”€ Aliados â”€â”€
+        # ── Aliados ──
         self.tb_partida_aliados = QTableWidget()
         self.tb_partida_aliados.setColumnCount(4)
         self.tb_partida_aliados.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
         self._estilizar_tabla_partida(self.tb_partida_aliados, "{BG_DARK}")
         tablas_layout.addWidget(self.tb_partida_aliados)
 
-        # â”€â”€ Enemigos â”€â”€
+        # ── Enemigos ──
         self.tb_partida_enemigos = QTableWidget()
         self.tb_partida_enemigos.setColumnCount(4)
         self.tb_partida_enemigos.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
@@ -63,7 +63,7 @@ class PartidaTabMixin:
 
         layout.addLayout(tablas_layout, 1)
 
-        # ComposiciÃ³n
+        # Composición
         self.lbl_partida_comp = QLabel("")
         self.lbl_partida_comp.setAlignment(Qt.AlignCenter)
         self.lbl_partida_comp.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
@@ -85,7 +85,7 @@ class PartidaTabMixin:
         """)
 
     def actualizar_partida_vivo(self):
-        """Actualiza la pestaÃ±a de partida en vivo con datos del LiveClient."""
+        """Actualiza la pestaña de partida en vivo con datos del LiveClient."""
         if not self.lcu or not self.lcu.port:
             return
 
@@ -98,19 +98,19 @@ class PartidaTabMixin:
             self.tb_partida_enemigos.setVisible(False)
             self.lbl_partida_header.setVisible(True)
             if fase in ("WaitingForStats", "PreEndOfGame", "EndOfGame"):
-                self.lbl_partida_header.setText("ðŸ Partida terminada\n\nRevisa tu perfil para ver el analisis")
+                self.lbl_partida_header.setText("🏁 Partida terminada\n\nRevisa tu perfil para ver el analisis")
                 # Mostrar post-game una sola vez por partida (al transicionar desde InProgress)
                 if not self._postgame_shown and self._last_fase in ("InProgress", "GameStart"):
                     self._postgame_shown = True
                     threading.Thread(target=self._preparar_postgame, daemon=True).start()
             else:
-                # Nueva fase de lobby â†’ resetear para la prÃ³xima partida
+                # Nueva fase de lobby → resetear para la próxima partida
                 self._postgame_shown = False
-                self.lbl_partida_header.setText("ðŸŽ® Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
+                self.lbl_partida_header.setText("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
             self._last_fase = fase
             return
 
-        # EntrÃ³ a una partida nueva â†’ resetear el flag
+        # Entró a una partida nueva → resetear el flag
         if self._last_fase not in ("InProgress", "GameStart"):
             self._postgame_shown = False
             self._last_game_stats = {}
@@ -135,7 +135,7 @@ class PartidaTabMixin:
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)
             self.tb_partida_enemigos.setVisible(False)
-            self.lbl_partida_header.setText("â³ Entrando a la Grieta...\n\nLos datos apareceran al iniciar la partida")
+            self.lbl_partida_header.setText("⏳ Entrando a la Grieta...\n\nLos datos apareceran al iniciar la partida")
 
     def _renderizar_partida_live(self, jugadores, game_info):
         """Renderiza la partida con datos del LiveClient (KDA, CS, etc.)."""
@@ -167,22 +167,22 @@ class PartidaTabMixin:
             cs = yo.get("creepScore", 0) or 0
             cname = yo.get("championName", "?")
             cs_min = cs / max(1, game_time / 60)
-            self.lbl_partida_kda.setText(f"ðŸ”¥ Tu {cname}: {k}/{d}/{a}")
+            self.lbl_partida_kda.setText(f"🔥 Tu {cname}: {k}/{d}/{a}")
             self.lbl_partida_cs.setText(f"CS: {cs} ({cs_min:.1f}/min)")
-            # Cachear para post-game (actualizamos siempre para tener el estado mÃ¡s reciente)
+            # Cachear para post-game (actualizamos siempre para tener el estado más reciente)
             self._last_game_stats = {
                 "champion": cname, "kills": k, "deaths": d, "assists": a,
                 "cs": cs, "game_time": game_time,
             }
         else:
-            self.lbl_partida_kda.setText("ðŸ”¥ Tu: (buscando...)")
+            self.lbl_partida_kda.setText("🔥 Tu: (buscando...)")
             self.lbl_partida_cs.setText("CS: --")
 
         # Tablas aliados/enemigos
-        self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "ðŸ”µ ALIADOS", "{BG_DARK}", yo)
-        self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "ðŸ”´ ENEMIGOS", "#1a0a0f", yo)
+        self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "{BG_DARK}", yo)
+        self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f", yo)
 
-        # Alimentar overlay si estÃ¡ activado
+        # Alimentar overlay si está activado
         if self.user_settings.get("overlay_ingame", False):
             if not self.overlay._visible:
                 self.overlay.show_overlay()
@@ -196,7 +196,7 @@ class PartidaTabMixin:
                 ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
                 ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
                 self.lbl_partida_comp.setText(
-                    f"âš”ï¸ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
+                    f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
             except:
@@ -224,18 +224,18 @@ class PartidaTabMixin:
         if yo:
             cid = str(yo.get("championId", "0"))
             cname = self.procesar_nombre_champ(cid, "0") or "Desconocido"
-            self.lbl_partida_kda.setText(f"ðŸŽ® En partida con {cname} (datos basicos LCU)")
+            self.lbl_partida_kda.setText(f"🎮 En partida con {cname} (datos basicos LCU)")
             self._last_game_stats = {"champion": cname, "kills": 0, "deaths": 0, "assists": 0, "cs": 0, "game_time": 0}
         else:
-            self.lbl_partida_kda.setText("ðŸŽ® Partida en vivo (datos basicos LCU)")
+            self.lbl_partida_kda.setText("🎮 Partida en vivo (datos basicos LCU)")
         self.lbl_partida_cs.setText("CS: --")
         self.lbl_partida_timer.setText("--:--")
 
         aliados = [j for j in jugadores if j.get("team") == "ORDER"]
         enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
 
-        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "ðŸ”µ ALIADOS", "{BG_DARK}")
-        self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "ðŸ”´ ENEMIGOS", "#1a0a0f")
+        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", "{BG_DARK}")
+        self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f")
 
         a_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), "0") for j in aliados if self.procesar_nombre_champ(str(j.get("championId", 0)), "0")]
         e_nombres = [self.procesar_nombre_champ(str(j.get("championId", 0)), "0") for j in enemigos if self.procesar_nombre_champ(str(j.get("championId", 0)), "0")]
@@ -244,7 +244,7 @@ class PartidaTabMixin:
                 ad_a, ap_a, tk_a = analizar_composicion(a_nombres)
                 ad_e, ap_e, tk_e = analizar_composicion(e_nombres)
                 self.lbl_partida_comp.setText(
-                    f"âš”ï¸ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
+                    f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
             except:
@@ -342,45 +342,45 @@ class PartidaTabMixin:
 
             # Puntos fuertes
             if k >= 10:
-                positives.append(f"âš”ï¸ {k} kills â€” excelente presencia ofensiva")
+                positives.append(f"⚔️ {k} kills — excelente presencia ofensiva")
             if d <= 2 and game_time >= 600:
-                positives.append(f"ðŸ›¡ï¸ Solo {d} muertes â€” muy buena supervivencia")
+                positives.append(f"🛡️ Solo {d} muertes — muy buena supervivencia")
             if a >= 10:
-                positives.append(f"ðŸ¤ {a} asistencias â€” gran impacto en equipo")
+                positives.append(f"🤝 {a} asistencias — gran impacto en equipo")
             if cs_min >= 7.5 and game_time >= 600:
-                positives.append(f"ðŸŒ¾ {cs_min:.1f} CS/min â€” farmeo solido")
+                positives.append(f"🌾 {cs_min:.1f} CS/min — farmeo solido")
             if k > avg_k * 1.3:
-                positives.append(f"ðŸ“ˆ +{k - int(avg_k)} kills sobre tu media ({avg_k:.0f})")
+                positives.append(f"📈 +{k - int(avg_k)} kills sobre tu media ({avg_k:.0f})")
             if d < avg_d * 0.7 and d <= avg_d:
-                positives.append(f"ðŸ“‰ -{int(avg_d) - d} muertes bajo tu media ({avg_d:.0f})")
+                positives.append(f"📉 -{int(avg_d) - d} muertes bajo tu media ({avg_d:.0f})")
             if k + a >= 20:
-                positives.append(f"ðŸŽ¯ {k + a} de participacion â€” muy activo en el mapa")
+                positives.append(f"🎯 {k + a} de participacion — muy activo en el mapa")
             if stats.get("vision_score", 0) >= 30:
-                positives.append(f"ðŸ‘ï¸ {stats['vision_score']} de vision â€” buen control de mapa")
+                positives.append(f"👁️ {stats['vision_score']} de vision — buen control de mapa")
             if stats.get("penta", 0) >= 1:
-                positives.append("ðŸ”¥ PENTAKILL â€” partida legendaria")
+                positives.append("🔥 PENTAKILL — partida legendaria")
             if stats.get("first_blood", False):
-                positives.append("âš¡ First Blood â€” ventaja temprana")
+                positives.append("⚡ First Blood — ventaja temprana")
 
             # Puntos debiles
             if d >= 7:
-                negatives.append(f"âš ï¸ {d} muertes â€” demasiadas, revisa tu posicionamiento")
+                negatives.append(f"⚠️ {d} muertes — demasiadas, revisa tu posicionamiento")
             if d > avg_d * 1.5:
-                negatives.append(f"ðŸ“Š +{d - int(avg_d)} muertes sobre tu media â€” partida atipica o tilt")
+                negatives.append(f"📊 +{d - int(avg_d)} muertes sobre tu media — partida atipica o tilt")
             if cs_min < 5.0 and game_time >= 600:
-                negatives.append(f"ðŸ“‰ CS/min bajo ({cs_min:.1f}) â€” practica el farmeo")
+                negatives.append(f"📉 CS/min bajo ({cs_min:.1f}) — practica el farmeo")
             if k + a < d * 1.5 and game_time >= 600:
-                negatives.append(f"ðŸ“‰ Baja participacion â€” K+A ({k + a}) vs D ({d})")
+                negatives.append(f"📉 Baja participacion — K+A ({k + a}) vs D ({d})")
             if stats.get("vision_score", 0) < 5 and game_time >= 900:
-                negatives.append(f"ðŸ”¦ Poca vision ({stats.get('vision_score', 0)}) â€” compra wards de control")
+                negatives.append(f"🔦 Poca vision ({stats.get('vision_score', 0)}) — compra wards de control")
             if d >= 3 and k == 0 and game_time >= 600:
-                negatives.append("ðŸ˜“ Sin kills â€” enfocate en jugadas seguras")
+                negatives.append("😓 Sin kills — enfocate en jugadas seguras")
             if cs_min < 3.5 and game_time >= 900:
-                negatives.append("ðŸš« Farmeo muy bajo â€” prioriza las oleadas de minions")
+                negatives.append("🚫 Farmeo muy bajo — prioriza las oleadas de minions")
 
             # Consejos de mejora
             if negatives:
-                tips.append("Consejo: " + negatives[0].split("â€”")[-1].strip() if "â€”" in negatives[0] else negatives[0])
+                tips.append("Consejo: " + negatives[0].split("—")[-1].strip() if "—" in negatives[0] else negatives[0])
             if d >= 5:
                 tips.append("Juega mas conservador si vas detras y espera los powerspikes de tu campeon")
             if k + a < 5 and game_time >= 900:
@@ -390,7 +390,7 @@ class PartidaTabMixin:
             if result == "Derrota" and k >= 8:
                 tips.append("Aunque perdiste, tu desempeno ofensivo fue bueno. Revisa decisiones macro")
             if result == "Victoria" and d >= 7:
-                tips.append("Buen resultado pero cuidado con las muertes â€” en partidas mas dificiles te castigaran")
+                tips.append("Buen resultado pero cuidado con las muertes — en partidas mas dificiles te castigaran")
 
             stats["positives"] = positives[:4]
             stats["negatives"] = negatives[:4]
@@ -404,17 +404,17 @@ class PartidaTabMixin:
             traceback.print_exc()
 
     def _on_postgame_ready(self, stats: dict):
-        """Muestra el diÃ¡logo de post-game en el hilo principal."""
+        """Muestra el diálogo de post-game en el hilo principal."""
         try:
             dlg = PostGameDialog(stats, parent=self)
             dlg.coaching_requested.connect(self._ir_a_coaching)
             dlg.show()
         except Exception as e:
-            print(f"[PostGame] Error mostrando diÃ¡logo: {e}")
+            print(f"[PostGame] Error mostrando diálogo: {e}")
 
     def _on_season_partial(self, batch: list):
         """Recibe un lote de partidas de Riot API (hilo principal via signal).
-        Las aÃ±ade a all_games_season y refresca incrementalmente la tabla de season."""
+        Las añade a all_games_season y refresca incrementalmente la tabla de season."""
         try:
             if not hasattr(self, 'all_games_season'):
                 self.all_games_season = []
@@ -440,7 +440,7 @@ class PartidaTabMixin:
             print(f"[SeasonPartial] Error: {e}")
 
     def _ir_a_coaching(self):
-        """Navega a la pestaÃ±a de Coaching."""
+        """Navega a la pestaña de Coaching."""
         try:
             for i in range(self.tabview.count()):
                 if "coaching" in self.tabview.tabText(i).lower() or "perfil" in self.tabview.tabText(i).lower():
@@ -586,16 +586,16 @@ class PartidaTabMixin:
             # KDA actual
             if k + d + a > 0:
                 if kda_val >= 5:
-                    comentarios.append("ðŸ”¥ En fuego")
+                    comentarios.append("🔥 En fuego")
                     color = GREEN_WR
                 elif kda_val >= 3:
-                    comentarios.append("âœ… SÃ³lido")
+                    comentarios.append("✅ Sólido")
                     color = GREEN_WR
                 elif kda_val < 1.0:
-                    comentarios.append("ðŸ’€ Feedeando")
+                    comentarios.append("💀 Feedeando")
                     color = RED_WR
                 elif d >= 5:
-                    comentarios.append("âš ï¸ FrÃ¡gil")
+                    comentarios.append("⚠️ Frágil")
                     color = YELLOW_WR
 
             # Racha reciente
@@ -607,20 +607,20 @@ class PartidaTabMixin:
                     if wins:
                         w_count = sum(1 for w in wins if w)
                         if w_count >= 4:
-                            comentarios.append("ðŸ”¥ Racha buena")
+                            comentarios.append("🔥 Racha buena")
                             color = GREEN_WR
                         elif w_count <= 1:
-                            comentarios.append("â„ï¸ Racha mala")
+                            comentarios.append("❄️ Racha mala")
                             color = RED_WR if total > 10 else color
                 except:
                     pass
 
             if not comentarios:
-                comentarios.append("â€”")
+                comentarios.append("—")
 
-            return " Â· ".join(comentarios), color
+            return " · ".join(comentarios), color
         except:
-            return "â€”", "{TEXT_MUTED}"
+            return "—", "{TEXT_MUTED}"
         finally:
             if close_conn and conn is not None:
                 conn.close()
@@ -783,7 +783,7 @@ class PartidaTabMixin:
         bar_pct = int((games / max(1, max_games)) * 100)
         wr_color = GREEN_WR if wr_val >= 50 else RED_WR
 
-        # â”€â”€ Col 0: Icono + Nombre + CS â”€â”€
+        # ── Col 0: Icono + Nombre + CS ──
         w0 = QWidget()
         w0.setStyleSheet("background: transparent;")
         l0 = QHBoxLayout(w0)
@@ -806,7 +806,7 @@ class PartidaTabMixin:
         txt_vbox.addWidget(lbl_cs)
         l0.addLayout(txt_vbox, 1)
 
-        # â”€â”€ Col 1: Partidas + mini barra â”€â”€
+        # ── Col 1: Partidas + mini barra ──
         w1 = QWidget()
         w1.setStyleSheet("background: transparent;")
         l1 = QVBoxLayout(w1)
@@ -827,12 +827,12 @@ class PartidaTabMixin:
         """)
         l1.addWidget(bar)
 
-        # â”€â”€ Col 2: WR % â”€â”€
+        # ── Col 2: WR % ──
         w2 = QLabel(f"{wr_val}%")
         w2.setAlignment(Qt.AlignCenter)
         w2.setStyleSheet(f"color: {wr_color}; font-size: 14px; font-weight: bold; background: transparent; padding: 4px;")
 
-        # â”€â”€ Col 3: KDA ratio + K/D/A â”€â”€
+        # ── Col 3: KDA ratio + K/D/A ──
         w3 = QWidget()
         w3.setStyleSheet("background: transparent;")
         l3 = QVBoxLayout(w3)
@@ -860,7 +860,7 @@ class PartidaTabMixin:
         return w0, w1, w2, w3
 
     def _append_champs_season(self, count=15):
-        """AÃ±ade los siguientes 'count' campeones a la tabla sin limpiar."""
+        """Añade los siguientes 'count' campeones a la tabla sin limpiar."""
         if not hasattr(self, '_season_champ_data') or not self._season_champ_data:
             return
         data = self._season_champ_data
@@ -916,11 +916,11 @@ class PartidaTabMixin:
             grid_icons.setAlignment(Qt.AlignCenter)
             for i, (champ, puntuacion, razon) in enumerate(champs[:4]):
                 # Estrellas segun puntuacion (escala 1.0-10.0)
-                if puntuacion >= 9.0: estrellas = "â­â­â­â­â­"
-                elif puntuacion >= 7.0: estrellas = "â­â­â­â­"
-                elif puntuacion >= 5.0: estrellas = "â­â­â­"
-                elif puntuacion >= 3.0: estrellas = "â­â­"
-                else: estrellas = "â­"
+                if puntuacion >= 9.0: estrellas = "⭐⭐⭐⭐⭐"
+                elif puntuacion >= 7.0: estrellas = "⭐⭐⭐⭐"
+                elif puntuacion >= 5.0: estrellas = "⭐⭐⭐"
+                elif puntuacion >= 3.0: estrellas = "⭐⭐"
+                else: estrellas = "⭐"
                 
                 # Color segun puntuacion
                 if puntuacion >= 8.0: color_pts = GREEN_WR
@@ -930,13 +930,13 @@ class PartidaTabMixin:
                 
                 tooltip = (
                     f"{self._nombre_display(champ)}\n"
-                    f"â­ Puntuacion: {puntuacion}/10.0\n"
-                    f"ðŸ“Š {razon}"
+                    f"⭐ Puntuacion: {puntuacion}/10.0\n"
+                    f"📊 {razon}"
                 )
                 self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2,
                     tooltip, size=35)
                 
-                # Etiqueta de puntuaciÃ³n debajo del icono
+                # Etiqueta de puntuación debajo del icono
                 lbl_pts = QLabel(f"{puntuacion}")
                 lbl_pts.setAlignment(Qt.AlignCenter)
                 lbl_pts.setStyleSheet(f"color: {color_pts}; font-size: 9px; font-weight: bold; padding: 0px;")
@@ -953,9 +953,9 @@ class PartidaTabMixin:
             champ_key = self.nombre_interno.get(champ_key, champ_key)
             tag = obtener_tag(champ_key)
             d = tag.get("difficulty", 2)
-            return "â­" * d
+            return "⭐" * d
         except:
-            return "â­â­"
+            return "⭐⭐"
 
     def _nombre_con_dificultad(self, champion):
         """Nombre del campeon con estrellas si mostrar_dificultad esta activo."""
@@ -992,57 +992,57 @@ class PartidaTabMixin:
         elif tanks_en >= 3: comp_en = "Front-to-Back"
         else: comp_en = "Pick/Skirmish"
 
-        lines.append("ðŸŽ¯ TU COMP: {}  |  ENEMIGO: {}".format(comp_al, comp_en))
+        lines.append("🎯 TU COMP: {}  |  ENEMIGO: {}".format(comp_al, comp_en))
 
         # Win condition
         if comp_al == "Poke/Siege" and comp_en in ("Engage/Wombo","Front-to-Back"):
-            lines.append("ðŸ† WIN COND: Pokea antes de la pelea. No dejes que engageen. Asedia torres con rango.")
+            lines.append("🏆 WIN COND: Pokea antes de la pelea. No dejes que engageen. Asedia torres con rango.")
         elif comp_al == "Engage/Wombo" and comp_en in ("Poke/Siege","Pick/Skirmish"):
-            lines.append("ðŸ† WIN COND: Busca el engage 5v5. Ellos colapsan contra all-in coordinado.")
+            lines.append("🏆 WIN COND: Busca el engage 5v5. Ellos colapsan contra all-in coordinado.")
         elif comp_al == "Split Push" and comp_en in ("Engage/Wombo","Front-to-Back"):
-            lines.append("ðŸ† WIN COND: Evita 5v5. Presion lateral con el split pusher. Rotaciones rapidas.")
+            lines.append("🏆 WIN COND: Evita 5v5. Presion lateral con el split pusher. Rotaciones rapidas.")
         elif comp_al == "Front-to-Back" and comp_en == "Pick/Skirmish":
-            lines.append("ðŸ† WIN COND: Agrupaos y proteged al carry. No os separeis, os cazan.")
+            lines.append("🏆 WIN COND: Agrupaos y proteged al carry. No os separeis, os cazan.")
         else:
             esc_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
             esc_en = sum(1 for e in enemigos if obtener_tag(e).get("scaling") in ("late","hyper"))
-            if esc_al > esc_en: lines.append("ðŸ† WIN COND: Escalan mejor. Juega seguro early, ganas a partir de 25 min.")
-            elif esc_en > esc_al: lines.append("ðŸ† WIN COND: Acaba rÃ¡pido. Ellos escalan mejor. Ventaja temprana y cierra.")
-            elif tanks_al > tanks_en: lines.append("ðŸ† WIN COND: Su frontlane gana. Force objetivos, ellos no pueden contestar.")
-            else: lines.append("ðŸ† WIN COND: Vision + picks. Controla la jungla enemiga y caza rotaciones.")
+            if esc_al > esc_en: lines.append("🏆 WIN COND: Escalan mejor. Juega seguro early, ganas a partir de 25 min.")
+            elif esc_en > esc_al: lines.append("🏆 WIN COND: Acaba rápido. Ellos escalan mejor. Ventaja temprana y cierra.")
+            elif tanks_al > tanks_en: lines.append("🏆 WIN COND: Su frontlane gana. Force objetivos, ellos no pueden contestar.")
+            else: lines.append("🏆 WIN COND: Vision + picks. Controla la jungla enemiga y caza rotaciones.")
 
         # Prioridad de objetivos
-        lines.append("\nðŸ“‹ PRIORIDAD DE OBJETIVOS:")
-        if tanks_al >= 3 or engage_al >= 2: lines.append("   ðŸ‰ Dragones - su frontlane domina el rÃ­o")
-        if split_al >= 1: lines.append("   ðŸ¦€ Heraldo > Primeras 2 torres - libera al split pusher")
-        if poke_al >= 2: lines.append("   ðŸ° Torres > Dragones - su rango asedia mejor")
+        lines.append("\n📋 PRIORIDAD DE OBJETIVOS:")
+        if tanks_al >= 3 or engage_al >= 2: lines.append("   🐉 Dragones - su frontlane domina el río")
+        if split_al >= 1: lines.append("   🦀 Heraldo > Primeras 2 torres - libera al split pusher")
+        if poke_al >= 2: lines.append("   🏰 Torres > Dragones - su rango asedia mejor")
         escalado_al = sum(1 for a in aliados if obtener_tag(a).get("scaling") in ("late","hyper"))
-        if escalado_al >= 3: lines.append("   ðŸ›¡ï¸ Farm + Escalar > Objetivos tempranos")
+        if escalado_al >= 3: lines.append("   🛡️ Farm + Escalar > Objetivos tempranos")
 
         # Itemizacion counter
-        lines.append("\nðŸ›’ ITEMIZACION CLAVE:")
+        lines.append("\n🛒 ITEMIZACION CLAVE:")
         ap_en_val = sum(1 for e in enemigos if obtener_dano(e) in ("AP","HYBRID"))
         ad_en_val = sum(1 for e in enemigos if obtener_dano(e) == "AD")
         cc_en = sum(obtener_nivel_cc(e) for e in enemigos)
         tanks_en_val = sum(1 for e in enemigos if es_tanque(e))
         cur = sum(1 for e in enemigos if e in {"Aatrox","Vladimir","Soraka","Swain","Sylas","Warwick","Briar","Fiora","Darius","Illaoi","DrMundo","Olaf"})
-        if ap_en_val >= 3: lines.append("   ðŸ§ª Fuerza Naturaleza / Rostro Espiritual (mucha AP enemiga)")
-        if ad_en_val >= 3: lines.append("   ðŸ›¡ï¸ Coraza de Espinas / Randuin (mucho AD)")
-        if tanks_en_val >= 3: lines.append("   ðŸ—¡ï¸ Hoja del Rey / Lord Dominik (penetracion vs tanques)")
-        if cc_en >= 12: lines.append("   â›“ï¸ Botas de Mercurio / Fajin (CC masivo)")
-        if cur >= 2: lines.append("   ðŸ”¥ MorellonomicÃ³n / Ejecutor (curaciones enemigas)")
+        if ap_en_val >= 3: lines.append("   🧪 Fuerza Naturaleza / Rostro Espiritual (mucha AP enemiga)")
+        if ad_en_val >= 3: lines.append("   🛡️ Coraza de Espinas / Randuin (mucho AD)")
+        if tanks_en_val >= 3: lines.append("   🗡️ Hoja del Rey / Lord Dominik (penetracion vs tanques)")
+        if cc_en >= 12: lines.append("   ⛓️ Botas de Mercurio / Fajin (CC masivo)")
+        if cur >= 2: lines.append("   🔥 Morellonomicón / Ejecutor (curaciones enemigas)")
 
         # Sinergias
         lines.append("\nâš¡ SINERGIAS CLAVE:")
         if "Yasuo" in aliados:
             kn = [a for a in aliados if obtener_nivel_cc(a) >= 3 and obtener_tag(a).get("sub_class") in ("Vanguard","Catcher")]
-            if kn: lines.append("   ðŸŒªï¸ Yasuo + {} = combo R garantizada".format(kn[0]))
+            if kn: lines.append("   🌪️ Yasuo + {} = combo R garantizada".format(kn[0]))
         if "Orianna" in aliados:
             eng = [a for a in aliados if obtener_tag(a).get("sub_class") == "Vanguard"]
             if eng: lines.append("   âš½ Orianna + {} = wombo combo R".format(eng[0]))
         if "Kalista" in aliados:
             supp = [a for a in aliados if es_soporte(a)]
-            if supp: lines.append("   ðŸ¤ Kalista + {} = engage/doble knockup".format(supp[0]))
+            if supp: lines.append("   🤝 Kalista + {} = engage/doble knockup".format(supp[0]))
 
         self.lbl_pro.setText("\n".join(lines))
 

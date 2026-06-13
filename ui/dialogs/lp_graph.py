@@ -8,7 +8,7 @@ from ui.design import *
 
 
 class LPGraphWidget(QWidget):
-    """GrÃ¡fica de lÃ­nea LP/MMR usando QPainter nativo â€” sin dependencias externas."""
+    """Gráfica de línea LP/MMR usando QPainter nativo — sin dependencias externas."""
 
     TIER_LABELS = [
         (0,    "Iron"),   (400,  "Bronze"), (800,  "Silver"), (1200, "Gold"),
@@ -40,7 +40,7 @@ class LPGraphWidget(QWidget):
 
         if not self._data or len(self._data) < 2:
             p.setPen(QColor(TEXT_MUTED))
-            p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos suficientes (mÃ­n. 2 dÃ­as)")
+            p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos suficientes (mín. 2 días)")
             p.end()
             return
 
@@ -55,7 +55,7 @@ class LPGraphWidget(QWidget):
         def to_py(val):
             return h - pad_b - int((val - mn) / rng * (h - pad_t - pad_b))
 
-        # LÃ­neas de tier en gris sutil
+        # Líneas de tier en gris sutil
         p.setFont(QFont("Segoe UI", 7))
         for base, name in self.TIER_LABELS:
             if mn - 100 <= base <= mx + 100:
@@ -66,7 +66,7 @@ class LPGraphWidget(QWidget):
                     p.setPen(QColor(self.TIER_COLORS.get(name, "{TEXT_SUBTLE}")))
                     p.drawText(2, py - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
 
-        # LÃ­nea de LP
+        # Línea de LP
         points = [(to_px(i), to_py(self._data[i]["lp_total"]))
                   for i in range(len(self._data))]
 
@@ -81,7 +81,7 @@ class LPGraphWidget(QWidget):
             p.setBrush(QBrush(QColor(ACCENT_TEAL)))
             p.drawEllipse(px - 3, py - 3, 6, 6)
 
-        # Fechas en el eje X (cada ~5 puntos o primero/Ãºltimo)
+        # Fechas en el eje X (cada ~5 puntos o primero/último)
         p.setFont(QFont("Segoe UI", 7))
         p.setPen(QColor(TEXT_MUTED))
         indices = [0, n - 1] if n <= 4 else list(range(0, n, max(1, n // 4))) + [n - 1]

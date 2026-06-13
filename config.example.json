@@ -1,0 +1,25 @@
+{
+  "API_KEY": "RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "DATABASE_URL": "postgresql://user:password@host:5432/dbname",
+  "user_settings": {
+    "auto_deteccion": true,
+    "mostrar_power_spikes": true,
+    "mostrar_explicaciones": true,
+    "sonidos": true,
+    "frecuencia_radar": 1460,
+    "modo_principiante": true,
+    "modo_profesional": false,
+    "recordatorios_partida": true,
+    "mostrar_dificultad": true,
+    "tooltips_grandes": true,
+    "flash_en_d": true,
+    "auto_runas": false,
+    "auto_hechizos": false,
+    "auto_habilidades": false,
+    "auto_items": false,
+    "auto_switch_radar": true,
+    "auto_aceptar": false,
+    "overlay_ingame": false,
+    "notificaciones_escritorio": true
+  }
+}

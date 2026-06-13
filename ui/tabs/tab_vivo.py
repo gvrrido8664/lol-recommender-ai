@@ -25,7 +25,7 @@ class VivoTabMixin:
         layout.addLayout(top_bar)
 
         # Coach tip en Champ Select
-        self.lbl_radar_tip = QLabel("ðŸ’¡ <b>Consejo:</b> En Champ Select, prioriza counter-pickear a tu rival de lÃ­nea. Revisa runas y hechizos recomendados abajo.")
+        self.lbl_radar_tip = QLabel("💡 <b>Consejo:</b> En Champ Select, prioriza counter-pickear a tu rival de línea. Revisa runas y hechizos recomendados abajo.")
         self.lbl_radar_tip.setWordWrap(True)
         self.lbl_radar_tip.setTextFormat(Qt.RichText)
         self.lbl_radar_tip.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; padding: 6px 10px; background-color: {BG_DARK}; border: 1px solid {BG_CARD_HOVER}; border-left: 3px solid {ACCENT_TEAL}; border-radius: 4px; margin-bottom: 2px;")
@@ -51,7 +51,7 @@ class VivoTabMixin:
         l_enemy.addLayout(self.fr_enemigos_picks)
         l_enemy.addStretch()
         
-        self.panel_bans_vivo, self.l_bans_vivo = self.crear_panel("Bans Sugeridos (Tu LÃ­nea)")
+        self.panel_bans_vivo, self.l_bans_vivo = self.crear_panel("Bans Sugeridos (Tu Línea)")
         self.fr_bans_icons_vivo = QHBoxLayout()
         self.l_bans_vivo.addLayout(self.fr_bans_icons_vivo)
         l_enemy.addWidget(self.panel_bans_vivo)
@@ -66,7 +66,7 @@ class VivoTabMixin:
         l_center = QVBoxLayout(col_center)
         l_center.setAlignment(Qt.AlignTop)
         
-        self.lbl_rol_vivo = QLabel("ASIGNACIÃ“N PENDIENTE")
+        self.lbl_rol_vivo = QLabel("ASIGNACIÓN PENDIENTE")
         self.lbl_rol_vivo.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 18px;")
         self.lbl_rol_vivo.setAlignment(Qt.AlignCenter)
         l_center.addWidget(self.lbl_rol_vivo)
@@ -84,12 +84,12 @@ class VivoTabMixin:
         self.inicializar_panel_setup(self.fr_runas_icons_vivo)
         
         # Skill Order
-        self.panel_skills, self.l_skills = self.crear_panel("ðŸ“– RUTA DE HABILIDADES")
-        self.lbl_skill_order = QLabel("Selecciona un campeÃ³n")
+        self.panel_skills, self.l_skills = self.crear_panel("📖 RUTA DE HABILIDADES")
+        self.lbl_skill_order = QLabel("Selecciona un campeón")
         self.lbl_skill_order.setAlignment(Qt.AlignCenter)
         self.lbl_skill_order.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 16px; font-weight: bold; padding: 8px;")
         self.l_skills.addWidget(self.lbl_skill_order)
-        self.btn_export_skills = QPushButton("ðŸ“¤ Subir orden al Cliente")
+        self.btn_export_skills = QPushButton("📤 Subir orden al Cliente")
         self.btn_export_skills.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD}; border: 1px solid {ACCENT_TEAL}; border-radius: 4px; color: {ACCENT_TEAL}; font-size: 11px; padding: 6px 16px; font-weight: bold; }}
             QPushButton:hover {{ background-color: #1a3a3a; }}
@@ -100,8 +100,8 @@ class VivoTabMixin:
         self.l_skills.addWidget(self.btn_export_skills, alignment=Qt.AlignCenter)
         l_center.addWidget(self.panel_skills)
 
-        # â”€â”€ PANEL PATHING JUNGLA (solo visible cuando rol = JUNGLA) â”€â”€
-        self.pnl_pathing, self.l_pathing = self.crear_panel("ðŸ—ºï¸ PATHING DE JUNGLA")
+        # ── PANEL PATHING JUNGLA (solo visible cuando rol = JUNGLA) ──
+        self.pnl_pathing, self.l_pathing = self.crear_panel("🗺️ PATHING DE JUNGLA")
         self.lbl_pathing_estilo = QLabel("")
         self.lbl_pathing_estilo.setStyleSheet(f"font-size: 12px; font-weight: bold; padding: 2px 0;")
         self.l_pathing.addWidget(self.lbl_pathing_estilo)
@@ -165,12 +165,12 @@ class VivoTabMixin:
         except: pass
 
     def auto_detectar_lcu(self):
-        """Solo hace operaciones rÃ¡pidas (leer lockfile). El trabajo pesado (HTTP)
+        """Solo hace operaciones rápidas (leer lockfile). El trabajo pesado (HTTP)
         se lanza en hilos secundarios para no congelar la UI."""
         conectado = self.lcu.conectar()
         
         if not conectado:
-            # Cliente cerrado o lockfile desapareciÃ³ â†’ resetear todo
+            # Cliente cerrado o lockfile desapareció → resetear todo
             if self.radar_activo:
                 self.radar_activo = False
                 self.perfil_cargado = False
@@ -187,24 +187,24 @@ class VivoTabMixin:
         if not self.radar_activo:
             self.radar_activo = True
             self._reproducir_sonido("info")
-            self.lbl_estado_lcu.setText("âœ“ ENLAZADO AL CLIENTE DE LOL")
+            self.lbl_estado_lcu.setText("✓ ENLAZADO AL CLIENTE DE LOL")
             self.lbl_estado_lcu.setStyleSheet(f"color: {GREEN_WR}; font-weight: bold; font-size: 14px;")
-            # PequeÃ±a pausa: la API HTTP del cliente tarda ~2s en estar lista tras
+            # Pequeña pausa: la API HTTP del cliente tarda ~2s en estar lista tras
             # aparecer el lockfile. Sin esto, el primer fetch falla y el usuario
-            # pensarÃ­a que la app no funciona.
+            # pensaría que la app no funciona.
             time.sleep(1.5)
         
-        # Cargar perfil en hilo secundario (si no estÃ¡ ya cargÃ¡ndose)
+        # Cargar perfil en hilo secundario (si no está ya cargándose)
         if not self.perfil_cargado and not self._cargando_perfil:
             self._cargando_perfil = True
             threading.Thread(target=self._fetch_perfil, daemon=True).start()
         
-        # Actualizar radar/draft en hilo secundario (si no estÃ¡ ya actualizÃ¡ndose)
+        # Actualizar radar/draft en hilo secundario (si no está ya actualizándose)
         if not self._actualizando_radar:
             self._actualizando_radar = True
             threading.Thread(target=self._fetch_radar, daemon=True).start()
         
-        # Auto-switch de pestaÃ±as segun fase del juego + notificaciones
+        # Auto-switch de pestañas segun fase del juego + notificaciones
         fase = self.lcu.obtener_fase_juego()
         if fase != self._last_fase:
             # Notificaciones de escritorio en transiciones de fase
@@ -215,7 +215,7 @@ class VivoTabMixin:
                 elif fase == "ChampSelect":
                     self.tray_icon.showMessage("NEXUS", "Champ Select iniciado", QIcon(), 4000)
                 elif fase == "PreEndOfGame":
-                    self.tray_icon.showMessage("NEXUS", "Partida terminada â€” Ver analisis", QIcon(), 4000)
+                    self.tray_icon.showMessage("NEXUS", "Partida terminada — Ver analisis", QIcon(), 4000)
                     # Marcar ultimo draft como completado
                     try:
                         if hasattr(self, '_draft_id_actual') and self._draft_id_actual:
@@ -322,20 +322,20 @@ class VivoTabMixin:
 
     def _on_radar_listo(self, draft):
         """Se ejecuta en el hilo principal. Actualiza la UI del radar.
-        Si no hay draft activo, simplemente se salta la actualizaciÃ³n SIN desconectar."""
+        Si no hay draft activo, simplemente se salta la actualización SIN desconectar."""
         self._actualizando_radar = False
         
         if not self.radar_activo:
             return
         
         if not draft:
-            # No hay sesiÃ³n de draft activa â†’ no desconectar, solo esperar
+            # No hay sesión de draft activa → no desconectar, solo esperar
             return
         
         try:
             rol_api = self.lcu.obtener_mi_rol(draft)
             rol_ui = API_TO_ROL.get(rol_api, "MID")
-            self.lbl_rol_vivo.setText(f"LÃNEA ASIGNADA: {rol_ui}")
+            self.lbl_rol_vivo.setText(f"LÍNEA ASIGNADA: {rol_ui}")
 
             picks_al, picks_en = [], []
             pos_al, pos_en = [], []
@@ -386,7 +386,7 @@ class VivoTabMixin:
             
             # Fallback inteligente si no se encontro rival de linea por posicion
             if not enemigo_lane and enemigos_procesados:
-                # 1. Por CLASE del campeon (mas fiable: Marksmanâ†’BOTTOM, Supportâ†’UTILITY, etc.)
+                # 1. Por CLASE del campeon (mas fiable: Marksman→BOTTOM, Support→UTILITY, etc.)
                 from src.tags_champions import obtener_tag
                 rol_to_class = {
                     "TOP": ("Fighter", "Tank"), "JUNGLE": ("Fighter", "Tank", "Assassin"),
@@ -404,7 +404,7 @@ class VivoTabMixin:
                     except Exception:
                         pass
                 
-                # 2. Por rol tipico en BD (cache) â€” con tiebreaker: el mas frecuente en este rol
+                # 2. Por rol tipico en BD (cache) — con tiebreaker: el mas frecuente en este rol
                 if not enemigo_lane:
                     cache_rol = self._cache_rol_tipico.get(rol_api, set())
                     candidatos_cache = []
@@ -461,9 +461,9 @@ class VivoTabMixin:
                 picks_en_db = self._nombres_db(picks_en)
                 
                 ad_al, ap_al, tanks_al = analizar_composicion(picks_al_db)
-                self.lbl_ally_stats.setText(f"DaÃ±o AD: {ad_al}% | DaÃ±o AP: {ap_al}% | Frontlane: {tanks_al}")
+                self.lbl_ally_stats.setText(f"Daño AD: {ad_al}% | Daño AP: {ap_al}% | Frontlane: {tanks_al}")
                 ad_en, ap_en, tanks_en = analizar_composicion(picks_en_db)
-                self.lbl_enemy_stats.setText(f"DaÃ±o AD: {ad_en}% | DaÃ±o AP: {ap_en}% | Frontlane: {tanks_en}")
+                self.lbl_enemy_stats.setText(f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
                 
                 self.mostrar_picks_vivo(rol_api, picks_al_db, picks_en_db)
 
@@ -474,7 +474,7 @@ class VivoTabMixin:
                 if len(picks_al_db) == 5 and len(picks_en_db) == 5:
                     wr = calcular_winrate_5v5(picks_al_db, picks_en_db, pos_al, pos_en)
                     color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
-                    tendencia = "â†‘ Ventaja de Sinergia" if wr > 52 else "â†“ Desventaja de Draft" if wr < 48 else "â‰ˆ Matchup Equilibrado"
+                    tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
                     self.lbl_wr_numero.setText(f"{wr}%")
                     self.lbl_wr_numero.setStyleSheet(f"color: {color}; font-family: Impact; font-size: 42px;")
                     self.lbl_wr_razon.setText(tendencia)
@@ -516,13 +516,13 @@ class VivoTabMixin:
                 if bans_filtrados:
                     for i, (ban, wr, partidas) in enumerate(bans_filtrados): 
                         self.renderizar_icono(ban, "champ", self.fr_bans_icons_vivo, 0, i,
-                            f"ðŸš« Baneo sugerido: {self._nombre_display(ban)}\nðŸ“Š WR rival: {wr}% en {partidas} partidas", size=35)
+                            f"🚫 Baneo sugerido: {self._nombre_display(ban)}\n📊 WR rival: {wr}% en {partidas} partidas", size=35)
                 else: 
                     lbl_noban = QLabel("Sin recomendaciones")
                     lbl_noban.setStyleSheet("color: gray;")
                     self.fr_bans_icons_vivo.addWidget(lbl_noban)
 
-                # â”€â”€ COUNTER PICKS contra el rival de linea â”€â”€
+                # ── COUNTER PICKS contra el rival de linea ──
                 self._actualizar_counters_vivo(rol_api, enemigo_lane)
 
                 if mi_campeon:
@@ -551,7 +551,7 @@ class VivoTabMixin:
                     self.lbl_skill_order.setText(f"Max: {skill_order}  (R al 6/11/16)")
                     self.btn_export_skills.setVisible(True)
 
-                    # Auto-import segun configuraciÃ³n
+                    # Auto-import segun configuración
                     if self.user_settings.get("auto_runas", False):
                         self._auto_importar_runas(ids_runas, mi_campeon)
                     if self.user_settings.get("auto_hechizos", False):
@@ -563,9 +563,9 @@ class VivoTabMixin:
                 else: 
                     self.current_skill_order = None
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)
-                    self.lbl_skill_order.setText("Selecciona un campeÃ³n")
+                    self.lbl_skill_order.setText("Selecciona un campeón")
                     self.btn_export_skills.setVisible(False)
-            # â”€â”€ PATHING JUNGLA â”€â”€
+            # ── PATHING JUNGLA ──
             if rol_api == "JUNGLE" and mi_campeon:
                 # Buscar jungla enemigo en picks
                 enemy_jg = None
@@ -583,9 +583,9 @@ class VivoTabMixin:
                 self.lbl_pathing_estilo.setStyleSheet(
                     f"font-size: 12px; font-weight: bold; color: {pathing.get('color', ACCENT_TEAL)};"
                 )
-                self.lbl_pathing_inicio.setText(f"ðŸ Inicio: {pathing.get('inicio', '')}")
-                self.lbl_pathing_ruta.setText(f"ðŸ“ Ruta: {pathing.get('ruta', '')}")
-                self.lbl_pathing_gank.setText(f"ðŸ—¡ï¸ Gank: {pathing.get('prioridad_gank', '')}")
+                self.lbl_pathing_inicio.setText(f"🏁 Inicio: {pathing.get('inicio', '')}")
+                self.lbl_pathing_ruta.setText(f"📍 Ruta: {pathing.get('ruta', '')}")
+                self.lbl_pathing_gank.setText(f"🗡️ Gank: {pathing.get('prioridad_gank', '')}")
                 vs = pathing.get("vs_jungla", "")
                 self.lbl_pathing_vs.setText(vs)
                 self.lbl_pathing_vs.setVisible(bool(vs))
@@ -593,36 +593,36 @@ class VivoTabMixin:
             else:
                 self.pnl_pathing.setVisible(False)
 
-            # Actualizar tip segÃºn estado del draft
+            # Actualizar tip según estado del draft
             if mi_campeon and enemigo_lane:
                 self.lbl_radar_tip.setText(
                     f"âš¡ <b>Coach:</b> Juegas <b>{self._nombre_display(mi_campeon)}</b> vs <b>{self._nombre_display(enemigo_lane)}</b>. "
-                    f"Revisa los counters, runas y hechizos abajo. Â¡Buena suerte!"
+                    f"Revisa los counters, runas y hechizos abajo. ¡Buena suerte!"
                 )
             elif mi_campeon and not enemigo_lane:
                 self.lbl_radar_tip.setText(
-                    f"ðŸŽ¯ <b>Coach:</b> Pickeaste {self._nombre_display(mi_campeon)}. Revisa el setup recomendado abajo. "
-                    f"Prioriza runas y objetos segÃºn la composiciÃ³n enemiga."
+                    f"🎯 <b>Coach:</b> Pickeaste {self._nombre_display(mi_campeon)}. Revisa el setup recomendado abajo. "
+                    f"Prioriza runas y objetos según la composición enemiga."
                 )
             elif not mi_campeon and len(picks_al) > 0:
                 self.lbl_radar_tip.setText(
-                    "ðŸ’¡ <b>Coach:</b> Espera a ver el pick rival antes de elegir. "
-                    "Mientras, revisa los bans sugeridos y la composiciÃ³n de tu equipo."
+                    "💡 <b>Coach:</b> Espera a ver el pick rival antes de elegir. "
+                    "Mientras, revisa los bans sugeridos y la composición de tu equipo."
                 )
             else:
                 self.lbl_radar_tip.setText(
-                    "ðŸ’¡ <b>Coach:</b> En Champ Select, prioriza counter-pickear a tu rival de lÃ­nea. "
+                    "💡 <b>Coach:</b> En Champ Select, prioriza counter-pickear a tu rival de línea. "
                     "Revisa runas y hechizos recomendados abajo."
                 )
 
-            # Tips de matchup especÃ­ficos
+            # Tips de matchup específicos
             if enemigo_lane:
                 enemy_db = self._nombre_db(enemigo_lane) or enemigo_lane
                 tips = obtener_tips_matchup(enemy_db)
                 if tips:
-                    tips_html = "  |  ".join(f"â€¢ {t}" for t in tips[:2])
+                    tips_html = "  |  ".join(f"• {t}" for t in tips[:2])
                     self.lbl_matchup_tips.setText(
-                        f"ðŸ—¡ï¸ <b>vs {self._nombre_display(enemigo_lane)}:</b>  {tips_html}"
+                        f"🗡️ <b>vs {self._nombre_display(enemigo_lane)}:</b>  {tips_html}"
                     )
                     self.lbl_matchup_tips.setVisible(True)
                 else:

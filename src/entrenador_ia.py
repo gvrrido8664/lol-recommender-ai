@@ -5,6 +5,8 @@ import os
 import sys
 import warnings
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, roc_auc_score
 
 warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
@@ -13,7 +15,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
 from src.db_manager import obtener_conexion, DATA_DIR
-from src.riot_api import cargar_campeones
+from src.riot_api import cargar_campeones, normalizar_nombre_champ
 from src.tags_champions import (
     obtener_tag, obtener_nivel_cc, obtener_dano, obtener_poder_temprano,
     obtener_escalado, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte
@@ -204,7 +206,7 @@ def entrenar_modelos():
         df_parts = pd.read_sql_query(query, conn)
         
         # Limpieza de nombres heredada de Riot
-        df_parts['champion'] = df_parts['champion'].replace('MonkeyKing', 'Wukong')
+        df_parts['champion'] = df_parts['champion'].apply(normalizar_nombre_champ)
         
         conteo = df_parts.groupby("match_id").size()
         match_ids_validos = conteo[conteo == 10].index
@@ -246,16 +248,41 @@ def entrenar_modelos():
         
         X = np.array([fila[0] for fila in dataset_filas])
         y = [fila[1] for fila in dataset_filas]
+
+        conteo = {}
+        for etiqueta in y:
+            conteo[etiqueta] = conteo.get(etiqueta, 0) + 1
+        mascara = [conteo[etiqueta] >= 2 for etiqueta in y]
+        if not all(mascara):
+            descartados = sum(1 for v in mascara if not v)
+            print(f"  🧹 Filtrando {descartados} ejemplos de campeones con <2 apariciones")
+            X = X[mascara]
+            y = [etiqueta for etiqueta, m in zip(y, mascara) if m]
         
-        # Modelo optimizado: menos árboles + profundidad limitada = archivo mucho más pequeño
+        # Modelo optimizado: menos arboles + profundidad limitada = archivo mucho mas pequeño
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
         modelo = RandomForestClassifier(
-            n_estimators=25,        # 100→25 (75% menos árboles)
-            max_depth=12,           # limita profundidad de cada árbol
-            min_samples_leaf=5,     # evita hojas con pocas muestras
+            n_estimators=25,
+            max_depth=12,
+            min_samples_leaf=5,
             random_state=42,
             n_jobs=-1
         )
-        modelo.fit(X, y)
+        modelo.fit(X_train, y_train)
+
+        y_pred = modelo.predict(X_test)
+        report = classification_report(y_test, y_pred, labels=sorted(set(y_test)), zero_division=0)
+        proba = modelo.predict_proba(X_test)
+        try:
+            auc = roc_auc_score(y_test, proba, multi_class='ovr', labels=sorted(set(y_test)))
+        except ValueError:
+            auc = None
+        print(f"     📊 {rol}: samples={len(X_train)}/{len(X_test)}, "
+              f"accuracy={round(modelo.score(X_test, y_test), 3)}, "
+              f"roc_auc={round(auc, 3) if auc else 'N/A'}")
+        print(f"        Classification report:\n{report}")
         
         modelos_guardados[rol] = {
             "model": modelo,
@@ -291,8 +318,8 @@ def entrenar_modelo_1v1():
               AND p1.team != p2.team
         """
         df = pd.read_sql_query(query, conn, params=(rol, rol))
-        df['aliado'] = df['aliado'].replace('MonkeyKing', 'Wukong')
-        df['enemigo'] = df['enemigo'].replace('MonkeyKing', 'Wukong')
+        df['aliado'] = df['aliado'].apply(normalizar_nombre_champ)
+        df['enemigo'] = df['enemigo'].apply(normalizar_nombre_champ)
 
         if len(df) < 15:
             print(f"  ⚠️ Datos insuficientes para {rol} ({len(df)}). Saltando...")

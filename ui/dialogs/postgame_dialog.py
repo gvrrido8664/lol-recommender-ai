@@ -8,7 +8,7 @@ from ui.design import *
 
 
 class PostGameDialog(QDialog):
-    """Resumen rÃ¡pido al terminar partida: KDA, CS/min, comparativa y consejo del coach."""
+    """Resumen rápido al terminar partida: KDA, CS/min, comparativa y consejo del coach."""
 
     coaching_requested = Signal()
 
@@ -41,9 +41,9 @@ class PostGameDialog(QDialog):
         lay.setContentsMargins(18, 14, 18, 14)
         lay.setSpacing(8)
 
-        # TÃ­tulo + resultado
+        # Título + resultado
         hdr = QHBoxLayout()
-        lbl_title = QLabel("ðŸ  RESUMEN DE PARTIDA")
+        lbl_title = QLabel("🏁  RESUMEN DE PARTIDA")
         lbl_title.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px; font-weight: bold; letter-spacing: 1px;")
         hdr.addWidget(lbl_title)
         hdr.addStretch()
@@ -57,7 +57,7 @@ class PostGameDialog(QDialog):
         else:
             lbl_res = QLabel("")
         hdr.addWidget(lbl_res)
-        btn_close = QPushButton("âœ•")
+        btn_close = QPushButton("✕")
         btn_close.setFixedSize(20, 20)
         btn_close.setStyleSheet(f"background: transparent; border: none; color: {TEXT_MUTED}; font-size: 12px;")
         btn_close.clicked.connect(self.close)
@@ -68,9 +68,9 @@ class PostGameDialog(QDialog):
         sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
         lay.addWidget(sep)
 
-        # CampeÃ³n
+        # Campeón
         champ = s.get("champion", "?")
-        lbl_champ = QLabel(f"ðŸŽ®  {champ}")
+        lbl_champ = QLabel(f"🎮  {champ}")
         lbl_champ.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ACCENT_TEAL};")
         lay.addWidget(lbl_champ)
 
@@ -104,7 +104,7 @@ class PostGameDialog(QDialog):
         cs_min = cs / max(1, game_time / 60)
         cs_ref = 6.5
         cs_color = GREEN_WR if cs_min >= cs_ref else (YELLOW_WR if cs_min >= 5.0 else RED_WR)
-        lbl_cs = QLabel(f"ðŸŒ¾  CS: {cs}  ({cs_min:.1f}/min)  â€” ref. {cs_ref}/min")
+        lbl_cs = QLabel(f"🌾  CS: {cs}  ({cs_min:.1f}/min)  — ref. {cs_ref}/min")
         lbl_cs.setStyleSheet(f"color: {cs_color}; font-size: 11px;")
         lay.addWidget(lbl_cs)
 
@@ -121,15 +121,15 @@ class PostGameDialog(QDialog):
             dmg_str = ""
         extras = []
         if vision > 0:
-            extras.append(f"ðŸ‘ Vision {vision}")
+            extras.append(f"👁 Vision {vision}")
         if wards > 0:
-            extras.append(f"ðŸ® Wards {wards}")
+            extras.append(f"🏮 Wards {wards}")
         if cwards > 0:
-            extras.append(f"ðŸ”® Control {cwards}")
+            extras.append(f"🔮 Control {cwards}")
         if objectives > 0:
-            extras.append(f"ðŸŽ¯ Objs {objectives}")
+            extras.append(f"🎯 Objs {objectives}")
         if dmg_str:
-            extras.append(f"âš”ï¸ Dano {dmg_str}")
+            extras.append(f"⚔️ Dano {dmg_str}")
         if extras:
             lbl_extras = QLabel("  |  ".join(extras))
             lbl_extras.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; padding: 2px 0;")
@@ -170,7 +170,7 @@ class PostGameDialog(QDialog):
 
         # Botones
         btn_row = QHBoxLayout()
-        btn_coach = QPushButton("ðŸ“– Ver Coaching")
+        btn_coach = QPushButton("📖 Ver Coaching")
         btn_coach.setStyleSheet(f"""
             QPushButton {{
                 background: {BG_CARD}; color: {ACCENT_TEAL};

@@ -668,7 +668,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 txt_l.addWidget(lbl_cat)
 
                 lbl_name = QLabel(f"{sit['nombre']}  <span style='color:{TEXT_SUBTLE};font-size:9px;'>{sit['coste']}g</span>")
-                lbl_name.setStyleSheet("color: {TEXT_PRIMARY}; font-size: 10px; font-weight: bold;")
+                lbl_name.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 10px; font-weight: bold;")
                 lbl_name.setTextFormat(Qt.RichText)
                 txt_l.addWidget(lbl_name)
 
@@ -676,7 +676,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 if len(razon) > 75:
                     razon = razon[:72] + "â€¦"
                 lbl_razon = QLabel(razon)
-                lbl_razon.setStyleSheet("color: {TEXT_MUTED}; font-size: 9px;")
+                lbl_razon.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
                 lbl_razon.setWordWrap(True)
                 txt_l.addWidget(lbl_razon)
 

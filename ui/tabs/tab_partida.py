@@ -199,7 +199,7 @@ class PartidaTabMixin:
                     f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
-            except:
+            except Exception:
                 self.lbl_partida_comp.setText("")
         else:
             self.lbl_partida_comp.setText("")
@@ -247,7 +247,7 @@ class PartidaTabMixin:
                     f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
-            except:
+            except Exception:
                 self.lbl_partida_comp.setText("")
         else:
             self.lbl_partida_comp.setText("")
@@ -511,7 +511,7 @@ class PartidaTabMixin:
                     r = cur.fetchone()
                     if r and r[0]:
                         wr = f"{float(r[0])}%"
-                except:
+                except Exception:
                     pass
 
                 row = tabla.rowCount(); tabla.insertRow(row)
@@ -567,7 +567,7 @@ class PartidaTabMixin:
                     r = cur.fetchone()
                     if r and r[0]:
                         wr = f"{float(r[0])}%"
-                except:
+                except Exception:
                     pass
 
                 row = tabla.rowCount(); tabla.insertRow(row)
@@ -642,14 +642,14 @@ class PartidaTabMixin:
                         elif w_count <= 1:
                             comentarios.append("❄️ Racha mala")
                             color = RED_WR if total > 10 else color
-                except:
+                except Exception:
                     pass
 
             if not comentarios:
                 comentarios.append("—")
 
             return " · ".join(comentarios), color
-        except:
+        except Exception:
             return "—", TEXT_MUTED
         finally:
             if close_conn and conn is not None:
@@ -984,7 +984,7 @@ class PartidaTabMixin:
             tag = obtener_tag(champ_key)
             d = tag.get("difficulty", 2)
             return "⭐" * d
-        except:
+        except Exception:
             return "⭐⭐"
 
     def _nombre_con_dificultad(self, champion):

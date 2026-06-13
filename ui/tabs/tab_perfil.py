@@ -840,7 +840,7 @@ class PerfilTabMixin:
             games = sorted(games, key=lambda g: (
                 self._parse_game_date(g) or datetime(2000,1,1)
             ), reverse=True)
-        except:
+        except Exception:
             pass
 
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0

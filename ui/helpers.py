@@ -13,6 +13,9 @@ import os
 import json
 
 from src.paths import BASE_DIR, CONFIG_DIR
+from src.logger import get_logger
+
+log = get_logger(__name__)
 
 
 # ─── SHARDS DE ESTADISTICAS ───────────────────────────────────────────────
@@ -364,13 +367,13 @@ def cargar_settings():
         with open(os.path.join(CONFIG_DIR, "config.json"), "r", encoding="utf-8") as f:
             saved = json.load(f)
             return {**DEFAULT_SETTINGS, **saved.get("user_settings", {})}
-    except:
+    except Exception:
         # Fallback: leer desde BASE_DIR (bundled default config)
         try:
             with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as f:
                 saved = json.load(f)
                 return {**DEFAULT_SETTINGS, **saved.get("user_settings", {})}
-        except:
+        except Exception:
             return dict(DEFAULT_SETTINGS)
 
 
@@ -385,5 +388,6 @@ def guardar_settings(settings):
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
         return True
-    except:
+    except Exception as e:
+        log.warning("No se pudo guardar settings: %s", e)
         return False

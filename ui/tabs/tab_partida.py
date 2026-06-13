@@ -821,7 +821,7 @@ class PartidaTabMixin:
         lbl_name = QLabel(self._nombre_con_dificultad(cname))
         lbl_name.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; font-weight: bold; background: transparent;")
         txt_vbox.addWidget(lbl_name)
-        lbl_cs = QLabel(f"CS {total_cs} ({cs_min}/min)")
+        lbl_cs = QLabel(f"{cs_min} CS/min")
         lbl_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 8px; background: transparent;")
         txt_vbox.addWidget(lbl_cs)
         l0.addLayout(txt_vbox, 1)

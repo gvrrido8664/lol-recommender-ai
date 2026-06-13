@@ -435,6 +435,10 @@ class PartidaTabMixin:
                         hseen.add(gid)
                         self.historial_games.append(g)
 
+                puuid = getattr(self, '_season_puuid', None)
+                if puuid and hasattr(self, 'all_games_season'):
+                    guardar_season_cache(puuid, self.all_games_season)
+
                 if not hasattr(self, '_partial_refresh_timer'):
                     self._partial_refresh_timer = QTimer(self)
                     self._partial_refresh_timer.setSingleShot(True)

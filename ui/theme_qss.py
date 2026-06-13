@@ -79,7 +79,7 @@ def hoja_estilos_global() -> str:
             QPushButton:disabled {{ 
                 background-color: {BG_CARD_HOVER}; 
                 color: {BG_BORDER}; 
-                border: 1px solid #334155; 
+                border: 1px solid #2f2535; 
             }}
             
             /* ═══ PESTAÑAS ═══ */
@@ -159,7 +159,7 @@ def hoja_estilos_global() -> str:
                 color: #ffffff; 
             }}
             QTableWidget::item:hover {{ 
-                background-color: #1a2844; 
+                background-color: #211a28; 
             }}
             QHeaderView::section {{ 
                 background-color: {BG_CARD}; 
@@ -197,7 +197,7 @@ def hoja_estilos_global() -> str:
                 margin: 4px 2px 4px 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: #2a3a5c;
+                background: #382a40;
                 border-radius: 3px;
                 min-height: 30px;
             }}
@@ -219,7 +219,7 @@ def hoja_estilos_global() -> str:
                 margin: 2px 4px 2px 4px;
             }}
             QScrollBar::handle:horizontal {{
-                background: #2a3a5c;
+                background: #382a40;
                 border-radius: 3px;
                 min-width: 30px;
             }}
@@ -298,5 +298,34 @@ def hoja_estilos_global() -> str:
             QSlider::sub-page:horizontal {{
                 background: {ACCENT_RED};
                 border-radius: 3px;
+            }}
+
+            /* ═══ MENUS (bandeja / contextuales) ═══ */
+            QMenu {{
+                background-color: {BG_CARD};
+                border: 1px solid {BORDER_SUBTLE};
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 18px;
+                border-radius: 4px;
+                color: {TEXT_WHITE};
+            }}
+            QMenu::item:selected {{
+                background-color: {ACCENT_RED};
+                color: #ffffff;
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {BORDER_SUBTLE};
+                margin: 4px 8px;
+            }}
+
+            /* ═══ DIALOGOS / MENSAJES ═══ */
+            QMessageBox, QDialog {{
+                background-color: {BG_PANEL};
+            }}
+            QMessageBox QLabel {{
+                color: {TEXT_WHITE};
             }}
         """

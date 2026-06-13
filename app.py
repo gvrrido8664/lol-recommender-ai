@@ -48,6 +48,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             self.setWindowIcon(QIcon(icon_path))
         self.resize(1500, 950)
         self.aplicar_estilos()
+        self._aplicar_barra_titulo_oscura()
 
         self.user_settings = cargar_settings()
         self.champs_dict = cargar_campeones()
@@ -147,6 +148,23 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
         QTimer.singleShot(2000, self._check_actualizaciones)
         QTimer.singleShot(10000, self._check_app_update)
+
+    def _aplicar_barra_titulo_oscura(self):
+        """Pone la barra de título de Windows en modo oscuro (atributo DWM) para
+        que no choque con el contenido. No-op fuera de Windows o si falla."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            hwnd = int(self.winId())
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            valor = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(valor), ctypes.sizeof(valor)
+            )
+        except Exception as e:
+            log.debug("No se pudo aplicar barra de título oscura: %s", e)
 
     def _check_app_update(self):
         try:
@@ -297,7 +315,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         btn_settings.setToolTip("Configuración de la app")
         btn_settings.setIcon(self._crear_icono_engranaje(20, "#4a5070"))
         btn_settings.setStyleSheet(f"""
-            QPushButton {{ background: transparent; border: 1px solid #2a3050; border-radius: 17px; }}
+            QPushButton {{ background: transparent; border: 1px solid #2f2535; border-radius: 17px; }}
             QPushButton:hover {{ border: 1px solid {BORDER_ACCENT}; }}
         """)
         btn_settings.clicked.connect(self.abrir_settings)
@@ -842,15 +860,12 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
 if __name__ == "__main__":
     import signal
-    from ui.tema_moderno import habilitar_hidpi, aplicar_tema_base
 
-    habilitar_hidpi()  # antes de crear QApplication
     app = QApplication(sys.argv)
     app.setApplicationName("NEXUS")
     app.setFont(QFont("Segoe UI", 10))
-    # Tema base moderno (menus, dialogos, foco) con acento rojo NEXUS.
-    # El QSS propio de la ventana se aplica encima en aplicar_estilos().
-    aplicar_tema_base()
+    # El tema lo define enteramente el QSS propio (hoja_estilos_global) que la
+    # ventana aplica en aplicar_estilos(). Qt6 maneja High-DPI por defecto.
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 

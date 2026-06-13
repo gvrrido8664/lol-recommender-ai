@@ -413,12 +413,9 @@ class PartidaTabMixin:
             print(f"[PostGame] Error mostrando diálogo: {e}")
 
     def _on_season_partial(self, batch: list):
-        """Recibe un lote de partidas de Riot API (hilo principal via signal).
-        Las añade a all_games_season y refresca incrementalmente la tabla de season."""
         try:
             if not hasattr(self, 'all_games_season'):
                 self.all_games_season = []
-            # DEDUP contra lo que ya tenemos
             seen = set()
             for g in self.all_games_season:
                 gid = str(g.get("gameId", ""))
@@ -434,10 +431,43 @@ class PartidaTabMixin:
                     seen.add(gid)
                     self.all_games_season.append(g)
                     nuevos += 1
+
             if nuevos > 0:
-                self._cargar_stats_season()
+                if not hasattr(self, 'historial_games'):
+                    self.historial_games = []
+                hseen = set()
+                for g in self.historial_games:
+                    gid = str(g.get("gameId", ""))
+                    if not gid:
+                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    hseen.add(gid)
+                for g in batch:
+                    gid = str(g.get("gameId", ""))
+                    if not gid:
+                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    if gid and gid not in hseen:
+                        hseen.add(gid)
+                        self.historial_games.append(g)
+
+                if not hasattr(self, '_partial_refresh_timer'):
+                    self._partial_refresh_timer = QTimer(self)
+                    self._partial_refresh_timer.setSingleShot(True)
+                    self._partial_refresh_timer.timeout.connect(
+                        self._on_season_partial_refresh
+                    )
+                self._partial_refresh_timer.start(2000)
         except Exception as e:
             print(f"[SeasonPartial] Error: {e}")
+
+    def _on_season_partial_refresh(self):
+        try:
+            if not hasattr(self, 'historial_games') or not self.historial_games:
+                return
+            if not getattr(self, 'perfil_cargado', False):
+                return
+            self._renderizar_historial(self.historial_games)
+        except Exception as e:
+            print(f"[SeasonPartialRefresh] Error: {e}")
 
     def _ir_a_coaching(self):
         """Navega a la pestaña de Coaching."""

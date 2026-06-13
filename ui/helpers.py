@@ -26,7 +26,7 @@ STAT_SHARDS = {
     "5011": ("Vida", "#16a085"),
     "5013": ("Tenacidad", "#34495e"),
     "5002": ("Armadura", "#e67e22"),
-    "5003": ("Res. Mágica", "#3498db"),
+    "5003": ("Res. Mágica", "#f0b232"),
 }
 
 # ─── RUTAS DE HABILIDADES (skill order) ───
@@ -92,7 +92,7 @@ JUNGLA_ESTILO = {
         "champs": {"MasterYi", "Karthus", "Lillia", "Kindred", "Nasus", "Shyvana",
                    "DrMundo", "Viego", "BelVeth", "Belveth", "Mordekaiser"},
         "label": "🌾 FARMEADOR / ESCALADA",
-        "color": "#2dd4bf",
+        "color": "#f0b232",
         "inicio": "Empieza en el buff que te permita full-clear mas rapido.",
         "ruta": "Full clear de la jungla → nivel 6 con ult → ganks selectivos.",
         "prioridad_gank": "Evita ganks tempranos si van mal. Llega al 6 y entonces actua.",

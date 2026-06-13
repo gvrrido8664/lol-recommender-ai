@@ -20,14 +20,14 @@ class SettingsDialog(QDialog):
             QRadioButton {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 6px; padding: 6px 4px; }}
             QRadioButton::indicator {{ width: 18px; height: 18px; }}
             QRadioButton::indicator:checked {{ background-color: {BORDER_ACCENT}; border-radius: 9px; }}
-            QRadioButton:hover {{ background-color: #1a2744; border-radius: 4px; }}
+            QRadioButton:hover {{ background-color: #211a28; border-radius: 4px; }}
             QCheckBox {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 8px; padding: 2px 0; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; }}
             QCheckBox:hover {{ color: {BORDER_ACCENT}; }}
-            QComboBox {{ background-color: #1a2b4c; color: {TEXT_WHITE}; border: 1px solid #2a3050; border-radius: 4px; padding: 4px 8px; min-width: 50px; }}
+            QComboBox {{ background-color: #251d2b; color: {TEXT_WHITE}; border: 1px solid #2f2535; border-radius: 4px; padding: 4px 8px; min-width: 50px; }}
             QComboBox::drop-down {{ border: none; }}
             QComboBox:hover {{ border: 1px solid {BORDER_ACCENT}; }}
-            QGroupBox {{ color: {BORDER_ACCENT}; font-weight: bold; font-size: 12px; border: 1px solid #1e3050; border-radius: 6px; margin-top: 8px; padding-top: 14px; }}
+            QGroupBox {{ color: {BORDER_ACCENT}; font-weight: bold; font-size: 12px; border: 1px solid #2a2030; border-radius: 6px; margin-top: 8px; padding-top: 14px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; }}
             QPushButton {{ color: white; }}
         """)

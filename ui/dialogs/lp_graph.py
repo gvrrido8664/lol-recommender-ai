@@ -15,8 +15,8 @@ class LPGraphWidget(QWidget):
         (1600, "Plat"),   (2000, "Emerald"),(2400, "Diamond"),(2800, "Master+"),
     ]
     TIER_COLORS = {
-        "Iron": "#6b7280", "Bronze": "#b45309", "Silver": "{TEXT_MUTED}",
-        "Gold": "{YELLOW_WARNING}", "Plat": "#c89b3c", "Emerald": "{GREEN_SUCCESS}",
+        "Iron": "#6b7280", "Bronze": "#b45309", "Silver": "#a39a93",
+        "Gold": "#f59e0b", "Plat": "#c89b3c", "Emerald": "#22c55e",
         "Diamond": "#f0b232", "Master+": "#e879f9",
     }
 
@@ -61,9 +61,9 @@ class LPGraphWidget(QWidget):
             if mn - 100 <= base <= mx + 100:
                 py = to_py(base)
                 if pad_t <= py <= h - pad_b:
-                    p.setPen(QPen(QColor("{BG_CARD_HOVER}"), 1, Qt.DashLine))
+                    p.setPen(QPen(QColor("#251d2b"), 1, Qt.DashLine))
                     p.drawLine(pad_l, py, w - pad_r, py)
-                    p.setPen(QColor(self.TIER_COLORS.get(name, "{TEXT_SUBTLE}")))
+                    p.setPen(QColor(self.TIER_COLORS.get(name, "#7a6f68")))
                     p.drawText(2, py - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
 
         # Línea de LP

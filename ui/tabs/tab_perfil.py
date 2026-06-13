@@ -258,8 +258,8 @@ class PerfilTabMixin:
         self.lbl_historial_vacio = QLabel(
             '<div style="text-align: center; padding: 40px;">'
             '<p style="font-size: 36px; margin: 0;">📜</p>'
-            '<p style="font-size: 14px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">Esperando datos del cliente...</p>'
-            '<p style="font-size: 11px; color: {BG_BORDER}; margin: 4px 0 0 0;">Conecta al cliente de LoL para ver tu historial de partidas.</p>'
+            '<p style="font-size: 14px; color: #7a6f68; margin: 8px 0 0 0;">Esperando datos del cliente...</p>'
+            '<p style="font-size: 11px; color: #3a2d3a; margin: 4px 0 0 0;">Conecta al cliente de LoL para ver tu historial de partidas.</p>'
             '</div>'
         )
         self.lbl_historial_vacio.setTextFormat(Qt.RichText)
@@ -1243,9 +1243,9 @@ class PerfilTabMixin:
         layout.setAlignment(Qt.AlignCenter)
 
         estados = [
-            ("🔥", "Concentrado", "{RED_DANGER}", "Concentrado: enfoque total"),
-            ("😐", "Normal", "{TEXT_SUBTLE}", "Normal: estado neutro"),
-            ("😤", "Tilted", "{YELLOW_WARNING}", "Tilted: frustrado"),
+            ("🔥", "Concentrado", "#ef4444", "Concentrado: enfoque total"),
+            ("😐", "Normal", "#7a6f68", "Normal: estado neutro"),
+            ("😤", "Tilted", "#f59e0b", "Tilted: frustrado"),
             ("😴", "Cansado", "#f0b232", "Cansado: fatiga"),
         ]
 

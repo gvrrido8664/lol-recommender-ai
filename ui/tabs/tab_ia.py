@@ -316,7 +316,7 @@ class IATabMixin:
             elif delta < 0:
                 delta_str = f'<span style="color:{RED_WR};">({delta})</span>'
             else:
-                delta_str = '<span style="color:{TEXT_SUBTLE};">(=)</span>'
+                delta_str = '<span style="color:#7a6f68;">(=)</span>'
             return (
                 f'<tr>'
                 f'<td width="140" style="color:{TEXT_MUTED};font-size:11px;padding:2px 6px;">{label}</td>'

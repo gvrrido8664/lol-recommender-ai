@@ -83,7 +83,7 @@ JUNGLA_ESTILO = {
                    "Rammus", "Volibear", "Warwick", "Hecarim", "Nunu", "Skarner",
                    "Pantheon", "Briar", "Trundle", "Udyr"},
         "label": "⚡ GANKERO TEMPRANO",
-        "color": "{GREEN_SUCCESS}",
+        "color": "#22c55e",
         "inicio": "Empieza en el buff mas cercano a la linea aliada con mas CC.",
         "ruta": "3 campamentos → gank a nivel 3 → continua clear y repite.",
         "prioridad_gank": "Busca carriles donde tu aliado tenga CC o una ventaja de level.",

@@ -385,7 +385,7 @@ class LCUConnector:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 return config.get("API_KEY")
-        except:
+        except Exception:
             pass
         return None
 

@@ -261,8 +261,8 @@ def request(self, method, endpoint, **kwargs):
 
 ```json
 // config.json:2-3 — API key y password de BD en texto plano en el repo
-"API_KEY": "RGAPI-5426a7f5-d646-47a0-a8ad-669b115d599f",
-"DATABASE_URL": "postgresql://nexus_d0ro_user:..."
+"API_KEY": "RGAPI-***REDACTADO-ROTAR***",
+"DATABASE_URL": "postgresql://***REDACTADO-ROTAR***"
 ```
 
 **Solucion:**
@@ -650,3 +650,28 @@ Fase 4 — Pulido (Semanas 7-8)
 ---
 
 *Documento generado tras auditoria completa del codigo. Referencias archivo:linea verificadas contra el codigo real de lol-recommender-v2 (Junio 2026).*
+
+---
+
+## Rotacion pendiente (accion manual)
+
+Las credenciales de produccion fueron expuestas en el historial de git (commits
+`7d45c4c`, `a24a826`). Aunque el texto plano ya fue redactado en este documento,
+los valores originales siguen en el historial. Para completar la remediacion, el
+humano dueno del repo debe:
+
+1. **Rotar la API key de Riot** — ir al portal de desarrollador de Riot
+   (https://developer.riotgames.com), generar una nueva clave de API,
+   actualizar el `config.json` local y, si se usa en Render, la variable de
+   entorno correspondiente.
+
+2. **Rotar las credenciales de PostgreSQL** — en el panel de Render, rotar la
+   contrasena del usuario de la base de datos, actualizar el `config.json` local
+   y la variable de entorno `DATABASE_URL`.
+
+3. **(Opcional, destructivo) Purgar el historial de git** — usar
+   `git filter-repo` (ya en `requirements.txt`) sobre un clon espejo para
+   eliminar `config.json` del historial completo. Esto reescribe el historial
+   compartido y requiere `--force` + coordinacion con cualquiera que tenga
+   forks/clones. NO ejecutar sin decision consciente. Documentacion:
+   https://github.com/newren/git-filter-repo

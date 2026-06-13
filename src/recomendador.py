@@ -325,7 +325,7 @@ def obtener_top_hechizos(campeon, carril, conn=None):
         if not filas:
             cur.execute("SELECT spells FROM participantes WHERE champion = %s AND spells != ''", (campeon,))
             filas = cur.fetchall()
-    except:
+    except Exception:
         if conn_owned:
             conn.close()
         return ["4", "14"]

@@ -199,7 +199,7 @@ class PartidaTabMixin:
                     f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
-            except:
+            except Exception:
                 self.lbl_partida_comp.setText("")
         else:
             self.lbl_partida_comp.setText("")
@@ -247,7 +247,7 @@ class PartidaTabMixin:
                     f"⚔️ Aliados: AD {ad_a}% / AP {ap_a}% ({tk_a} front)  |  "
                     f"Enemigos: AD {ad_e}% / AP {ap_e}% ({tk_e} front)"
                 )
-            except:
+            except Exception:
                 self.lbl_partida_comp.setText("")
         else:
             self.lbl_partida_comp.setText("")
@@ -416,17 +416,10 @@ class PartidaTabMixin:
         try:
             if not hasattr(self, 'all_games_season'):
                 self.all_games_season = []
-            seen = set()
-            for g in self.all_games_season:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                seen.add(gid)
+            seen = {self._gid_or_fallback(g) for g in self.all_games_season}
             nuevos = 0
             for g in batch:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                gid = self._gid_or_fallback(g)
                 if gid and gid not in seen:
                     seen.add(gid)
                     self.all_games_season.append(g)
@@ -435,19 +428,16 @@ class PartidaTabMixin:
             if nuevos > 0:
                 if not hasattr(self, 'historial_games'):
                     self.historial_games = []
-                hseen = set()
-                for g in self.historial_games:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    hseen.add(gid)
+                hseen = {self._gid_or_fallback(g) for g in self.historial_games}
                 for g in batch:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    gid = self._gid_or_fallback(g)
                     if gid and gid not in hseen:
                         hseen.add(gid)
                         self.historial_games.append(g)
+
+                puuid = getattr(self, '_season_puuid', None)
+                if puuid and hasattr(self, 'all_games_season'):
+                    guardar_season_cache(puuid, self.all_games_season)
 
                 if not hasattr(self, '_partial_refresh_timer'):
                     self._partial_refresh_timer = QTimer(self)
@@ -511,7 +501,7 @@ class PartidaTabMixin:
                     r = cur.fetchone()
                     if r and r[0]:
                         wr = f"{float(r[0])}%"
-                except:
+                except Exception:
                     pass
 
                 row = tabla.rowCount(); tabla.insertRow(row)
@@ -567,7 +557,7 @@ class PartidaTabMixin:
                     r = cur.fetchone()
                     if r and r[0]:
                         wr = f"{float(r[0])}%"
-                except:
+                except Exception:
                     pass
 
                 row = tabla.rowCount(); tabla.insertRow(row)
@@ -642,14 +632,14 @@ class PartidaTabMixin:
                         elif w_count <= 1:
                             comentarios.append("❄️ Racha mala")
                             color = RED_WR if total > 10 else color
-                except:
+                except Exception:
                     pass
 
             if not comentarios:
                 comentarios.append("—")
 
             return " · ".join(comentarios), color
-        except:
+        except Exception:
             return "—", TEXT_MUTED
         finally:
             if close_conn and conn is not None:
@@ -984,7 +974,7 @@ class PartidaTabMixin:
             tag = obtener_tag(champ_key)
             d = tag.get("difficulty", 2)
             return "⭐" * d
-        except:
+        except Exception:
             return "⭐⭐"
 
     def _nombre_con_dificultad(self, champion):

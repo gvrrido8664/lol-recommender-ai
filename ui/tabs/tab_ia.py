@@ -20,24 +20,24 @@ class IATabMixin:
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
 
-        btn_swap_w = QFrame()
-        btn_swap_w.setFixedSize(40, 34)
-        btn_swap_w.setToolTip("Intercambiar aliado / enemigo")
-        btn_swap_w.setCursor(Qt.PointingHandCursor)
-        btn_swap_w.setStyleSheet(f"""
-            QFrame {{ background-color: {BG_CARD_HOVER}; border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; }}
-            QFrame:hover {{ background-color: {ACCENT_RED}; }}
-        """)
-        btn_swap_w.mousePressEvent = lambda e: self._swap_matchup()
-        sw_lay = QHBoxLayout(btn_swap_w)
+        sw_frame = QFrame()
+        sw_frame.setFixedSize(48, 34)
+        sw_frame.setStyleSheet(f"background-color: transparent; border: none;")
+        sw_lay = QHBoxLayout(sw_frame)
         sw_lay.setContentsMargins(0, 0, 0, 0)
         sw_lay.setSpacing(0)
         for arrow, clr in [("←", GREEN_WR), ("→", RED_WR)]:
-            albl = QLabel(arrow)
-            albl.setAlignment(Qt.AlignCenter)
-            albl.setStyleSheet(f"color: {clr}; font-size: 16px; font-weight: bold; background: transparent;")
-            sw_lay.addWidget(albl)
-        ctrls.addWidget(btn_swap_w)
+            btn = QPushButton(arrow)
+            btn.setFixedSize(24, 34)
+            btn.setToolTip("Intercambiar aliado / enemigo")
+            btn.setStyleSheet(f"""
+                QPushButton {{ background-color: {BG_CARD_HOVER}; color: {clr}; border: 1px solid {BORDER_SUBTLE};
+                               border-radius: 2px; font-size: 14px; font-weight: bold; }}
+                QPushButton:hover {{ background-color: {ACCENT_RED}; color: white; }}
+            """)
+            btn.clicked.connect(self._swap_matchup)
+            sw_lay.addWidget(btn)
+        ctrls.addWidget(sw_frame)
 
         lbl_vs = QLabel("VS")
         lbl_vs.setStyleSheet(f"color: {RED_WR}; font-weight: bold; font-size: 13px; margin: 0 2px;")

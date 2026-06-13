@@ -1,10 +1,7 @@
 """Pestania COACHING PRO con tabs organizados por categoria y cache."""
 
 from ui.contexto import *
-import json
-import os
 import unicodedata
-from datetime import datetime, timedelta
 
 
 def _norm(s):
@@ -92,53 +89,17 @@ class CoachingTabMixin:
         for layout in self._coaching_tab_widgets.values():
             layout.addStretch()
 
-    def _get_coaching_cache_path(self):
-        try:
-            from src.paths import _get_writable_dir
-            d = _get_writable_dir()
-        except Exception:
-            d = DATA_DIR
-        puuid = getattr(self, '_coaching_puuid', 'default')
-        return os.path.join(d, f"coaching_cache_{puuid}.json")
-
     def _load_coaching_cache(self):
-        try:
-            path = self._get_coaching_cache_path()
-            if not os.path.exists(path):
-                return None
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            ts = data.get("_ts", 0)
-            age_h = (time.time() - ts) / 3600
-            if age_h > 24:
-                return None
-            return data
-        except Exception:
+        puuid = getattr(self, '_coaching_puuid', None)
+        if not puuid:
             return None
+        return cargar_coaching_cache(puuid)
 
     def _save_coaching_cache(self, reporte, datos_extra):
-        try:
-            path = self._get_coaching_cache_path()
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            old_path = os.path.join(os.path.dirname(path), "coaching_cache.json")
-            if os.path.exists(old_path):
-                os.remove(old_path)
-            payload = {
-                "_ts": time.time(),
-                "reporte": reporte,
-            }
-            if datos_extra:
-                payload["datos_extra"] = {
-                    "personalidad": datos_extra.get("personalidad"),
-                    "insights": datos_extra.get("insights"),
-                    "objetivos": datos_extra.get("objetivos"),
-                    "emocional": datos_extra.get("emocional"),
-                }
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, default=str)
-        except Exception as e:
-            print(f"[CoachingCache] Error guardando: {e}")
+        puuid = getattr(self, '_coaching_puuid', None)
+        if not puuid:
+            return
+        guardar_coaching_cache(puuid, reporte, datos_extra)
 
     def _crear_card(self, mensaje, color_accent="#e63946", padding="14px"):
         card = QFrame()

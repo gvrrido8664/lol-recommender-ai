@@ -32,6 +32,8 @@ from src.db_manager import DATA_DIR, obtener_conexion, inicializar_db
 from src.db_manager import etiquetar_estado_emocional, obtener_estado_emocional, obtener_estadisticas_emocionales
 from src.db_manager import registrar_lp, obtener_historial_lp
 from src.db_manager import guardar_draft, completar_draft_resultado, obtener_historial_drafts
+from src.db_manager import guardar_season_cache, cargar_season_cache
+from src.db_manager import guardar_coaching_cache, cargar_coaching_cache
 from src.riot_api import cargar_campeones, cargar_objetos, cargar_runas, cargar_mapeo_ids, cargar_hechizos, obtener_version_actual
 from src.tags_champions import obtener_tag, obtener_nivel_cc, es_soporte, obtener_dano, es_tanque
 from src.recomendador import (obtener_counters, obtener_top_items, obtener_campeones_por_rol,

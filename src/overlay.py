@@ -246,7 +246,7 @@ class OverlayWindow(QWidget):
                 hwnd = int(self.winId())
                 win32gui.UnregisterHotKey(hwnd, HOTKEY_SHOW_HIDE)
                 win32gui.UnregisterHotKey(hwnd, HOTKEY_CLOSE)
-            except:
+            except Exception:
                 pass
         self.hide()
         self.closed.emit()
@@ -346,6 +346,6 @@ class OverlayWindow(QWidget):
                 hwnd = int(self.winId())
                 win32gui.UnregisterHotKey(hwnd, HOTKEY_SHOW_HIDE)
                 win32gui.UnregisterHotKey(hwnd, HOTKEY_CLOSE)
-            except:
+            except Exception:
                 pass
         self.close()

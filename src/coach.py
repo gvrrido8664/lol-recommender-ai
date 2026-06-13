@@ -63,33 +63,62 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     # Principio 6: Escape
     p6 = f"<b>🧘 Juega con la cabeza limpia.</b> Si entras a jugar para escapar de problemas, vas a rendir peor, frustrarte más fácil y los problemas van a seguir ahí. El LoL no resuelve lo que evitas. <b>Juega porque realmente quieres jugar.</b>"
     
+    # Títulos cortos de cada principio (para subencabezar cada bloque)
+    titulos = [
+        "1 · Eres la constante",
+        "2 · Lo que no controlas",
+        "3 · Aprender siempre",
+        "4 · Proceso sobre resultado",
+        "5 · Expectativas realistas",
+        "6 · Cabeza limpia",
+    ]
     principios = [p1, p2, p3, p4, p5, p6]
-    
-    # Elegir 3-4 principios más relevantes según perfil
+
+    # Se muestran TODOS los principios (visión completa de la mentalidad),
+    # ordenados para empezar por el más relevante según el perfil del jugador.
     if nivel == "inicial":
-        seleccion = [0, 1, 2, 3]  # Factor constante, mala suerte, aprender, proceso
+        orden = [0, 1, 2, 3, 4, 5]
     elif nivel == "medio":
-        seleccion = [0, 2, 3, 4]  # Constante, aprender, proceso, expectativas
+        orden = [0, 2, 3, 4, 1, 5]
     else:
-        seleccion = [0, 2, 4, 5]  # Constante, aprender, expectativas, cabeza limpia
-    
+        orden = [0, 2, 4, 5, 3, 1]
+
+    bgs = ["#1a1030", "#1a1520", "#102530", "#1a2010", "#201810", "#151020"]
     partes_html = ""
-    for idx in seleccion:
-        color_bg = ["#1a1030", "#1a1520", "#102530", "#1a2010", "#201810", "#151020"][idx]
+    for idx in orden:
         partes_html += f"""
-        <div style="background:{color_bg}; border-radius:6px; padding:10px 14px; margin:6px 0;">
-        <p style="font-size:11px; color:{TEXT_SECONDARY}; margin:0; line-height:1.5;">{principios[idx]}</p>
+        <div style="background:{bgs[idx]}; border-radius:6px; padding:10px 14px; margin:6px 0;">
+        <p style="font-size:10px; color:{PURPLE_LIGHT}; margin:0 0 4px 0; letter-spacing:0.5px;">{titulos[idx]}</p>
+        <p style="font-size:11px; color:{TEXT_SECONDARY}; margin:0; line-height:1.55;">{principios[idx]}</p>
         </div>"""
-    
+
+    # Cierre accionable, distinto según el nivel
+    if nivel == "inicial":
+        cierre = ("Empieza por uno solo: <b>antes de cada partida, recuérdate que tú eres la constante</b>. "
+                  "Eso ya cambia cómo reaccionas cuando algo sale mal. La mentalidad no se arregla de golpe, "
+                  "se entrena partida a partida, igual que el last-hit.")
+    elif nivel == "medio":
+        cierre = ("Ya tienes mecánica; el siguiente salto es mental. Elige <b>un</b> principio de arriba para esta semana "
+                  "y obsérvate: ¿lo cumpliste hoy? Llevar la cuenta de tu mentalidad rinde más LP que un counterpick perfecto.")
+    else:
+        cierre = ("A tu nivel la diferencia es casi toda mental: tilt, fatiga y expectativas. "
+                  "Los mejores no son los que nunca fallan, sino los que <b>vuelven al plan más rápido</b> tras un error. "
+                  "Tu consistencia emocional es tu mayor ventaja competitiva.")
+
     return f"""
     <div style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;">
-    <p style="font-size:12px;color:{PURPLE_VIOLET};margin:0 0 10px 0;">
-    💡 <b>Antes de ver tus números, quiero compartirte algo importante.</b> 
-    Estas ideas me ayudaron a mí y a cientos de jugadores a pensar mejor el juego. No son reglas rígidas, son principios que puedes comprobar tú mismo.
+    <p style="font-size:13px;color:{PURPLE_VIOLET};margin:0 0 6px 0;"><b>Antes de los números: cómo pensar el juego</b></p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 10px 0;">
+    El 90% de lo que frena a un jugador no es la mecánica, es la cabeza. Estos seis principios
+    son la base mental sobre la que se construye todo lo demás. No son frases motivacionales:
+    son hábitos de pensamiento que puedes comprobar tú mismo, partida a partida.
     </p>
     {partes_html}
+    <div style="background:#15131c; border-left:3px solid {PURPLE_VIOLET}; border-radius:6px; padding:10px 14px; margin:10px 0 0 0;">
+    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0;line-height:1.55;">🧭 <b>Cómo aplicarlo:</b> {cierre}</p>
+    </div>
     <p style="font-size:10px;color:{TEXT_SUBTLE};margin:10px 0 0 0;font-style:italic;">
-    ✨ "Cuando cambia tu forma de pensar el LoL, cambia todo lo demás."
+    "Cuando cambia tu forma de pensar el LoL, cambia todo lo demás."
     </p>
     </div>"""
 
@@ -262,6 +291,15 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     dmg_vs_taken = sum(stats.get("totalDamageDealtToChampions", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
     dmg_taken_total = sum(stats.get("totalDamageTaken", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
     dmg_eff = dmg_vs_taken / max(1, dmg_taken_total)
+
+    # ── Métricas POR PARTIDA (más concretas que por-minuto para daño/oro/visión) ──
+    total_cs_raw = sum(cg["cs"] for cg in champ_games.values())
+    total_vision_raw = sum((stats.get("visionScore", 0) or stats.get("wardsPlaced", 0))
+                           for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
+    avg_cs_game = total_cs_raw / total_all if total_all else 0
+    avg_dmg_game = total_dmg_raw / total_all if total_all else 0
+    avg_gold_game = total_gold_raw / total_all if total_all else 0
+    avg_vision_game = total_vision_raw / total_all if total_all else 0
     
     # ═══════════════════════════════════════════════════
     # SECCIÓN 0: SALUDO Y RESUMEN GENERAL
@@ -295,7 +333,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     KDA <b>{avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f}</b> ({kda:.2f}) · CS/min <b>{avg_cs:.1f}</b>
     </p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
-    ⚡ Dano/min <b>{avg_dmg:.0f}</b> · Oro/min <b>{avg_gold:.0f}</b> · Vision/min <b>{avg_vision:.1f}</b>
+    ⚡ Daño/partida <b>{avg_dmg_game:,.0f}</b> · Oro/partida <b>{avg_gold_game:,.0f}</b> · Visión/partida <b>{avg_vision_game:.0f}</b>
     </p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 0 0;">{estado_mental}</p>
     </div>
@@ -484,45 +522,45 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     # SECCIÓN 4: VISIÓN
     # ═══════════════════════════════════════════════════
-    if avg_vision > 0:
+    if avg_vision_game > 0:
         vis_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-        if avg_vision < 0.5:
+        if avg_vision_game < 15:
             vis_html += f"""
-            <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Visión muy baja: {avg_vision:.1f}/min</b></p>
+            <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Visión muy baja: {avg_vision_game:.0f} de visión por partida</b></p>
             <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            La visión es información, y la información gana partidas. Con {avg_vision:.1f} de visión por minuto, 
+            La visión es información, y la información gana partidas. Con {avg_vision_game:.0f} de visión por partida
             estás jugando a ciegas gran parte del tiempo. Cada ward es un "no me matan" potencial.
             </p>
-            <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Hábito a crear:</b></p>
+            <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;">Hábito a crear:</p>
             <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
             <li>Cada vez que vuelvas a base, compra al menos 1 Control Ward.</li>
             <li>Usa el trinket en cuanto esté disponible. No lo guardes.</li>
             <li>Mira el minimapa cada 5 segundos. Suena intenso, pero se convierte en hábito.</li>
             </ul>
             """
-        elif avg_vision < 1.0:
+        elif avg_vision_game < 28:
             vis_html += f"""
-            <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Visión aceptable: {avg_vision:.1f}/min</b></p>
+            <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Visión aceptable: {avg_vision_game:.0f} de visión por partida</b></p>
             <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            No está mal, pero los mejores jugadores suelen estar por encima de 1.5/min en soloQ. 
-            Un buen objetivo es comprar 2-3 Control Wards por partida.
+            No está mal, pero hay margen. Un buen objetivo es comprar 2-3 Control Wards por partida
+            y vaciar el trinket cada vez que se recarga.
             </p>
             """
         else:
             vis_html += f"""
-            <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Buena visión: {avg_vision:.1f}/min</b></p>
+            <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Buena visión: {avg_vision_game:.0f} de visión por partida</b></p>
             <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
             Excelente control de visión. Eso ayuda a tu equipo más de lo que crees. ¡Sigue así!
             </p>
             """
         vis_html += '</div>'
-        
+
         secciones.append({
             "titulo": "CONTROL DE VISIÓN",
             "icono": "👁️",
-            "color": "#ef4444" if avg_vision < 0.5 else "#f59e0b" if avg_vision < 1.0 else "#22c55e",
+            "color": "#ef4444" if avg_vision_game < 15 else "#f59e0b" if avg_vision_game < 28 else "#22c55e",
             "html": vis_html,
-            "prioridad": 2 if avg_vision < 0.5 else 3,
+            "prioridad": 2 if avg_vision_game < 15 else 3,
         })
     
     # ═══════════════════════════════════════════════════
@@ -702,53 +740,48 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     # ═══════════════════════════════════════════════════
     # SECCION 6: DANO Y EFICIENCIA
     # ═══════════════════════════════════════════════════
-    if avg_dmg > 0:
-        dmg_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-        dmg_html += f'<p style="font-size: 14px; color: {PURPLE_LIGHT}; margin: 0 0 8px 0;"><b>⚡ Dano y Eficiencia en Teamfights</b></p>'
-
-        if avg_dmg < 400:
-            dmg_html += f'<p style="font-size: 12px; color: {RED_DANGER}; margin: 0 0 4px 0;">🔴 Tu dano por minuto es bajo: {avg_dmg:.0f}/min</p>'
-        elif avg_dmg < 700:
-            dmg_html += f'<p style="font-size: 12px; color: {YELLOW_WARNING}; margin: 0 0 4px 0;">🟡 Dano aceptable: {avg_dmg:.0f}/min</p>'
+    if avg_dmg_game > 0:
+        if avg_dmg_game < 12000:
+            d_verdict, d_color, d_prio = f"🔴 Daño bajo: {avg_dmg_game:,.0f} a campeones por partida", RED_DANGER, 2
+        elif avg_dmg_game < 22000:
+            d_verdict, d_color, d_prio = f"🟡 Daño aceptable: {avg_dmg_game:,.0f} a campeones por partida", YELLOW_WARNING, 3
         else:
-            dmg_html += f'<p style="font-size: 12px; color: {GREEN_SUCCESS}; margin: 0 0 4px 0;">🟢 Excelente dano: {avg_dmg:.0f}/min</p>'
-
-        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">📊 Dano total infligido/recibido: {dmg_vs_taken:,} / {dmg_taken_total:,} (ratio: {dmg_eff:.2f})</p>'
-        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">💰 Eficiencia de oro: {dmg_ratio:.1f} de dano por cada oro generado</p>'
+            d_verdict, d_color, d_prio = f"🟢 Excelente daño: {avg_dmg_game:,.0f} a campeones por partida", GREEN_SUCCESS, 3
+        dmg_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        dmg_html += f'<p style="font-size: 14px; color: {d_color}; margin: 0 0 8px 0;"><b>{d_verdict}</b></p>'
+        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">Total infligido / recibido: {dmg_vs_taken:,} / {dmg_taken_total:,} (ratio {dmg_eff:.2f})</p>'
+        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">{dmg_ratio:.1f} de daño a campeones por cada oro generado</p>'
         if dmg_eff < 0.7:
-            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Recibes mas dano del que infliges. Trabaja en posicionamiento y kiteo.</p>'
+            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Recibes más daño del que infliges: trabaja posicionamiento y kiteo en teamfights.</p>'
         elif dmg_eff > 1.3:
-            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Infliges mucho mas dano del que recibes. Buen posicionamiento.</p>'
+            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Infliges mucho más daño del que recibes: buen posicionamiento, sigue así.</p>'
         dmg_html += '</div>'
         secciones.append({
             "titulo": "DANO Y EFICIENCIA",
             "icono": "⚡",
-            "color": "#a78bfa",
+            "color": d_color,
             "html": dmg_html,
-            "prioridad": 3,
+            "prioridad": d_prio,
         })
 
     # ═══════════════════════════════════════════════════
     # SECCION 7: ORO Y ECONOMIA
     # ═══════════════════════════════════════════════════
-    if avg_gold > 0:
-        eco_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-        eco_html += f'<p style="font-size: 14px; color: {TEXT_GOLD}; margin: 0 0 8px 0;"><b>💰 Economia y Generacion de Oro</b></p>'
-        eco_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Tu generacion de oro promedio es <b>{avg_gold:.0f}/min</b>.</p>'
-
-        if avg_gold < 300:
-            eco_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 Estas generando poco oro. Mejora el farmeo y participa en kills/objetivos.</p>'
-        elif avg_gold < 400:
-            eco_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Oro decente pero con margen de mejora.</p>'
+    if avg_gold_game > 0:
+        if avg_gold_game < 9000:
+            g_verdict, g_color = f"🔴 Generas poco oro: {avg_gold_game:,.0f} por partida", RED_DANGER
+        elif avg_gold_game < 12000:
+            g_verdict, g_color = f"🟡 Oro decente: {avg_gold_game:,.0f} por partida", YELLOW_WARNING
         else:
-            eco_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Excelente generacion de oro.</p>'
-
-        eco_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 4px 0 0 0;">💡 Prioriza el farmeo seguro sobre las kills arriesgadas. El CS es oro garantizado.</p>'
+            g_verdict, g_color = f"🟢 Buena economía: {avg_gold_game:,.0f} por partida", GREEN_SUCCESS
+        eco_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        eco_html += f'<p style="font-size: 14px; color: {g_color}; margin: 0 0 8px 0;"><b>{g_verdict}</b></p>'
+        eco_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 4px 0 0 0;">Prioriza el farmeo seguro sobre las kills arriesgadas: el CS es oro garantizado y compone tu economía partida a partida.</p>'
         eco_html += '</div>'
         secciones.append({
             "titulo": "ORO Y ECONOMIA",
             "icono": "💰",
-            "color": "#f8fafc",
+            "color": g_color,
             "html": eco_html,
             "prioridad": 4,
         })
@@ -915,13 +948,18 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         "nivel": nivel,
         "metricas": {
             "wr": wr, "kda": kda, "avg_cs": avg_cs, "avg_d": avg_d,
+            "avg_k": avg_k, "avg_a": avg_a,
             "avg_vision": avg_vision, "unique_champs": unique_champs,
             "top3_wr": top3_wr, "nivel": nivel,
             "avg_dmg": avg_dmg, "avg_gold": avg_gold,
+            # Por partida (más concretas):
+            "avg_cs_game": avg_cs_game, "avg_dmg_game": avg_dmg_game,
+            "avg_gold_game": avg_gold_game, "avg_vision_game": avg_vision_game,
             "avg_turrets": avg_turrets, "avg_dragons": avg_dragons,
             "avg_barons": avg_barons,
             "avg_cc": avg_cc, "avg_pink": avg_pink,
             "dmg_eff": dmg_eff, "total_all": total_all,
+            "primer_sangre_pct": (primer_sangre / total_all * 100) if total_all else 0,
         }
     }
 

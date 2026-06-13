@@ -98,7 +98,8 @@ class CoachingTabMixin:
             d = _get_writable_dir()
         except Exception:
             d = DATA_DIR
-        return os.path.join(d, "coaching_cache.json")
+        puuid = getattr(self, '_coaching_puuid', 'default')
+        return os.path.join(d, f"coaching_cache_{puuid}.json")
 
     def _load_coaching_cache(self):
         try:
@@ -118,6 +119,10 @@ class CoachingTabMixin:
     def _save_coaching_cache(self, reporte, datos_extra):
         try:
             path = self._get_coaching_cache_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            old_path = os.path.join(os.path.dirname(path), "coaching_cache.json")
+            if os.path.exists(old_path):
+                os.remove(old_path)
             payload = {
                 "_ts": time.time(),
                 "reporte": reporte,
@@ -250,6 +255,15 @@ class CoachingTabMixin:
         if not hasattr(self, 'historial_games') or not self.historial_games:
             self._mostrar_placeholder()
             return
+
+        if not getattr(self, '_coaching_puuid', None):
+            try:
+                if hasattr(self, 'lcu') and self.lcu and self.lcu.port:
+                    perfil = self.lcu.obtener_perfil()
+                    if perfil:
+                        self._coaching_puuid = perfil.get("puuid", "default")
+            except Exception:
+                self._coaching_puuid = "default"
 
         cached = self._load_coaching_cache()
         if cached:

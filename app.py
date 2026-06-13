@@ -95,11 +95,11 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.current_skill_order = None
         self.perfil_cargado = False
         
-        # Cache de imÃ¡genes descargadas para evitar HTTP repetidos
+        # Cache de imágenes descargadas para evitar HTTP repetidos
         self._cache_imagenes = {}
         self._cache_imagenes_lock = threading.Lock()
 
-        # Post-game: cachÃ© de stats en vivo y control de fase
+        # Post-game: caché de stats en vivo y control de fase
         self._last_game_stats = {}
         self._postgame_shown = False
         self._last_fase = None
@@ -131,12 +131,12 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.timer_partida.timeout.connect(self.actualizar_partida_vivo)
         self.timer_partida.start(4000)
         
-        # In-game timer and hotkeys removed â€” feature was too buggy
+        # In-game timer and hotkeys removed — feature was too buggy
         
-        # â”€â”€â”€ SYSTEM TRAY + GLOBAL HOTKEYS â”€â”€â”€
+        # ─── SYSTEM TRAY + GLOBAL HOTKEYS ───
         self._setup_tray()
         
-        # Cache para post-game (eliminado â€” feature de in-game removida)
+        # Cache para post-game (eliminado — feature de in-game removida)
 
         # Overlay in-game
         self.overlay = OverlayWindow()
@@ -196,9 +196,9 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         except Exception as e:
             log.warning("Error verificando actualizaciones: %s", e)
 
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════
     # SYSTEM TRAY
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════
     
     def _setup_tray(self):
         """Configura el icono en la bandeja del sistema."""
@@ -209,16 +209,16 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         p = QPainter(pm); p.setFont(QFont("Segoe UI", 16, QFont.Bold))
         p.setPen(QColor("#ffffff")); p.drawText(pm.rect(), Qt.AlignCenter, "N"); p.end()
         self.tray_icon.setIcon(QIcon(pm))
-        # Crear menÃº contextual
+        # Crear menú contextual
         tray_menu = QMenu()
-        a_show = QAction("ðŸ“Š Mostrar / Ocultar", self)
+        a_show = QAction("📊 Mostrar / Ocultar", self)
         a_show.triggered.connect(self._tray_toggle)
         tray_menu.addAction(a_show)
-        a_radar = QAction("ðŸ“¡ Ir a Radar", self)
+        a_radar = QAction("📡 Ir a Radar", self)
         a_radar.triggered.connect(lambda: self.tabview.setCurrentIndex(2))
         tray_menu.addAction(a_radar)
         tray_menu.addSeparator()
-        a_exit = QAction("âŒ Salir", self)
+        a_exit = QAction("❌ Salir", self)
         a_exit.triggered.connect(self._salir_app)
         tray_menu.addAction(a_exit)
         self.tray_icon.setContextMenu(tray_menu)
@@ -294,7 +294,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         btn_settings = QPushButton()
         btn_settings.setFixedSize(34, 34)
         btn_settings.setCursor(Qt.PointingHandCursor)
-        btn_settings.setToolTip("ConfiguraciÃ³n de la app")
+        btn_settings.setToolTip("Configuración de la app")
         btn_settings.setIcon(self._crear_icono_engranaje(20, "#4a5070"))
         btn_settings.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: 1px solid #2a3050; border-radius: 17px; }}
@@ -315,13 +315,13 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.tab_ia = QWidget()
         self.tab_bans = QWidget()
 
-        self.tabview.addTab(self.tab_perfil, "ðŸ‘¤ MI PERFIL")
-        self.tabview.addTab(self.tab_coaching, "ðŸŽ“ COACHING PRO")
-        self.tabview.addTab(self.tab_vivo, "ðŸ“¡ RADAR EN VIVO")
-        self.tabview.addTab(self.tab_partida, "ðŸŽ® PARTIDA EN VIVO")
-        self.tabview.addTab(self.tab_counters, "ðŸ“Š META & BUILDS")
-        self.tabview.addTab(self.tab_ia, "ðŸ¤– SIMULADOR 1v1")
-        self.tabview.addTab(self.tab_bans, "ðŸš« TIER LIST DE BANS")
+        self.tabview.addTab(self.tab_perfil, "👤 MI PERFIL")
+        self.tabview.addTab(self.tab_coaching, "🎓 COACHING PRO")
+        self.tabview.addTab(self.tab_vivo, "📡 RADAR EN VIVO")
+        self.tabview.addTab(self.tab_partida, "🎮 PARTIDA EN VIVO")
+        self.tabview.addTab(self.tab_counters, "📊 META & BUILDS")
+        self.tabview.addTab(self.tab_ia, "🤖 SIMULADOR 1v1")
+        self.tabview.addTab(self.tab_bans, "🚫 TIER LIST DE BANS")
 
         self.armar_tab_perfil()
         self.armar_tab_coaching()
@@ -381,13 +381,13 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     def inicializar_panel_setup(self, layout):
         clear_layout(layout)
-        lbl = QLabel("Selecciona un campeÃ³n para generar su Setup.")
+        lbl = QLabel("Selecciona un campeón para generar su Setup.")
         lbl.setStyleSheet("color: gray; font-style: italic; font-size: 14px;")
         lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(lbl)
 
     def _animar_boton(self, btn, text_original):
-        btn.setText("Â¡Ã‰XITO! âœ”")
+        btn.setText("¡ÉXITO! ✔")
         btn.setStyleSheet(f"background-color: {GREEN_WR}; color: {BG_DARK}; font-weight: bold;")
         QTimer.singleShot(2000, lambda: self._restaurar_boton(btn, text_original))
 
@@ -412,7 +412,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         if "read timed out" in texto.lower():
             return "Tiempo de espera agotado al guardar el item set. Es posible que el item set ya se haya creado en el cliente."
         if "404" in texto:
-            return "Endpoint de item sets no disponible en esta versiÃ³n del cliente. Actualiza LoL o prueba otro mÃ©todo."
+            return "Endpoint de item sets no disponible en esta versión del cliente. Actualiza LoL o prueba otro método."
         if len(texto) > 240:
             return texto.splitlines()[0][:240] + "..."
         return texto
@@ -425,7 +425,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             detalle = self._format_lcu_error(res)
             QMessageBox.critical(self, "Error API LCU", f"{error_message}\n\nDetalle: {detalle}")
 
-    # â”€â”€ Auto-import wrappers (sin botÃ³n, para modo automÃ¡tico) â”€â”€
+    # ── Auto-import wrappers (sin botón, para modo automático) ──
     def _auto_importar_runas(self, ids_runas, campeon):
         if not ids_runas: return
         threading.Thread(target=lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), daemon=True).start()
@@ -459,7 +459,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), btn, "Exportar a LoL", "AsegÃºrate de tener el cliente abierto."),
+            args=(lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), btn, "Exportar a LoL", "Asegúrate de tener el cliente abierto."),
             daemon=True
         ).start()
 
@@ -476,7 +476,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_hechizos(s1, s2), btn, "Exportar a LoL", "AsegÃºrate de estar en una sala de Draft."),
+            args=(lambda: self.lcu.importar_hechizos(s1, s2), btn, "Exportar a LoL", "Asegúrate de estar en una sala de Draft."),
             daemon=True
         ).start()
 
@@ -500,10 +500,10 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     def accion_importar_skill_order(self, btn):
         if not hasattr(self, 'current_skill_order') or not self.current_skill_order:
-            QMessageBox.critical(self, "Error", "No hay ruta de habilidades para exportar.\nSelecciona un campeÃ³n primero.")
+            QMessageBox.critical(self, "Error", "No hay ruta de habilidades para exportar.\nSelecciona un campeón primero.")
             return
         if not self.lcu or not self.lcu.port:
-            QMessageBox.critical(self, "Error", "Cliente de LoL no detectado.\nAsegÃºrate de tener el cliente abierto.")
+            QMessageBox.critical(self, "Error", "Cliente de LoL no detectado.\nAsegúrate de tener el cliente abierto.")
             return
         btn.setEnabled(False)
         self._btn_skills_original = btn.text()
@@ -511,12 +511,12 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         threading.Thread(
             target=self._run_lcu_task,
             args=(lambda: self.lcu.importar_skill_order(skill), btn,
-                  "âœ… Subido al Cliente",
-                  "No se pudo subir la ruta de habilidades.\nAsegÃºrate de estar en selecciÃ³n de campeÃ³n."),
+                  "✅ Subido al Cliente",
+                  "No se pudo subir la ruta de habilidades.\nAsegúrate de estar en selección de campeón."),
             daemon=True
         ).start()
 
-    # ================= REDISEÃ‘O DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
+    # ================= REDISEÑO DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
     def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout, mostrar_botones=True, ids_sit=None):
         clear_layout(parent_layout)
 
@@ -624,14 +624,14 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
         wrap_layout.addWidget(card_items)
 
-        # â”€â”€ CARD SITUACIONALES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── CARD SITUACIONALES ──────────────────────────────────
         if ids_sit:
             _PRIO_COLOR   = {1: "{RED_DANGER}", 2: "{YELLOW_WARNING}", 3: "{TEXT_SUBTLE}"}
-            _PRIO_LABEL   = {1: "CRÃTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
+            _PRIO_LABEL   = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
             _CAT_LABEL    = {
-                "anti_heal": "Anti-curaciÃ³n",  "anti_cc": "Anti-CC",
+                "anti_heal": "Anti-curación",  "anti_cc": "Anti-CC",
                 "anti_ap": "Anti-AP",          "anti_ad": "Anti-AD",
-                "anti_tank": "Anti-tanques",   "penetracion": "PenetraciÃ³n",
+                "anti_tank": "Anti-tanques",   "penetracion": "Penetración",
                 "supervivencia": "Supervivencia",
             }
 
@@ -650,10 +650,10 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 row_l.setContentsMargins(2, 2, 2, 2)
                 row_l.setSpacing(6)
 
-                # Icono del Ã­tem
+                # Icono del ítem
                 self.renderizar_icono(sit["id"], "item", row_l, size=32)
 
-                # Texto: categorÃ­a + nombre + razÃ³n
+                # Texto: categoría + nombre + razón
                 txt_w = QWidget()
                 txt_l = QVBoxLayout(txt_w)
                 txt_l.setContentsMargins(0, 0, 0, 0)
@@ -663,7 +663,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 cat_txt  = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
                 lbl_cat = QLabel(f"<span style='color:{prio_col};font-weight:bold;font-size:9px;'>"
                                  f"{_PRIO_LABEL.get(sit['prioridad'],'')}</span>"
-                                 f"<span style='color:{TEXT_MUTED};font-size:9px;'> Â· {cat_txt}</span>")
+                                 f"<span style='color:{TEXT_MUTED};font-size:9px;'> · {cat_txt}</span>")
                 lbl_cat.setTextFormat(Qt.RichText)
                 txt_l.addWidget(lbl_cat)
 
@@ -674,7 +674,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
                 razon = sit["razon"]
                 if len(razon) > 75:
-                    razon = razon[:72] + "â€¦"
+                    razon = razon[:72] + "…"
                 lbl_razon = QLabel(razon)
                 lbl_razon.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
                 lbl_razon.setWordWrap(True)
@@ -689,7 +689,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
         parent_layout.addWidget(main_wrap)
 
-    # ================= PESTAÃ‘A MI PERFIL DASHBOARD =================
+    # ================= PESTAÑA MI PERFIL DASHBOARD =================
     @staticmethod
     def _parse_game_date(g: dict):
         """Parsea la fecha de una partida LCU de forma robusta (soporta locale ES/EN).
@@ -733,7 +733,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     @staticmethod
     def _extraer_year(g: dict):
-        """Extrae el aÃ±o de una partida (gameCreationDate string o gameCreation timestamp)."""
+        """Extrae el año de una partida (gameCreationDate string o gameCreation timestamp)."""
         dt = LoLRecommenderApp._parse_game_date(g)
         if dt:
             return dt.year
@@ -796,10 +796,10 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         return colors.get(tier.upper(), TEXT_WHITE)
 
     def _rank_icon(self, tier):
-        icons = {"IRON": "ðŸ”©", "BRONZE": "ðŸ¥‰", "SILVER": "ðŸ¥ˆ", "GOLD": "ðŸ¥‡",
-                 "PLATINUM": "ðŸ’ ", "EMERALD": "ðŸ’š", "DIAMOND": "ðŸ’Ž",
-                 "MASTER": "ðŸ‘‘", "GRANDMASTER": "ðŸ”¥", "CHALLENGER": "ðŸ†"}
-        return icons.get(tier.upper(), "â“")
+        icons = {"IRON": "🔩", "BRONZE": "🥉", "SILVER": "🥈", "GOLD": "🥇",
+                 "PLATINUM": "💠", "EMERALD": "💚", "DIAMOND": "💎",
+                 "MASTER": "👑", "GRANDMASTER": "🔥", "CHALLENGER": "🏆"}
+        return icons.get(tier.upper(), "❓")
 
     def _inicializar_db_background(self):
         """Inicializa la BD en un hilo de fondo. No toca la UI: solo emite la senal."""

@@ -2,10 +2,14 @@ import os
 import sys
 import json
 import time
+import threading
 
 import psycopg2
 import psycopg2.errors
+import psycopg2.pool
 from psycopg2.extras import DictCursor
+
+from .config import cargar_config, DATA_DIR, BASE_DIR
 
 
 class ConexionDBError(Exception):
@@ -13,88 +17,66 @@ class ConexionDBError(Exception):
     pass
 
 
-def _get_base_dir():
-    if getattr(sys, 'frozen', False):
-        return sys._MEIPASS
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def _get_data_dir():
-    if getattr(sys, 'frozen', False):
-        base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
-    else:
-        base = _get_base_dir()
-    d = os.path.join(base, "data")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-BASE_DIR = _get_base_dir()
-DATA_DIR = _get_data_dir()
-
-# Mantenido para compatibilidad con código que espera estas variables.
-# En modo PostgreSQL la ruta del archivo .db ya no se usa.
-DB_PATH = os.path.join(DATA_DIR, "lol_data.db")
-
-
-def _cargar_config():
-    try:
-        config_paths = ["config.json", os.path.join("..", "config.json")]
-        for p in config_paths:
-            if os.path.exists(p):
-                with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-
 def _obtener_db_url() -> str | None:
     url = os.environ.get("DATABASE_URL", "")
     if url:
         return url
-    config = _cargar_config()
+    config = cargar_config()
     url = config.get("DATABASE_URL", "")
     if url:
         return url
     return None
 
 
-def obtener_conexion():
-    url = _obtener_db_url()
-    if not url:
-        raise ConexionDBError(
-            "DATABASE_URL no configurado. Agrega la URL de PostgreSQL en config.json "
-            "o en la variable de entorno DATABASE_URL."
+_PG_POOL = None
+_PG_POOL_LOCK = threading.Lock()
+_PG_MINCONN = 2
+_PG_MAXCONN = 10
+
+
+def _init_pool():
+    global _PG_POOL
+    if _PG_POOL is not None:
+        return
+    with _PG_POOL_LOCK:
+        if _PG_POOL is not None:
+            return
+        url = _obtener_db_url()
+        if not url:
+            raise ConexionDBError("DATABASE_URL no configurado.")
+        _PG_POOL = psycopg2.pool.ThreadedConnectionPool(
+            _PG_MINCONN, _PG_MAXCONN, url,
+            cursor_factory=DictCursor,
+            connect_timeout=30,
+            keepalives=1, keepalives_idle=60,
+            keepalives_interval=10, keepalives_count=3,
+            options='-c statement_timeout=30000',
         )
 
-    ultimo_error = None
-    max_intentos = 3
-    for intento in range(max_intentos):
-        try:
-            conn = psycopg2.connect(
-                url,
-                cursor_factory=DictCursor,
-                connect_timeout=30,
-                keepalives=1,
-                keepalives_idle=60,
-                keepalives_interval=10,
-                keepalives_count=3,
-                options='-c statement_timeout=30000',
-            )
-            conn.set_session(autocommit=False)
-            return conn
-        except psycopg2.OperationalError as e:
-            ultimo_error = e
-            if intento < max_intentos - 1:
-                espera = 5 * (intento + 1)
-                time.sleep(espera)
 
-    raise ConexionDBError(
-        f"No se pudo conectar a PostgreSQL tras {max_intentos} intentos.\n"
-        f"Verifica tu conexion a internet y que el servidor este accesible.\n"
-        f"Detalle: {str(ultimo_error).strip()}"
-    )
+class _ConexionPooled:
+    """Proxy: close() devuelve al pool en vez de cerrar el socket."""
+    def __init__(self, real_conn):
+        self._conn = real_conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        global _PG_POOL
+        _PG_POOL.putconn(self._conn)
+
+    def cursor(self, **kwargs):
+        return self._conn.cursor(**kwargs)
+
+
+def obtener_conexion():
+    global _PG_POOL
+    if _PG_POOL is None:
+        _init_pool()
+    real = _PG_POOL.getconn()
+    real.set_session(autocommit=False)
+    return _ConexionPooled(real)
 
 
 def _db_tiene_datos():
@@ -450,27 +432,19 @@ def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
     return draft_id
 
 
-def completar_draft_resultado(fecha, ganada):
+def completar_draft_resultado(draft_id, ganada):
     conn = obtener_conexion()
     cur = conn.cursor()
     if ganada is None:
-        cur.execute("""
-            UPDATE drafts_history SET resultado = 'completada'
-            WHERE id = (
-                SELECT id FROM drafts_history
-                WHERE fecha = %s AND resultado = 'pendiente'
-                ORDER BY id DESC LIMIT 1
-            )
-        """, (fecha,))
+        cur.execute(
+            "UPDATE drafts_history SET resultado = 'completada' WHERE id = %s",
+            (draft_id,)
+        )
     else:
-        cur.execute("""
-            UPDATE drafts_history SET resultado = %s, ganada = %s
-            WHERE id = (
-                SELECT id FROM drafts_history
-                WHERE fecha = %s AND resultado = 'pendiente'
-                ORDER BY id DESC LIMIT 1
-            )
-        """, ("victoria" if ganada else "derrota", 1 if ganada else 0, fecha))
+        cur.execute(
+            "UPDATE drafts_history SET resultado = %s, ganada = %s WHERE id = %s",
+            ("victoria" if ganada else "derrota", 1 if ganada else 0, draft_id)
+        )
     conn.commit()
     conn.close()
 

@@ -51,6 +51,7 @@ from contextlib import contextmanager
 from psycopg2.extras import execute_values
 from .db_manager import obtener_conexion, inicializar_db, DATA_DIR, purgar_parches_antiguos
 from .riot_api import cargar_objetos
+from .config import cargar_config
 
 # La consola de Windows usa cp1252 por defecto y los caracteres ═/█ crashean el script.
 for _stream in (sys.stdout, sys.stderr):
@@ -94,18 +95,7 @@ def _close_thread_connections():
 # CONFIGURACIÓN
 # ═══════════════════════════════════════════════════════════════
 
-def _cargar_config():
-    try:
-        config_paths = ["config.json", os.path.join("..", "config.json")]
-        for p in config_paths:
-            if os.path.exists(p):
-                with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-CONFIG = _cargar_config()
+CONFIG = cargar_config()
 API_KEY = CONFIG.get("API_KEY", os.environ.get("RIOT_API_KEY", ""))
 
 COLLECTOR_CFG = CONFIG.get("collector_settings", {})

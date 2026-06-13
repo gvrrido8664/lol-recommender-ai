@@ -9,13 +9,13 @@ class IATabMixin:
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         
-        panel_ia, l_ia = self.crear_panel("CONFIGURACIÃ“N DEL MATCHUP")
+        panel_ia, l_ia = self.crear_panel("CONFIGURACIÓN DEL MATCHUP")
         ctrls = QHBoxLayout()
         ctrls.setSpacing(8)
         self.cb_ia_rol = QComboBox()
         self.cb_ia_aliado = QComboBox()
         self.cb_ia_enemigo = QComboBox()
-        ctrls.addWidget(QLabel("LÃ­nea:"))
+        ctrls.addWidget(QLabel("Línea:"))
         ctrls.addWidget(self.cb_ia_rol)
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
@@ -137,7 +137,7 @@ class IATabMixin:
         
         l_hud.addLayout(batalla_layout)
         
-        # AnÃ¡lisis de la IA
+        # Análisis de la IA
         self.lbl_analisis_ia = QLabel("Selecciona los campeones y presiona Simular.")
         self.lbl_analisis_ia.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 12px; padding: 14px; background-color: {BG_CARD}; border: 1px solid {BORDER_SUBTLE}; border-radius: 8px;")
         self.lbl_analisis_ia.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -186,7 +186,7 @@ class IATabMixin:
         
         if not aliado or not enemigo or not modelo_1v1.get(rol_api): return
         
-        # â”€â”€â”€ Imagenes y nombres â”€â”€â”€
+        # ─── Imagenes y nombres ───
         ruta_al = self.descargar_imagen(aliado, "champ")
         ruta_en = self.descargar_imagen(enemigo, "champ")
         if ruta_al: self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
@@ -234,19 +234,19 @@ class IATabMixin:
         # === NIVEL DE MATCHUP (umbrales calibrados) ===
         if prob_final > 54:
             nivel_color = GREEN_WR
-            nivel_icono = "ðŸ”¥"
+            nivel_icono = "🔥"
             nivel_texto = "HARD COUNTER (Ventaja Absoluta)"
         elif prob_final >= 51.5:
             nivel_color = GREEN_WR
-            nivel_icono = "âœ…"
+            nivel_icono = "✅"
             nivel_texto = "VENTAJA LIGERA"
         elif prob_final >= 48.5:
             nivel_color = YELLOW_WR
-            nivel_icono = "âš”ï¸"
+            nivel_icono = "⚔️"
             nivel_texto = "MATCHUP DE HABILIDAD (50/50)"
         else:
             nivel_color = RED_WR
-            nivel_icono = "âš ï¸"
+            nivel_icono = "⚠️"
             nivel_texto = "MATCHUP DESFAVORABLE"
         
         # === ACTUALIZAR UI CENTRAL ===
@@ -346,7 +346,7 @@ class IATabMixin:
             {_barra_html(scale_a, scale_e, 4, "Escalado")}
         </table>
         <p style="color:{TEXT_MUTED};font-size:11px;margin:4px 0;">
-            DaÃ±o: <b style="color:{ACCENT_TEAL};">{aliado} {t_a.get('damage_type','?')}</b>
+            Daño: <b style="color:{ACCENT_TEAL};">{aliado} {t_a.get('damage_type','?')}</b>
             &nbsp;vs&nbsp;
             <b style="color:{YELLOW_WR};">{enemigo} {t_e.get('damage_type','?')}</b>
             &nbsp;&nbsp;|&nbsp;&nbsp;
@@ -363,7 +363,7 @@ class IATabMixin:
         try:
             insights = interpretar_features(aliado, enemigo)
             for ins in insights:
-                if "Desventaja" in ins or "DÃ©ficit" in ins or "contra" in ins:
+                if "Desventaja" in ins or "Déficit" in ins or "contra" in ins:
                     color = RED_WR
                 elif "Ventaja" in ins or "Dominio" in ins or "mejor" in ins or "dicta" in ins:
                     color = GREEN_WR
@@ -373,7 +373,7 @@ class IATabMixin:
                     color = TEXT_MUTED
                 html += f'<li style="color:{color};font-size:11px;">{ins}</li>'
         except Exception:
-            html += f'<li style="color:{TEXT_MUTED};font-size:11px;">AnÃ¡lisis no disponible para este matchup.</li>'
+            html += f'<li style="color:{TEXT_MUTED};font-size:11px;">Análisis no disponible para este matchup.</li>'
         
         html += "</ul></div>"
         

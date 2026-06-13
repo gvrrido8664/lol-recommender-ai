@@ -9,7 +9,7 @@ class BansTabMixin:
         layout.setContentsMargins(10, 10, 10, 10)
         
         ctrls = QHBoxLayout()
-        ctrls.addWidget(QLabel("Selecciona la LÃ­nea a Proteger:"))
+        ctrls.addWidget(QLabel("Selecciona la Línea a Proteger:"))
         
         self.cbbanrol = QComboBox()
         self.cbbanrol.addItems(UI_ROLES)
@@ -31,7 +31,7 @@ class BansTabMixin:
 
         self.treebans = QTableWidget()
         self.treebans.setColumnCount(3)
-        self.treebans.setHorizontalHeaderLabels(["CampeÃ³n", "Banrate Sugerido %", "Partidas Analizadas"])
+        self.treebans.setHorizontalHeaderLabels(["Campeón", "Banrate Sugerido %", "Partidas Analizadas"])
         self.treebans.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.treebans.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.treebans.setSelectionMode(QAbstractItemView.NoSelection)

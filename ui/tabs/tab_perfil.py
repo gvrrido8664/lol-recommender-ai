@@ -48,13 +48,13 @@ class PerfilTabMixin:
         # Derecha: SoloQ + Flex (compacto, una linea cada uno)
         ranks_info = QVBoxLayout()
         ranks_info.setSpacing(2)
-        self.lbl_soloq_tier = QLabel("âš”ï¸ --")
+        self.lbl_soloq_tier = QLabel("⚔️ --")
         self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 11px;")
         ranks_info.addWidget(self.lbl_soloq_tier)
         self.lbl_soloq_stats = QLabel("")
         self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 9px;")
         ranks_info.addWidget(self.lbl_soloq_stats)
-        self.lbl_flex_tier = QLabel("ðŸ›¡ï¸ --")
+        self.lbl_flex_tier = QLabel("🛡️ --")
         self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 11px;")
         ranks_info.addWidget(self.lbl_flex_tier)
         self.lbl_flex_stats = QLabel("")
@@ -64,14 +64,14 @@ class PerfilTabMixin:
         
         self.col_id.addWidget(self.pnl_identity_card)
         
-        # ===== ESTADÃSTICAS DE LA TEMPORADA (columna izquierda) =====
-        self.pnl_season, self.l_season = self.crear_panel("ðŸ“Š ESTADÃSTICAS DE LA TEMPORADA")
+        # ===== ESTADÍSTICAS DE LA TEMPORADA (columna izquierda) =====
+        self.pnl_season, self.l_season = self.crear_panel("📊 ESTADÍSTICAS DE LA TEMPORADA")
         self.lbl_season_stats = QLabel("")
         self.lbl_season_stats.setVisible(False)
         self.l_season.addWidget(self.lbl_season_stats)
         self.tb_season_champs = QTableWidget()
         self.tb_season_champs.setColumnCount(4)
-        self.tb_season_champs.setHorizontalHeaderLabels(["CampeÃ³n", "Partidas", "WR", "KDA"])
+        self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
         self.tb_season_champs.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tb_season_champs.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
         self.tb_season_champs.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
@@ -100,7 +100,7 @@ class PerfilTabMixin:
         self.col_id.addWidget(self.pnl_season)
         
         # ===== PANEL DE FATIGA (columna izquierda, abajo) =====
-        self.pnl_fatiga, self.l_fatiga = self.crear_panel("ðŸ§  ESTADO MENTAL")
+        self.pnl_fatiga, self.l_fatiga = self.crear_panel("🧠 ESTADO MENTAL")
         self.l_fatiga.setAlignment(Qt.AlignTop)
         self.l_fatiga.setSpacing(6)
         self.l_fatiga.setContentsMargins(12, 12, 12, 12)
@@ -112,7 +112,7 @@ class PerfilTabMixin:
         l_estado.setSpacing(10)
         l_estado.setAlignment(Qt.AlignLeft)
         
-        self.lbl_fatiga_icono = QLabel("â³")
+        self.lbl_fatiga_icono = QLabel("⏳")
         self.lbl_fatiga_icono.setFixedSize(46, 46)
         self.lbl_fatiga_icono.setAlignment(Qt.AlignCenter)
         self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
@@ -144,11 +144,11 @@ class PerfilTabMixin:
         
         self.col_id.addWidget(self.pnl_fatiga)
 
-        # â”€â”€ PANEL LP HISTORY â”€â”€
-        self.pnl_lp, self.l_lp = self.crear_panel("ðŸ“ˆ EVOLUCIÃ“N DE LP (30 DÃAS)")
+        # ── PANEL LP HISTORY ──
+        self.pnl_lp, self.l_lp = self.crear_panel("📈 EVOLUCIÓN DE LP (30 DÍAS)")
         lp_header = QHBoxLayout()
         self.cb_lp_queue = QComboBox()
-        self.cb_lp_queue.addItems(["Solo/DÃºo", "Flex"])
+        self.cb_lp_queue.addItems(["Solo/Dúo", "Flex"])
         self.cb_lp_queue.setFixedWidth(90)
         self.cb_lp_queue.currentIndexChanged.connect(self._actualizar_grafica_lp)
         lp_header.addWidget(QLabel("Cola:"))
@@ -162,31 +162,31 @@ class PerfilTabMixin:
 
         l_pnl.addLayout(self.col_id, 35)
         
-        # ===== COLUMNA DERECHA: ESTADÃSTICAS + PERFIL + HISTORIAL =====
+        # ===== COLUMNA DERECHA: ESTADÍSTICAS + PERFIL + HISTORIAL =====
         self.col_hist = QVBoxLayout()
         self.col_hist.setAlignment(Qt.AlignTop)
         self.col_hist.setSpacing(6)
         
-        # 1. Tarjetas de estadÃ­sticas (KDA / WR / MÃ¡s jugado / Mejor WR)
+        # 1. Tarjetas de estadísticas (KDA / WR / Más jugado / Mejor WR)
         self.fr_stats_cards = QHBoxLayout()
         self.fr_stats_cards.setSpacing(6)
         
-        self.card_wr, self.lbl_card_wr_val = self._crear_stat_card("ðŸ“Š WINRATE", "--%", GREEN_WR)
+        self.card_wr, self.lbl_card_wr_val = self._crear_stat_card("📊 WINRATE", "--%", GREEN_WR)
         self.fr_stats_cards.addWidget(self.card_wr, 1)
         
-        self.card_kda, self.lbl_card_kda_val = self._crear_stat_card("âš”ï¸ KDA", "--", ACCENT_TEAL)
+        self.card_kda, self.lbl_card_kda_val = self._crear_stat_card("⚔️ KDA", "--", ACCENT_TEAL)
         self.fr_stats_cards.addWidget(self.card_kda, 1)
         
-        self.card_most, self.lbl_card_most_val = self._crear_stat_card("ðŸ”¥ +JUGADO", "--", BORDER_ACCENT)
+        self.card_most, self.lbl_card_most_val = self._crear_stat_card("🔥 +JUGADO", "--", BORDER_ACCENT)
         self.fr_stats_cards.addWidget(self.card_most, 1)
         
-        self.card_best, self.lbl_card_best_val = self._crear_stat_card("ðŸ† MEJOR WR", "--", GREEN_WR)
+        self.card_best, self.lbl_card_best_val = self._crear_stat_card("🏆 MEJOR WR", "--", GREEN_WR)
         self.fr_stats_cards.addWidget(self.card_best, 1)
         
         self.col_hist.addLayout(self.fr_stats_cards)
         
-        # WR POR LÃNEA
-        self.pnl_wr_rol, self.l_wr_rol = self.crear_panel("WINRATE POR LÃNEA")
+        # WR POR LÍNEA
+        self.pnl_wr_rol, self.l_wr_rol = self.crear_panel("WINRATE POR LÍNEA")
         self.fr_wr_rol = QHBoxLayout()
         self.fr_wr_rol.setSpacing(4)
         self.labels_wr_rol = {}
@@ -199,7 +199,7 @@ class PerfilTabMixin:
         self.l_wr_rol.addLayout(self.fr_wr_rol)
         self.col_hist.addWidget(self.pnl_wr_rol)
         
-        # Filtro por campeÃ³n, modo y temporada
+        # Filtro por campeón, modo y temporada
         self.fr_filtro = QHBoxLayout()
         lbl_filtro = QLabel("Filtrar:")
         lbl_filtro.setStyleSheet("color: #8fa3b8; font-size: 11px;")
@@ -227,7 +227,7 @@ class PerfilTabMixin:
         lbl_h.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
         
-        # Stack: historial table + overlay vacÃ­o
+        # Stack: historial table + overlay vacío
         self.historial_stack = QFrame()
         hs_layout = QStackedLayout(self.historial_stack)
         hs_layout.setStackingMode(QStackedLayout.StackAll)
@@ -235,7 +235,7 @@ class PerfilTabMixin:
         self.tb_historial = QTableWidget()
         self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
         self.tb_historial.setColumnCount(7)
-        self.tb_historial.setHorizontalHeaderLabels(["CampeÃ³n", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha"])
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha"])
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tb_historial.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tb_historial.horizontalHeader().setMinimumSectionSize(80)
@@ -257,7 +257,7 @@ class PerfilTabMixin:
         
         self.lbl_historial_vacio = QLabel(
             '<div style="text-align: center; padding: 40px;">'
-            '<p style="font-size: 36px; margin: 0;">ðŸ“œ</p>'
+            '<p style="font-size: 36px; margin: 0;">📜</p>'
             '<p style="font-size: 14px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">Esperando datos del cliente...</p>'
             '<p style="font-size: 11px; color: {BG_BORDER}; margin: 4px 0 0 0;">Conecta al cliente de LoL para ver tu historial de partidas.</p>'
             '</div>'
@@ -290,7 +290,7 @@ class PerfilTabMixin:
 
     def _riot_resolve_puuid(self, game_name: str, tag_line: str):
         """Obtiene el PUUID nuevo (match v5) desde el riot id (gameName#tagLine).
-        Si no hay tag_line, no hace fallback falso â€” devuelve None."""
+        Si no hay tag_line, no hace fallback falso — devuelve None."""
         api_key, region, routing = self._riot_get_config()
         if not api_key or not game_name:
             return None
@@ -578,7 +578,7 @@ class PerfilTabMixin:
         estar disponible tras abrir el cliente."""
         data = {"ok": False}
         try:
-            # â”€â”€ Fase 1: Perfil base (con reintentos, la API puede no estar lista) â”€â”€
+            # ── Fase 1: Perfil base (con reintentos, la API puede no estar lista) ──
             perfil = None
             for intento in range(5):
                 perfil = self.lcu.obtener_perfil()
@@ -597,7 +597,7 @@ class PerfilTabMixin:
             data["perfil"] = perfil
             perfil_ok = True
             
-            # â”€â”€ Fase 2: Ligas (con reintentos â€” la API de ranked tarda en arrancar) â”€â”€
+            # ── Fase 2: Ligas (con reintentos — la API de ranked tarda en arrancar) ──
             ligas = None
             for intento_l in range(4):
                 try:
@@ -612,15 +612,15 @@ class PerfilTabMixin:
                 print("[_fetch_perfil] No se pudieron obtener ligas (no fatal).")
             data["ligas"] = ligas
             
-            # â”€â”€ Fase 3: MaestrÃ­as (no fatal si falla) â”€â”€
+            # ── Fase 3: Maestrías (no fatal si falla) ──
             maestrias = []
             try:
                 maestrias = self.lcu.obtener_maestrias()
             except Exception as e:
-                print(f"[_fetch_perfil] Error obteniendo maestrÃ­as (no fatal): {e}")
+                print(f"[_fetch_perfil] Error obteniendo maestrías (no fatal): {e}")
             data["maestrias"] = maestrias[:3] if maestrias else []
             
-            # â”€â”€ Fase 4: Historial (con reintentos, no fatal si falla) â”€â”€
+            # ── Fase 4: Historial (con reintentos, no fatal si falla) ──
             puuid = perfil.get("puuid")
             historial = None
             if puuid:
@@ -637,7 +637,7 @@ class PerfilTabMixin:
                     print("[_fetch_perfil] No se pudo obtener historial (no fatal).")
             data["historial"] = historial
             
-            # â”€â”€ Fase 5: Season stats (paginaciÃ³n completa para toda la temporada) â”€â”€
+            # ── Fase 5: Season stats (paginación completa para toda la temporada) ──
             all_games = list(historial) if historial else []
 
             def _gid(g):
@@ -666,11 +666,11 @@ class PerfilTabMixin:
                     print(f"[_fetch_perfil] Error paginando season stats (no fatal): {e}")
             data["all_games_season"] = all_games
 
-            # Emitir YA los datos del LCU â€” no esperar a Riot API
+            # Emitir YA los datos del LCU — no esperar a Riot API
             data["ok"] = perfil_ok
             self.perfil_listo.emit(data)
 
-            # â”€â”€ Fase 6: Riot API (background, no bloquea la UI) â”€â”€
+            # ── Fase 6: Riot API (background, no bloquea la UI) ──
             if puuid and len(all_games) < 500:
                 game_name = perfil.get("gameName") or perfil.get("displayName", "").split("#")[0]
                 tag_line = perfil.get("tagLine") or ""
@@ -681,7 +681,7 @@ class PerfilTabMixin:
                 ).start()
 
         except Exception as e:
-            print(f"[_fetch_perfil] Error crÃ­tico: {e}")
+            print(f"[_fetch_perfil] Error crítico: {e}")
             data["ok"] = False
             self.perfil_listo.emit(data)
 
@@ -690,7 +690,7 @@ class PerfilTabMixin:
         self._cargando_perfil = False
         
         if not data.get("ok") or not data.get("perfil"):
-            print(f"[_on_perfil_listo] Datos insuficientes (ok={data.get('ok')}), se reintentarÃ¡.")
+            print(f"[_on_perfil_listo] Datos insuficientes (ok={data.get('ok')}), se reintentará.")
             return
         
         try:
@@ -767,7 +767,7 @@ class PerfilTabMixin:
             _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats)
             _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats)
 
-            # Registrar LP del dÃ­a y actualizar grÃ¡fica
+            # Registrar LP del día y actualizar gráfica
             try:
                 if ranked_solo and ranked_solo.get("tier"):
                     registrar_lp(ranked_solo["tier"], ranked_solo.get("division", ""),
@@ -809,7 +809,7 @@ class PerfilTabMixin:
                 print(f"[Perfil] DEDUP historial: {len(games)} -> {len(games_dedup)} partidas unicas")
             games = games_dedup
             self.historial_games = games
-            # Guardar all_games_season si viene del fetch (paginaciÃ³n ya hecha en hilo secundario)
+            # Guardar all_games_season si viene del fetch (paginación ya hecha en hilo secundario)
             self.all_games_season = data.get("all_games_season", list(games))
             self._renderizar_historial(games)
         except Exception as e:
@@ -932,17 +932,17 @@ class PerfilTabMixin:
             self.lbl_card_most_val.setText("--")
             self.lbl_card_best_val.setText("--")
 
-        # --- WR POR LÃNEA (1 sola query para todos los campeones) ---
+        # --- WR POR LÍNEA (1 sola query para todos los campeones) ---
         conn = obtener_conexion()
         cur = conn.cursor()
         
-        # Recoger campeones Ãºnicos del historial
+        # Recoger campeones únicos del historial
         champs_hist = list(set(
             self.procesar_nombre_champ(str(g.get("participants", [{}])[0].get("championId", "0")), "0") or "?"
             for g in self.historial_games
         ))
         
-        # 1 sola query: rol mÃ¡s frecuente de cada campeÃ³n
+        # 1 sola query: rol más frecuente de cada campeón
         rol_por_champ = {}
         if champs_hist:
             placeholders = ",".join(["%s"] * len(champs_hist))
@@ -988,7 +988,7 @@ class PerfilTabMixin:
                 lbl.setStyleSheet("font-size: 10px; color: #8fa3b8; padding: 4px;")
                 lbl.setToolTip("Sin datos en el historial reciente")
 
-        # --- ESTADÃSTICAS DE LA SEASON + FATIGA ---
+        # --- ESTADÍSTICAS DE LA SEASON + FATIGA ---
         self._cargar_stats_season()
         self._analizar_fatiga()
 
@@ -1024,10 +1024,10 @@ class PerfilTabMixin:
         self.cb_filtro_season.addItems(years_usados)
         self.cb_filtro_season.blockSignals(False)
 
-        # â”€â”€â”€ FASE 4: COACHING PRO â”€â”€â”€
+        # ─── FASE 4: COACHING PRO ───
         self._actualizar_coaching()
 
-        # â”€â”€â”€ FASE 5: LOGROS â”€â”€â”€
+        # ─── FASE 5: LOGROS ───
         self._cargar_logros()
 
     def _actualizar_perfil_jugador(self):
@@ -1057,35 +1057,35 @@ class PerfilTabMixin:
             # 2. Insights / Habitos
             insights = detectar_habitos(games)
             if insights:
-                self.lbl_insights_title.setText("ðŸ” INSIGHTS DETECTADOS")
-                self.lbl_insights.setText("\n".join(f"â€¢ {i}" for i in insights[:5]))
+                self.lbl_insights_title.setText("🔍 INSIGHTS DETECTADOS")
+                self.lbl_insights.setText("\n".join(f"• {i}" for i in insights[:5]))
             
             # 3. Objetivos semanales
             objetivos = generar_objetivos_semanales(games)
             if objetivos:
-                self.lbl_objetivos_title.setText("ðŸŽ¯ OBJETIVOS SEMANALES")
+                self.lbl_objetivos_title.setText("🎯 OBJETIVOS SEMANALES")
                 self.lbl_objetivos.setText("\n".join(objetivos))
             
             # 4. Cruce emocional vs WR
             emocional = analizar_emocional_vs_wr(games)
             if emocional:
-                self.lbl_emocional_title.setText("ðŸ“Š RENDIMIENTO POR ESTADO")
+                self.lbl_emocional_title.setText("📊 RENDIMIENTO POR ESTADO")
                 lineas = []
-                emoji_map = {"Concentrado": "ðŸ”¥", "Normal": "ðŸ˜", "Tilted": "ðŸ˜¤", "Cansado": "ðŸ˜´"}
+                emoji_map = {"Concentrado": "🔥", "Normal": "😐", "Tilted": "😤", "Cansado": "😴"}
                 for estado, data in sorted(emocional.items(), key=lambda x: x[1].get("wr", 0), reverse=True):
                     wr_e = data.get("wr", 0)
                     n = data.get("partidas", 0)
-                    emoji = emoji_map.get(estado, "â“")
+                    emoji = emoji_map.get(estado, "❓")
                     lineas.append(f"{emoji} {estado}: {wr_e}% WR ({n} partidas)")
-                self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadÃ­sticas")
+                self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
 
     def _actualizar_grafica_lp(self):
-        """Refresca la grÃ¡fica de LP con los datos de la cola seleccionada."""
+        """Refresca la gráfica de LP con los datos de la cola seleccionada."""
         if not hasattr(self, "lp_graph"):
             return
-        queue_map = {"Solo/DÃºo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
+        queue_map = {"Solo/Dúo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
         queue = queue_map.get(self.cb_lp_queue.currentText(), "RANKED_SOLO_5x5")
         try:
             history = obtener_historial_lp(queue, dias=30)
@@ -1096,7 +1096,7 @@ class PerfilTabMixin:
     def _analizar_fatiga(self):
         """Analiza fatiga/tilt desde el historial de la LCU y actualiza el dashboard premium."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
-            self.lbl_fatiga_icono.setText("ðŸ“Š")
+            self.lbl_fatiga_icono.setText("📊")
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
             self.lbl_fatiga_estado.setText("SIN DATOS")
             self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 16px; font-weight: bold;")
@@ -1113,24 +1113,24 @@ class PerfilTabMixin:
                     games_hoy.append(g)
             if not games_hoy:
                 estado = "fresh"
-                mensaje = "ðŸŒ… Â¡No has jugado hoy! EstÃ¡s en tu mejor momento."
-                recomendacion = "La mente estÃ¡ fresca y los reflejos listos. Calienta con un normal o salta directo a ranked. Hoy es tu dÃ­a."
+                mensaje = "🌅 ¡No has jugado hoy! Estás en tu mejor momento."
+                recomendacion = "La mente está fresca y los reflejos listos. Calienta con un normal o salta directo a ranked. Hoy es tu día."
             else:
                 fatiga = analizar_fatiga(games_hoy)
                 estado = fatiga.get("estado", "neutral")
                 mensaje = fatiga.get("mensaje", "Sin datos")
                 recomendacion = fatiga.get("recomendacion", "")
             
-            emojis = {"fresh": "ðŸ”¥", "neutral": "âš–ï¸", "tired": "ðŸ¥±", "tilted": "ðŸ’¢"}
+            emojis = {"fresh": "🔥", "neutral": "⚖️", "tired": "🥱", "tilted": "💢"}
             colores = {"fresh": GREEN_WR, "neutral": ACCENT_TEAL, "tired": YELLOW_WR, "tilted": RED_WR}
             textos_color = {"fresh": "#064e3b", "neutral": "#134e4a", "tired": "#713f12", "tilted": "#7f1d1d"}
-            textos = {"fresh": "Ã“PTIMO", "neutral": "NEUTRAL", "tired": "CANSADO", "tilted": "TILTEADO"}
+            textos = {"fresh": "ÓPTIMO", "neutral": "NEUTRAL", "tired": "CANSADO", "tilted": "TILTEADO"}
             
-            emoji = emojis.get(estado, "ðŸ”¥")
+            emoji = emojis.get(estado, "🔥")
             color = colores.get(estado, GREEN_WR)
             bar_color = colores.get(estado, GREEN_WR)
             bar_bg = textos_color.get(estado, "#064e3b")
-            estado_txt = textos.get(estado, "Ã“PTIMO")
+            estado_txt = textos.get(estado, "ÓPTIMO")
             
             self.lbl_fatiga_icono.setText(emoji)
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
@@ -1139,13 +1139,13 @@ class PerfilTabMixin:
             self.lbl_fatiga_barra.setStyleSheet(f"background-color: {bar_color}; border-radius: 2px;")
             
             if recomendacion:
-                self.lbl_fatiga_consejo.setText(f"ðŸ’¡ {recomendacion}")
+                self.lbl_fatiga_consejo.setText(f"💡 {recomendacion}")
             else:
                 self.lbl_fatiga_consejo.setText(mensaje)
             self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 6px 4px 6px;")
         except Exception as e:
             print(f"[_analizar_fatiga] Error: {e}")
-            self.lbl_fatiga_icono.setText("âŒ")
+            self.lbl_fatiga_icono.setText("❌")
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
             self.lbl_fatiga_estado.setText("ERROR")
             self.lbl_fatiga_estado.setStyleSheet(f"color: {RED_WR}; font-size: 16px; font-weight: bold;")
@@ -1195,7 +1195,7 @@ class PerfilTabMixin:
             self._cargando_historial = False
 
     def _append_games_to_table(self, games):
-        """AÃ±ade partidas a la tabla sin borrar las existentes."""
+        """Añade partidas a la tabla sin borrar las existentes."""
         for g in games:
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
@@ -1230,9 +1230,9 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    # MOTOR EMOCIONAL â€” ETIQUETADO DE PARTIDAS (NEXUS)
-    # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    # ═══════════════════════════════════════════════════════════
+    # MOTOR EMOCIONAL — ETIQUETADO DE PARTIDAS (NEXUS)
+    # ═══════════════════════════════════════════════════════════
 
     def _crear_widget_emocional(self, game_id: str, champ_name: str, estado_actual: str = None):
         """Crea un widget con 4 botones de estado emocional para una fila del historial."""
@@ -1243,10 +1243,10 @@ class PerfilTabMixin:
         layout.setAlignment(Qt.AlignCenter)
 
         estados = [
-            ("ðŸ”¥", "Concentrado", "{RED_DANGER}", "Concentrado: enfoque total"),
-            ("ðŸ˜", "Normal", "{TEXT_SUBTLE}", "Normal: estado neutro"),
-            ("ðŸ˜¤", "Tilted", "{YELLOW_WARNING}", "Tilted: frustrado"),
-            ("ðŸ˜´", "Cansado", "#3b82f6", "Cansado: fatiga"),
+            ("🔥", "Concentrado", "{RED_DANGER}", "Concentrado: enfoque total"),
+            ("😐", "Normal", "{TEXT_SUBTLE}", "Normal: estado neutro"),
+            ("😤", "Tilted", "{YELLOW_WARNING}", "Tilted: frustrado"),
+            ("😴", "Cansado", "#3b82f6", "Cansado: fatiga"),
         ]
 
         for emoji, estado, color, tooltip in estados:
@@ -1285,7 +1285,7 @@ class PerfilTabMixin:
             print(f"[_on_tag_emocional] Error: {e}")
 
     def filtrar_historial(self, _=None):
-        """Filtra la tabla de historial por campeÃ³n, modo y temporada."""
+        """Filtra la tabla de historial por campeón, modo y temporada."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
             return
         filtro_champ = self.cb_filtro_champ.currentText()

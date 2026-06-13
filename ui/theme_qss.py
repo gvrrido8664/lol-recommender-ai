@@ -16,7 +16,7 @@ def hoja_estilos_global() -> str:
                 font-size: 12px; 
             }}
             
-            /* â•â•â• PANELES / TARJETAS â•â•â• */
+            /* ═══ PANELES / TARJETAS ═══ */
             QFrame#Panel {{ 
                 background-color: {BG_PANEL}; 
                 border: 1px solid {BORDER_SUBTLE}; 
@@ -57,7 +57,7 @@ def hoja_estilos_global() -> str:
             
             QLabel {{ border: none; background: transparent; }}
             
-            /* â•â•â• BOTONES â•â•â• */
+            /* ═══ BOTONES ═══ */
             QPushButton {{ 
                 background-color: {BG_CARD}; 
                 color: {TEXT_WHITE}; 
@@ -82,7 +82,7 @@ def hoja_estilos_global() -> str:
                 border: 1px solid #334155; 
             }}
             
-            /* â•â•â• PESTAÃ‘AS â•â•â• */
+            /* ═══ PESTAÑAS ═══ */
             QTabWidget::pane {{ 
                 border: none; 
                 background-color: {BG_PANEL}; 
@@ -112,7 +112,7 @@ def hoja_estilos_global() -> str:
                 border-bottom: 2px solid {TEXT_MUTED};
             }}
             
-            /* â•â•â• COMBOBOX â•â•â• */
+            /* ═══ COMBOBOX ═══ */
             QComboBox {{ 
                 background-color: {BG_CARD}; 
                 color: {TEXT_WHITE}; 
@@ -139,7 +139,7 @@ def hoja_estilos_global() -> str:
                 padding: 4px;
             }}
             
-            /* â•â•â• TABLAS â•â•â• */
+            /* ═══ TABLAS ═══ */
             QTableWidget {{ 
                 background-color: {BG_PANEL}; 
                 alternate-background-color: {BG_CARD}; 
@@ -173,7 +173,7 @@ def hoja_estilos_global() -> str:
                 text-transform: uppercase;
             }}
             
-            /* â•â•â• BARRA DE PROGRESO â•â•â• */
+            /* ═══ BARRA DE PROGRESO ═══ */
             QProgressBar {{ 
                 border: 1px solid {BORDER_SUBTLE}; 
                 border-radius: 6px; 
@@ -190,7 +190,7 @@ def hoja_estilos_global() -> str:
                 border-radius: 5px; 
             }}
             
-            /* â•â•â• SCROLLBAR â•â•â• */
+            /* ═══ SCROLLBAR ═══ */
             QScrollBar:vertical {{
                 background: transparent;
                 width: 6px;
@@ -239,7 +239,7 @@ def hoja_estilos_global() -> str:
                 width: 0px;
             }}
             
-            /* â•â•â• TOOLTIP â•â•â• */
+            /* ═══ TOOLTIP ═══ */
             QToolTip {{
                 background-color: {BG_PANEL};
                 color: {TEXT_WHITE};
@@ -249,7 +249,7 @@ def hoja_estilos_global() -> str:
                 font-size: 11px;
             }}
             
-            /* â•â•â• CHECKBOX â•â•â• */
+            /* ═══ CHECKBOX ═══ */
             QCheckBox {{
                 color: {TEXT_WHITE};
                 font-size: 12px;
@@ -270,7 +270,7 @@ def hoja_estilos_global() -> str:
                 border: 1px solid {BORDER_ACCENT};
             }}
             
-            /* â•â•â• SPINBOX / SLIDER â•â•â• */
+            /* ═══ SPINBOX / SLIDER ═══ */
             QSpinBox {{
                 background-color: {BG_CARD};
                 color: {TEXT_WHITE};

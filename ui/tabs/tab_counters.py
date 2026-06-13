@@ -12,7 +12,7 @@ class CountersTabMixin:
         
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(8)
-        ctrl_layout.addWidget(QLabel("LÃ­nea:"))
+        ctrl_layout.addWidget(QLabel("Línea:"))
         
         self.cb_rol_counter = QComboBox()
         self.cb_enemigo = QComboBox()
@@ -40,7 +40,7 @@ class CountersTabMixin:
         
         self.tree_counters = QTableWidget()
         self.tree_counters.setColumnCount(3)
-        self.tree_counters.setHorizontalHeaderLabels(["CampeÃ³n Aliado", "Winrate %", "Partidas"])
+        self.tree_counters.setHorizontalHeaderLabels(["Campeón Aliado", "Winrate %", "Partidas"])
         self.tree_counters.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tree_counters.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tree_counters.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -56,7 +56,7 @@ class CountersTabMixin:
         """)
         split_layout.addWidget(self.tree_counters, 1)
         
-        self.panel_visual, self.l_visual = self.crear_panel("SETUP & BUILD Ã“PTIMAS")
+        self.panel_visual, self.l_visual = self.crear_panel("SETUP & BUILD ÓPTIMAS")
         self.frame_setup_visual = QVBoxLayout()
         self.frame_setup_visual.setAlignment(Qt.AlignTop)
         self.l_visual.addLayout(self.frame_setup_visual)
@@ -67,7 +67,7 @@ class CountersTabMixin:
         self.actualizar_listas_counter(UI_ROLES[0])
 
     def buscar_counters(self):
-        """Lanza la bÃºsqueda en hilo secundario para no congelar la UI."""
+        """Lanza la búsqueda en hilo secundario para no congelar la UI."""
         if self._cargando_meta:
             return
         self._cargando_meta = True

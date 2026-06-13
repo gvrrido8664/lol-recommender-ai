@@ -2,6 +2,7 @@ import os
 import json
 from .db_manager import obtener_conexion, DATA_DIR
 from .riot_api import cargar_objetos, cargar_campeones
+from .roles import POS_EQUIVALENTES as pos_equivalentes, normalizar_posicion
 from .tags_champions import (
     obtener_dano, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte,
     obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica
@@ -68,22 +69,6 @@ def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
     resultado.extend(core_barato)
 
     return resultado
-
-# FIX: Diccionario de excepciones para el cálculo AD/AP perfecto
-AP_EXCEPTIONS = {"Sylas", "Akali", "Diana", "Ekko", "Evelynn", "Fizz", "Gwen", "Katarina", 
-                 "Mordekaiser", "Nidalee", "Rumble", "Shaco", "Singed", "Vladimir", "Zac", 
-                 "Gragas", "Elise", "Volibear", "Kennen", "Teemo", "Azir", "Kassadin", "Leblanc"}
-
-# Tanques que hacen daño AP (para el cálculo AD/AP)
-AP_TANKS = {"Amumu", "ChoGath", "Galio", "Malphite", "Maokai", "Nunu", "Ornn",
-            "Rammus", "Sejuani", "Shen", "Sion", "Zac", "Skarner"}
-
-# Campeones con tag "Fighter" que NO son frontlane (asesinos, duelistas frágiles)
-FRONTLANE_EXCLUDE = {"Fizz", "KhaZix", "MasterYi", "Quinn", "Rengar", "Shaco",
-                     "Tryndamere", "Yasuo", "Yone", "Fiora", "Gwen", "Irelia",
-                     "Kayn", "LeeSin", "Nidalee", "Riven", "Viego", "BelVeth",
-                     "Elise", "Evelynn", "Katarina", "Akali", "Sylas", "Diana",
-                     "Ekko", "Kassadin", "Leblanc"}
 
 def obtener_campeones_por_rol(rol_api, min_partidas=20):
     conn = obtener_conexion()
@@ -399,8 +384,8 @@ def analizar_composicion(aliados):
 
     total_dmg = ad_count + ap_count
     if total_dmg > 0:
-        pct_ad = min(100, int((ad_count / total_dmg) * 100))
-        pct_ap = min(100, int((ap_count / total_dmg) * 100))
+        pct_ad = min(100, round((ad_count / total_dmg) * 100))
+        pct_ap = min(100, round((ap_count / total_dmg) * 100))
     else:
         pct_ad, pct_ap = 50, 50
 
@@ -541,21 +526,14 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
         en_pos = dict(zip(enemigos, pos_enemigos))
         
         # Mapa de posiciones equivalentes para emparejar
-        pos_equivalentes = {
-            "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
-            "MIDDLE": "MIDDLE", "MID": "MIDDLE",
-            "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
-            "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
-        }
-        
         wr_por_lane = []
         
         for aliado, pos_al in al_pos.items():
             # Buscar enemigo en la misma posición
-            pos_norm = pos_equivalentes.get(pos_al.upper(), pos_al.upper())
+            pos_norm = normalizar_posicion(pos_al)
             enemigo_lane = None
             for en, pos_en in en_pos.items():
-                if pos_equivalentes.get(pos_en.upper(), pos_en.upper()) == pos_norm:
+                if normalizar_posicion(pos_en) == pos_norm:
                     enemigo_lane = en
                     break
             
@@ -572,10 +550,8 @@ def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None)
                 if row and row["wr"] is not None:
                     n = int(row["partidas"])
                     wr_single = float(row["wr"])
-                    if n >= 50:
-                        wr_por_lane.append(wr_single)
-                    elif n >= 10:
-                        wr_por_lane.append(wr_single * 0.7 + 50 * 0.3)
+                    K = 3
+                    wr_por_lane.append((wr_single * n + 50.0 * K) / (n + K))
                 else:
                     wr_por_lane.append(50.0)
             else:

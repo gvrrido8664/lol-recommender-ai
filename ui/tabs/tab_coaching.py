@@ -169,13 +169,82 @@ class CoachingTabMixin:
             clear_layout(layout)
 
     def _sec_html(self, sec):
-        color_borde = sec.get("color", BORDER_SUBTLE)
+        # El contenido (html) ya trae su propio encabezado con el veredicto/dato,
+        # así que no repetimos aquí el título de sección (evita título + subtítulo
+        # duplicados). El color de la sección queda en el borde de la tarjeta.
         return f"""<div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;">
-        <p style="font-size: 13px; color: {color_borde}; font-weight: 700; margin: 0 0 6px 0;">
-        {sec.get('icono', '📊')} {sec.get('titulo', '')}
-        </p>
         {sec.get('html', '')}
         </div>"""
+
+    def _dashboard_html(self, m):
+        """Tablero compacto de métricas clave (foco en por-partida)."""
+        wr = m.get("wr", 0)
+        wr_col = GREEN_WR if wr >= 50 else RED_WR
+        kda = m.get("kda", 0)
+        kda_col = GREEN_WR if kda >= 3 else (YELLOW_WR if kda >= 2 else RED_WR)
+        avg_d = m.get("avg_d", 0)
+        d_col = GREEN_WR if avg_d <= 4.5 else (YELLOW_WR if avg_d <= 6.5 else RED_WR)
+        cs = m.get("avg_cs", 0)
+        cs_col = GREEN_WR if cs >= 6.5 else (YELLOW_WR if cs >= 5 else RED_WR)
+
+        def fila(label, valor, color=TEXT_PRIMARY):
+            return (f'<tr><td style="padding:3px 14px 3px 0; color:{TEXT_MUTED}; font-size:11px;">{label}</td>'
+                    f'<td style="padding:3px 0; color:{color}; font-size:12px; font-weight:700;">{valor}</td></tr>')
+
+        filas = ""
+        filas += fila("Winrate", f"{wr:.0f}%", wr_col)
+        filas += fila("KDA", f"{kda:.2f}  ({m.get('avg_k',0):.1f}/{m.get('avg_d',0):.1f}/{m.get('avg_a',0):.1f})", kda_col)
+        filas += fila("CS / min", f"{cs:.1f}", cs_col)
+        filas += fila("Muertes / partida", f"{avg_d:.1f}", d_col)
+        filas += fila("Daño / partida", f"{m.get('avg_dmg_game',0):,.0f}")
+        filas += fila("Oro / partida", f"{m.get('avg_gold_game',0):,.0f}")
+        filas += fila("Visión / partida", f"{m.get('avg_vision_game',0):.0f}")
+        filas += fila("First Blood", f"{m.get('primer_sangre_pct',0):.0f}%")
+        filas += fila("Campeones distintos", f"{m.get('unique_champs','?')}")
+
+        return f"""<div style="font-family: 'Segoe UI', Arial, sans-serif;">
+        <p style="font-size: 14px; color: {ACCENT_TEAL}; margin: 0 0 8px 0;"><b>📊 Tus números ({m.get('total_all','?')} partidas)</b></p>
+        <table style="border-collapse: collapse;">{filas}</table>
+        </div>"""
+
+    def _fortalezas_html(self, m):
+        """Lista automática de fortalezas y áreas de mejora según las métricas."""
+        fuertes, debiles = [], []
+        wr = m.get("wr", 0); kda = m.get("kda", 0); cs = m.get("avg_cs", 0)
+        avg_d = m.get("avg_d", 0); vis = m.get("avg_vision_game", 0)
+        eff = m.get("dmg_eff", 0); fb = m.get("primer_sangre_pct", 0)
+        uniq = m.get("unique_champs", 0)
+
+        if wr >= 53: fuertes.append("Winrate sólido: estás ganando más de lo que pierdes con claridad.")
+        if kda >= 3.2: fuertes.append("KDA alto: participas en jugadas sin morir de más.")
+        if cs >= 6.5: fuertes.append("Buen farmeo (CS/min): tu economía de línea es fuerte.")
+        if avg_d <= 4.5: fuertes.append("Mueres poco: buena toma de decisiones y supervivencia.")
+        if vis >= 28: fuertes.append("Visión alta: das información a tu equipo.")
+        if eff >= 1.15: fuertes.append("Buen intercambio de daño: infliges más del que recibes.")
+        if fb >= 30: fuertes.append("Agresividad early efectiva: consigues muchos First Bloods.")
+
+        if wr < 47: debiles.append("Winrate bajo: enfócate en UNA mejora a la vez para revertirlo.")
+        if kda < 2.0: debiles.append("KDA bajo: estás muriendo demasiado para tu impacto.")
+        if cs < 5.0: debiles.append("Farmeo flojo (CS/min): es tu mayor palanca de oro.")
+        if avg_d >= 7: debiles.append("Mueres demasiado: cada muerte regala ~300g al rival.")
+        if 0 < vis < 15: debiles.append("Visión baja: compra control wards y vacía el trinket.")
+        if 0 < eff < 0.8: debiles.append("Recibes más daño del que infliges: posicionamiento.")
+        if uniq > 8: debiles.append("Pool muy amplia: enfoca 2-3 campeones para acumular maestría.")
+
+        if not fuertes and not debiles:
+            return ""
+        html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.6;">'
+        html += f'<p style="font-size: 14px; color: {GREEN_WR}; margin: 0 0 6px 0;"><b>⚖️ Fortalezas y áreas de mejora</b></p>'
+        if fuertes:
+            html += f'<p style="font-size: 11px; color: {GREEN_WR}; margin: 4px 0 2px 0;"><b>Lo que haces bien</b></p>'
+            for f in fuertes:
+                html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 1px 0 1px 12px;">+ {f}</p>'
+        if debiles:
+            html += f'<p style="font-size: 11px; color: {RED_WR}; margin: 8px 0 2px 0;"><b>Dónde ganar más LP</b></p>'
+            for d in debiles:
+                html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 1px 0 1px 12px;">− {d}</p>'
+        html += '</div>'
+        return html
 
     def _actualizar_coaching(self):
         if not hasattr(self, 'historial_games') or not self.historial_games:
@@ -310,6 +379,13 @@ class CoachingTabMixin:
             <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 0;">KDA: {detalles.get('avg_kda','?')} · Clase: {detalles.get('clase_predominante','?')} · Partidas: {detalles.get('total_games','?')}</p>
             </div>"""
             cards_por_tab["Resumen"].insert(1, self._crear_card(pers_html, color_estilo))
+
+        metricas = reporte.get("metricas", {})
+        if metricas:
+            cards_por_tab["Resumen"].insert(2, self._crear_card(self._dashboard_html(metricas), ACCENT_TEAL))
+            fort_html = self._fortalezas_html(metricas)
+            if fort_html:
+                cards_por_tab["Resumen"].insert(3, self._crear_card(fort_html, GREEN_WR))
 
         if datos_extra and datos_extra.get("insights"):
             insights = datos_extra["insights"]

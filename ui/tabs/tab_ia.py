@@ -20,12 +20,13 @@ class IATabMixin:
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
 
-        btn_swap = QPushButton("⬌⬎")
-        btn_swap.setFixedSize(36, 28)
+        btn_swap = QPushButton("⇄")
+        btn_swap.setFixedSize(34, 34)
         btn_swap.setToolTip("Intercambiar aliado / enemigo")
         btn_swap.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD_HOVER}; color: {TEXT_WHITE}; border: 1px solid {BORDER_SUBTLE};
-                           border-radius: 4px; font-size: 16px; font-weight: bold; padding: 0px; }}
+                           border-radius: 4px; font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+                           font-size: 18px; font-weight: bold; }}
             QPushButton:hover {{ background-color: {ACCENT_RED}; }}
         """)
         btn_swap.clicked.connect(self._swap_matchup)
@@ -479,25 +480,28 @@ class IATabMixin:
         def _barra_html(val_a, val_e, max_v, label):
             pct_a = min(100, int(val_a / max(1, max_v) * 100))
             pct_e = min(100, int(val_e / max(1, max_v) * 100))
+            bar_w = 220
             return (
                 f'<tr>'
-                f'<td style="color:{TEXT_SECONDARY};font-size:11px;padding:4px 6px;font-weight:600;white-space:nowrap;min-width:80px;">{label}</td>'
-                f'<td style="width:38%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:4px;height:20px;width:100%;">'
-                f'<div style="background:{GREEN_WR};height:20px;width:{pct_a}%;border-radius:4px;"></div></div></td>'
-                f'<td style="color:{TEXT_WHITE};font-size:11px;text-align:center;font-weight:700;width:26px;">{val_a}</td>'
-                f'<td style="color:{RED_WR};font-size:11px;text-align:center;font-weight:700;width:26px;">{val_e}</td>'
-                f'<td style="width:38%;padding:0 4px;"><div style="background:{BG_CARD_HOVER};border-radius:4px;height:20px;width:100%;">'
-                f'<div style="background:{RED_WR};height:20px;width:{pct_e}%;border-radius:4px;"></div></div></td>'
+                f'<td width="110" style="color:{TEXT_SECONDARY};font-size:11px;padding:5px 6px;font-weight:600;">{label}</td>'
+                f'<td width="{bar_w}" style="padding:2px 6px;">'
+                f'<div style="background:{BG_CARD_HOVER};border-radius:5px;height:26px;width:{bar_w}px;">'
+                f'<div style="background:{GREEN_WR};height:26px;width:{int(bar_w * pct_a / 100)}px;border-radius:5px;"></div></div></td>'
+                f'<td width="28" style="color:{GREEN_WR};font-size:12px;text-align:center;font-weight:700;">{val_a}</td>'
+                f'<td width="28" style="color:{RED_WR};font-size:12px;text-align:center;font-weight:700;">{val_e}</td>'
+                f'<td width="{bar_w}" style="padding:2px 6px;">'
+                f'<div style="background:{BG_CARD_HOVER};border-radius:5px;height:26px;width:{bar_w}px;">'
+                f'<div style="background:{RED_WR};height:26px;width:{int(bar_w * pct_e / 100)}px;border-radius:5px;"></div></div></td>'
                 f'</tr>'
             )
 
         html = f"""
         <div style="font-family:{FONT_FAMILY};font-size:11px;">
         <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
-        <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;text-align:center;">
+        <p style="color:{ACCENT_RED};font-weight:700;font-size:14px;letter-spacing:1px;margin:6px 0;">
             ⚡ STATS COMPARATIVAS
         </p>
-        <table cellspacing="3" style="margin:6px 0;width:100%;">
+        <table cellspacing="4" style="margin:8px 0;">
             {_barra_html(mob_a, mob_e, 5, "Movilidad")}
             {_barra_html(cc_a, cc_e, 5, "Control (CC)")}
             {_barra_html(early_a, early_e, 3, "Early Game")}

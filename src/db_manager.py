@@ -131,15 +131,8 @@ def inicializar_db():
         ("deaths", "INTEGER"),
         ("assists", "INTEGER"),
     ]:
-        cur.execute(f"""
-            DO $$
-            BEGIN
-                ALTER TABLE {('participantes' if col != 'patch' else 'matches')}
-                ADD COLUMN {col} {tipo};
-            EXCEPTION
-                WHEN duplicate_column THEN NULL;
-            END $$;
-        """)
+        tabla = 'participantes' if col != 'patch' else 'matches'
+        cur.execute(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {col} {tipo}")
 
     cur.execute("""
         DO $$
@@ -286,7 +279,7 @@ def obtener_estadisticas_emocionales() -> dict:
     cur = conn.cursor()
     cur.execute("""
         SELECT ee.estado, COUNT(*) as partidas,
-               SUM(CASE WHEN p.win THEN 1 ELSE 0 END) as wins
+               SUM(CASE WHEN p.win = 1 THEN 1 ELSE 0 END) as wins
         FROM estado_emocional ee
         JOIN participantes p ON p.match_id = ee.game_id AND p.champion = ee.champion
         GROUP BY ee.estado

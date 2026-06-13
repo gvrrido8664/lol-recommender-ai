@@ -72,3 +72,5 @@ app_version.txt
 # Cache de temporada (runtime)
 season_cache_*.json
 ui/tabs/data/
+
+coaching_cache.json

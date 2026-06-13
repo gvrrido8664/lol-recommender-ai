@@ -55,7 +55,7 @@ class SettingsDialog(QDialog):
 
         def _desc(texto):
             lbl = QLabel(texto)
-            lbl.setStyleSheet("color: {TEXT_SUBTLE}; font-size: 11px; padding-left: 2px;")
+            lbl.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px; padding-left: 2px;")
             lbl.setWordWrap(True)
             return lbl
 
@@ -161,7 +161,7 @@ class SettingsDialog(QDialog):
         self.slider_freq.setToolTip("Cada cuÃ¡ntos ms se actualiza el Radar en Vivo.")
         freq_layout.addWidget(self.slider_freq)
         self.lbl_freq_val = QLabel(f"{self.slider_freq.value()}ms")
-        self.lbl_freq_val.setStyleSheet("color: {TEXT_MUTED}; font-size: 11px; min-width: 50px;")
+        self.lbl_freq_val.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; min-width: 50px;")
         self.slider_freq.valueChanged.connect(lambda v: self.lbl_freq_val.setText(f"{v}ms"))
         freq_layout.addWidget(self.lbl_freq_val)
         g_comp.addLayout(freq_layout)

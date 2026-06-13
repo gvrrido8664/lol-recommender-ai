@@ -692,7 +692,7 @@ class PartidaTabMixin:
             card_layout.addLayout(icon_layout)
             
             lbl_name = QLabel(self._nombre_display(champ))
-            lbl_name.setStyleSheet("font-weight: bold; font-size: 12px; color: {TEXT_PRIMARY};")
+            lbl_name.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {TEXT_PRIMARY};")
             card_layout.addWidget(lbl_name)
             card_layout.addStretch()
             layout.addWidget(card)

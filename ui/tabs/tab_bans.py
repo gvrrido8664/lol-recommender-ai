@@ -112,13 +112,13 @@ class BansTabMixin:
 
             if not conseguidos:
                 self.lbl_logros_text = QLabel("Sigue jugando para desbloquear logros...")
-                self.lbl_logros_text.setStyleSheet("color: {TEXT_SUBTLE}; font-size: 11px;")
+                self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
                 self.lbl_logros_text.setWordWrap(True)
                 self.fr_logros.addWidget(self.lbl_logros_text)
             else:
                 for lg in conseguidos:
                     lbl = QLabel(f"{lg['emoji']} {lg['nombre']}")
-                    lbl.setStyleSheet("color: {TEXT_LIGHT}; font-size: 11px; background: #1a2744; border-radius: 4px; padding: 2px 6px;")
+                    lbl.setStyleSheet(f"color: {TEXT_LIGHT}; font-size: 11px; background: #1a2744; border-radius: 4px; padding: 2px 6px;")
                     lbl.setToolTip(lg['desc'])
                     self.fr_logros.addWidget(lbl)
             self.fr_logros.addStretch()

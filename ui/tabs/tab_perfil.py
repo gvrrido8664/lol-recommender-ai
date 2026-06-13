@@ -277,7 +277,7 @@ class PerfilTabMixin:
         self.fr_logros = QHBoxLayout()
         self.fr_logros.setSpacing(4)
         self.lbl_logros_text = QLabel("Conecta al cliente para ver tus logros...")
-        self.lbl_logros_text.setStyleSheet("color: {TEXT_SUBTLE}; font-size: 11px;")
+        self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
         self.lbl_logros_text.setWordWrap(True)
         self.fr_logros.addWidget(self.lbl_logros_text)
         self.fr_logros.addStretch()
@@ -1260,7 +1260,7 @@ class PerfilTabMixin:
                 """)
             else:
                 btn.setStyleSheet(f"""
-                    QPushButton {{ background-color: transparent; color: {BG_BORDER}; border: 1px solid {BG_CARD_HOVER}; 
+                    QPushButton {{ background-color: transparent; color: {BG_BORDER}; border: 1px solid #1e293b; 
                                    border-radius: 3px; font-size: 13px; padding: 0px; }}
                     QPushButton:hover {{ background-color: {color}; color: #fff; border: 1px solid {color}; }}
                 """)

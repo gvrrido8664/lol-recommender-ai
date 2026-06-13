@@ -162,7 +162,7 @@ class CoachingTabMixin:
             lbl = QLabel(mensaje)
             lbl.setTextFormat(Qt.RichText)
             lbl.setWordWrap(True)
-            lbl.setStyleSheet("background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12px;")
+            lbl.setStyleSheet(f"background: transparent; border: none; color: {TEXT_SECONDARY}; font-size: 12px;")
             l.addWidget(lbl)
             return card
         

@@ -446,25 +446,35 @@ class IATabMixin:
                     bar.setValue(50)
                     bar.setStyleSheet(self._estilo_barra_comparativa(50))
 
-        # === ITEMS SITUACIONALES ===
+        # === ITEMS ===
         self._clear_layout(self.ly_items_1v1)
         tit = QLabel(f"🛡️ Items vs {self._nombre_display(enemigo)}")
         tit.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 11px; background: transparent;")
         self.ly_items_1v1.addWidget(tit)
         try:
             items = obtener_items_situacionales(aliado, rol_api, [enemigo])
-            if items:
-                for it in items[:4]:
-                    lbl = QLabel(f"• {it.get('nombre', '?')}")
-                    lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
-                    if it.get("prioridad") == 1:
-                        lbl.setStyleSheet(f"color: {RED_WR}; font-size: 10px; font-weight: bold; background: transparent;")
-                    lbl.setToolTip(f"{it.get('razon', '')} ({it.get('categoria', '')})")
-                    self.ly_items_1v1.addWidget(lbl)
-            else:
-                no_items = QLabel("Sin datos especificos")
-                no_items.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px; background: transparent;")
-                self.ly_items_1v1.addWidget(no_items)
+            if not items:
+                _, fallback = obtener_top_items(aliado, rol_api)
+                items = [{"id": iid, "nombre": ITEMS_DICT.get(str(iid), {}).get("nombre", iid), "prioridad": 3, "razon": "Build recomendado", "categoria": "core"}
+                         for iid in fallback[:4] if ITEMS_DICT.get(str(iid))]
+            for it in items[:4]:
+                row = QHBoxLayout()
+                row.setSpacing(4)
+                iid = str(it.get("id", ""))
+                icon_path = os.path.join(ITEMS_DIR, f"{iid}.png") if iid else None
+                if icon_path and os.path.exists(icon_path):
+                    ic = QLabel()
+                    ic.setPixmap(QPixmap(icon_path).scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    ic.setFixedSize(22, 22)
+                    row.addWidget(ic)
+                lbl = QLabel(it.get("nombre", "?")[:22])
+                lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
+                if it.get("prioridad") == 1:
+                    lbl.setStyleSheet(f"color: {RED_WR}; font-size: 10px; font-weight: bold; background: transparent;")
+                lbl.setToolTip(f"{it.get('razon', '')} ({it.get('categoria', '')})")
+                row.addWidget(lbl)
+                row.addStretch()
+                self.ly_items_1v1.addLayout(row)
         except Exception as e:
             err = QLabel("No disponible")
             err.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px;")
@@ -480,9 +490,19 @@ class IATabMixin:
             runas = obtener_top_runas(aliado, rol_api)
             for rid in runas[:5]:
                 rname = RUNAS_DICT.get(str(rid), {}).get("nombre", f"Runa {rid}")
-                lbl = QLabel(f"• {rname}")
+                row = QHBoxLayout()
+                row.setSpacing(4)
+                icon_path = os.path.join(RUNAS_DIR, f"{rid}.png")
+                if os.path.exists(icon_path):
+                    ic = QLabel()
+                    ic.setPixmap(QPixmap(icon_path).scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    ic.setFixedSize(20, 20)
+                    row.addWidget(ic)
+                lbl = QLabel(rname[:24])
                 lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
-                self.ly_runas_1v1.addWidget(lbl)
+                row.addWidget(lbl)
+                row.addStretch()
+                self.ly_runas_1v1.addLayout(row)
         except Exception:
             err = QLabel("No disponible")
             err.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px;")
@@ -498,9 +518,19 @@ class IATabMixin:
             spells = obtener_top_hechizos(aliado, rol_api)
             for sid in spells[:2]:
                 sname = SPELLS_DICT.get(int(sid), {}).get("nombre", f"Hechizo {sid}")
-                lbl = QLabel(f"• {sname}")
+                row = QHBoxLayout()
+                row.setSpacing(4)
+                icon_path = os.path.join(SPELLS_DIR, f"{sid}.png")
+                if os.path.exists(icon_path):
+                    ic = QLabel()
+                    ic.setPixmap(QPixmap(icon_path).scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    ic.setFixedSize(20, 20)
+                    row.addWidget(ic)
+                lbl = QLabel(sname[:22])
                 lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 10px; background: transparent;")
-                self.ly_spells_1v1.addWidget(lbl)
+                row.addWidget(lbl)
+                row.addStretch()
+                self.ly_spells_1v1.addLayout(row)
         except Exception:
             err = QLabel("No disponible")
             err.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 10px;")
@@ -539,30 +569,60 @@ class IATabMixin:
         self.info_1v1_layout.addLayout(info_e, 1)
 
         # === ANALISIS IA ===
-        html = f"""
-        <div style="font-family:{FONT_FAMILY};font-size:11px;">
-        <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
-        <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;">
-            QUE VE LA IA
-        </p>
-        <ul style="margin:3px 0;padding-left:16px;line-height:1.6;">"""
-
         try:
             insights = interpretar_features(aliado, enemigo)
+            ventajas = []; desventajas = []; neutral = []
             for ins in insights:
                 if "Desventaja" in ins or "Deficit" in ins or "contra" in ins:
-                    color = RED_WR
-                elif "Ventaja" in ins or "Dominio" in ins or "mejor" in ins or "dicta" in ins:
-                    color = GREEN_WR
-                elif "hyper-carry" in ins:
-                    color = YELLOW_WR
+                    desventajas.append(ins)
+                elif "Ventaja" in ins or "Dominio" in ins or "Enfrentamiento equilibrado" in ins:
+                    ventajas.append(ins) if "equilibrado" not in ins else neutral.append(ins)
                 else:
-                    color = TEXT_MUTED
-                html += f'<li style="color:{color};font-size:10px;">{ins}</li>'
-        except Exception:
-            html += f'<li style="color:{TEXT_MUTED};font-size:10px;">Analisis no disponible para este matchup.</li>'
+                    neutral.append(ins)
 
-        html += "</ul></div>"
+            parts = []
+            for label, items, bg, border in [
+                ("VENTAJAS", ventajas, "#0a2a0f", GREEN_WR),
+                ("DESVENTAJAS", desventajas, "#2a0a0f", RED_WR),
+                ("INFO", neutral, "#1a1a2e", BORDER_SUBTLE),
+            ]:
+                if items:
+                    parts.append(
+                        f'<div style="background:{bg};border-left:3px solid {border};border-radius:4px;'
+                        f'padding:6px 10px;margin:3px 0;">'
+                        f'<p style="color:{border};font-size:10px;font-weight:700;margin:0 0 3px 0;">{label}</p>'
+                        + ''.join(f'<p style="color:{TEXT_SECONDARY};font-size:10px;margin:1px 0 1px 6px;">• {i}</p>' for i in items)
+                        + '</div>')
+
+            feats = extraer_features_comparativas(aliado, enemigo)
+            badges = []
+            badge_names = ["CC", "Movilidad", "Early", "Escalado", "Tanque(A)", "Tanque(E)",
+                           "CC+", "CC+(E)", "Burst", "TankCtr", "DmgIgual", "Early+", "Early+(E)", "Hiper", "Hiper(E)"]
+            for i, (v, name) in enumerate(zip(feats[:10], badge_names)):
+                if i in (0, 1, 2, 3) and v != 0:
+                    sign = "+" if v > 0 else ""
+                    color = GREEN_WR if v > 0 else RED_WR
+                    badges.append(f'<span style="display:inline-block;background:{BG_CARD};color:{color};'
+                                  f'border-radius:3px;padding:1px 6px;margin:1px;font-size:9px;">{name} {sign}{int(v)}</span>')
+
+            resumen = f'<p style="color:{TEXT_MUTED};font-size:10px;margin:0 0 4px 0;">{aliado} vs {enemigo}: '
+            resumen += f'<b style="color:{GREEN_WR};">{len(ventajas)} ventajas</b>, '
+            resumen += f'<b style="color:{RED_WR};">{len(desventajas)} desventajas</b></p>'
+
+            html = f"""
+            <div style="font-family:{FONT_FAMILY};font-size:11px;">
+            <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:6px 0;">
+            <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;margin:2px 0 4px 0;">ANALISIS DEL MATCHUP</p>
+            {resumen}
+            {''.join(parts)}
+            {f'<p style="margin:6px 0 2px 0;">{chr(32).join(badges)}</p>' if badges else ''}
+            </div>"""
+        except Exception:
+            html = f"""<div style="font-family:{FONT_FAMILY};font-size:11px;">
+            <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:6px 0;">
+            <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;margin:2px 0;">ANALISIS DEL MATCHUP</p>
+            <p style="color:{TEXT_MUTED};font-size:10px;">Analisis no disponible para este matchup.</p>
+            </div>"""
 
         self.lbl_analisis_ia.setText(html)
         self.lbl_analisis_ia.setTextFormat(Qt.RichText)

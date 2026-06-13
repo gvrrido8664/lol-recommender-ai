@@ -585,6 +585,7 @@ class PerfilTabMixin:
             
             # ── Fase 4: Historial (con reintentos, no fatal si falla) ──
             puuid = perfil.get("puuid")
+            self._season_puuid = puuid
             historial = None
             if puuid:
                 for intento in range(3):

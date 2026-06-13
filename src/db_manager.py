@@ -168,6 +168,16 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_emocional_estado ON estado_emocional(estado);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_emocional_game ON estado_emocional(game_id);")
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS player_cache (
+            puuid TEXT PRIMARY KEY,
+            season_games JSONB,
+            coaching_report JSONB,
+            season_ts TIMESTAMP,
+            coaching_ts TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("Base de datos PostgreSQL operativa y actualizada con KDA, Parches, Hechizos y Motor Emocional.")
@@ -452,6 +462,100 @@ def obtener_historial_drafts(limite=20):
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def guardar_season_cache(puuid, games):
+    if not puuid or not games or len(games) < 10:
+        return
+    try:
+        conn = obtener_conexion()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO player_cache (puuid, season_games, season_ts)
+            VALUES (%s, %s::jsonb, CURRENT_TIMESTAMP)
+            ON CONFLICT (puuid) DO UPDATE SET
+                season_games = EXCLUDED.season_games,
+                season_ts = CURRENT_TIMESTAMP
+        """, (puuid, json.dumps(games, default=str)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[SeasonCache] Error guardando en BD: {e}")
+
+
+def cargar_season_cache(puuid):
+    if not puuid:
+        return None
+    try:
+        conn = obtener_conexion()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT season_games, season_ts FROM player_cache WHERE puuid = %s
+        """, (puuid,))
+        row = cur.fetchone()
+        conn.close()
+        if not row or not row["season_games"]:
+            return None
+        ts = row["season_ts"]
+        if ts:
+            age_h = (time.time() - ts.timestamp()) / 3600
+            if age_h > 24:
+                return None
+        return row["season_games"] if isinstance(row["season_games"], list) else json.loads(row["season_games"])
+    except Exception as e:
+        print(f"[SeasonCache] Error cargando de BD: {e}")
+        return None
+
+
+def guardar_coaching_cache(puuid, reporte, datos_extra=None):
+    if not puuid or not reporte:
+        return
+    try:
+        conn = obtener_conexion()
+        cur = conn.cursor()
+        payload = {"_ts": time.time(), "reporte": reporte}
+        if datos_extra:
+            payload["datos_extra"] = {
+                "personalidad": datos_extra.get("personalidad"),
+                "insights": datos_extra.get("insights"),
+                "objetivos": datos_extra.get("objetivos"),
+                "emocional": datos_extra.get("emocional"),
+            }
+        cur.execute("""
+            INSERT INTO player_cache (puuid, coaching_report, coaching_ts)
+            VALUES (%s, %s::jsonb, CURRENT_TIMESTAMP)
+            ON CONFLICT (puuid) DO UPDATE SET
+                coaching_report = EXCLUDED.coaching_report,
+                coaching_ts = CURRENT_TIMESTAMP
+        """, (puuid, json.dumps(payload, default=str)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[CoachingCache] Error guardando en BD: {e}")
+
+
+def cargar_coaching_cache(puuid):
+    if not puuid:
+        return None
+    try:
+        conn = obtener_conexion()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT coaching_report, coaching_ts FROM player_cache WHERE puuid = %s
+        """, (puuid,))
+        row = cur.fetchone()
+        conn.close()
+        if not row or not row["coaching_report"]:
+            return None
+        ts = row["coaching_ts"]
+        if ts:
+            age_h = (time.time() - ts.timestamp()) / 3600
+            if age_h > 24:
+                return None
+        return row["coaching_report"] if isinstance(row["coaching_report"], dict) else json.loads(row["coaching_report"])
+    except Exception as e:
+        print(f"[CoachingCache] Error cargando de BD: {e}")
+        return None
 
 
 if __name__ == "__main__":

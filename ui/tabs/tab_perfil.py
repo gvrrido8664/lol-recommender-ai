@@ -489,46 +489,11 @@ class PerfilTabMixin:
         print(f"[RiotAPI] {downloaded} OK, {errores} err en {elapsed:.0f}s ({pct:.0f}/s)")
         return games
 
-    def _get_season_cache_path(self, puuid: str):
-        """Ruta del archivo de cache JSON para partidas de temporada."""
-        import sys as _sys
-        if getattr(_sys, 'frozen', False):
-            base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender', 'cache')
-        else:
-            base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-        os.makedirs(base, exist_ok=True)
-        safe_puuid = puuid.replace("-", "_")
-        return os.path.join(base, f"season_cache_{safe_puuid}.json")
-
     def _load_season_cache(self, puuid: str):
-        """Carga partidas desde cache JSON si es de hoy. Retorna lista o None."""
-        cache_path = self._get_season_cache_path(puuid)
-        if not os.path.exists(cache_path):
-            return None
-        try:
-            mtime = os.path.getmtime(cache_path)
-            age_hours = (time.time() - mtime) / 3600
-            if age_hours > 24:
-                return None
-            with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            print(f"[Cache] Cargadas {len(data)} partidas desde cache ({age_hours:.1f}h de antiguedad)")
-            return data
-        except Exception as e:
-            print(f"[Cache] Error cargando: {e}")
-        return None
+        return cargar_season_cache(puuid)
 
     def _save_season_cache(self, puuid: str, games: list):
-        """Guarda partidas en cache JSON."""
-        if not games or len(games) < 10:
-            return
-        try:
-            cache_path = self._get_season_cache_path(puuid)
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(games, f)
-            print(f"[Cache] Guardadas {len(games)} partidas en cache")
-        except Exception as e:
-            print(f"[Cache] Error guardando: {e}")
+        guardar_season_cache(puuid, games)
 
     def _riot_season_background(self, puuid: str, all_games: list, game_name: str, tag_line: str):
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.

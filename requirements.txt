@@ -17,13 +17,10 @@ joblib==1.5.3
 numpy==2.4.4
 packaging==26.2
 pandas==3.0.2
-pefile==2024.8.26
 pillow==12.2.0
 psutil==7.2.2
 pydantic==2.13.4
 pydantic_core==2.46.4
-pyinstaller==6.20.0
-pyinstaller-hooks-contrib==2026.5
 pypresence==4.6.1
 PySide6==6.11.1
 PySide6_Addons==6.11.1

@@ -20,17 +20,24 @@ class IATabMixin:
         ctrls.addWidget(QLabel("Tu Pick:"))
         ctrls.addWidget(self.cb_ia_aliado)
 
-        btn_swap = QPushButton("⇄")
-        btn_swap.setFixedSize(34, 34)
-        btn_swap.setToolTip("Intercambiar aliado / enemigo")
-        btn_swap.setStyleSheet(f"""
-            QPushButton {{ background-color: {BG_CARD_HOVER}; color: {TEXT_WHITE}; border: 1px solid {BORDER_SUBTLE};
-                           border-radius: 4px; font-family: 'Segoe UI Symbol', 'Segoe UI', sans-serif;
-                           font-size: 18px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: {ACCENT_RED}; }}
+        btn_swap_w = QFrame()
+        btn_swap_w.setFixedSize(40, 34)
+        btn_swap_w.setToolTip("Intercambiar aliado / enemigo")
+        btn_swap_w.setCursor(Qt.PointingHandCursor)
+        btn_swap_w.setStyleSheet(f"""
+            QFrame {{ background-color: {BG_CARD_HOVER}; border: 1px solid {BORDER_SUBTLE}; border-radius: 4px; }}
+            QFrame:hover {{ background-color: {ACCENT_RED}; }}
         """)
-        btn_swap.clicked.connect(self._swap_matchup)
-        ctrls.addWidget(btn_swap)
+        btn_swap_w.mousePressEvent = lambda e: self._swap_matchup()
+        sw_lay = QHBoxLayout(btn_swap_w)
+        sw_lay.setContentsMargins(0, 0, 0, 0)
+        sw_lay.setSpacing(0)
+        for arrow, clr in [("←", GREEN_WR), ("→", RED_WR)]:
+            albl = QLabel(arrow)
+            albl.setAlignment(Qt.AlignCenter)
+            albl.setStyleSheet(f"color: {clr}; font-size: 16px; font-weight: bold; background: transparent;")
+            sw_lay.addWidget(albl)
+        ctrls.addWidget(btn_swap_w)
 
         lbl_vs = QLabel("VS")
         lbl_vs.setStyleSheet(f"color: {RED_WR}; font-weight: bold; font-size: 13px; margin: 0 2px;")
@@ -122,29 +129,29 @@ class IATabMixin:
         col_centro.addWidget(self.lbl_confianza_1v1)
 
         barras_frame = QFrame()
-        barras_frame.setStyleSheet(f"background-color: {BG_CARD}; border-radius: 6px; padding: 6px;")
+        barras_frame.setStyleSheet(f"background-color: {BG_CARD}; border-radius: 6px; padding: 8px;")
         barras_layout = QVBoxLayout(barras_frame)
-        barras_layout.setSpacing(2)
-        barras_layout.setContentsMargins(6, 4, 6, 4)
+        barras_layout.setSpacing(3)
+        barras_layout.setContentsMargins(8, 6, 8, 6)
 
         self._barras_1v1 = {}
         for lbl_txt, bar_attr in [
             ("CC", "barra_cc"),
             ("Movilidad", "barra_movilidad"),
-            ("Early", "barra_early"),
+            ("Early Game", "barra_early"),
             ("Escalado", "barra_escalado"),
-            ("Daño", "barra_dano"),
+            ("Danio", "barra_dano"),
             ("Dificultad", "barra_dificultad"),
         ]:
             row = QHBoxLayout()
-            row.setSpacing(4)
+            row.setSpacing(6)
             lbl = QLabel(lbl_txt)
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 8px; font-weight: bold;")
+            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; font-weight: bold;")
             lbl.setFixedWidth(72)
             row.addWidget(lbl)
             bar = QProgressBar()
             bar.setRange(0, 100); bar.setValue(50)
-            bar.setTextVisible(False); bar.setFixedHeight(8)
+            bar.setTextVisible(False); bar.setFixedHeight(12)
             bar.setStyleSheet(self._estilo_barra_comparativa(50))
             setattr(self, bar_attr, bar)
             self._barras_1v1[bar_attr] = bar
@@ -152,6 +159,14 @@ class IATabMixin:
             barras_layout.addLayout(row)
 
         col_centro.addWidget(barras_frame)
+
+        self.info_1v1_frame = QFrame()
+        self.info_1v1_frame.setStyleSheet(f"background-color: transparent; padding: 2px 0;")
+        self.info_1v1_layout = QHBoxLayout(self.info_1v1_frame)
+        self.info_1v1_layout.setContentsMargins(0, 0, 0, 0)
+        self.info_1v1_layout.setSpacing(0)
+        col_centro.addWidget(self.info_1v1_frame)
+
         batalla_layout.addLayout(col_centro, 2)
 
         # Columna 3: Enemigo
@@ -476,57 +491,43 @@ class IATabMixin:
             self.ly_spells_1v1.addWidget(err)
         self.ly_spells_1v1.addStretch()
 
-        # === ANALISIS HTML ===
-        def _barra_html(val_a, val_e, max_v, label):
-            pct_a = min(100, int(val_a / max(1, max_v) * 100))
-            pct_e = min(100, int(val_e / max(1, max_v) * 100))
-            bar_w = 220
-            return (
-                f'<tr>'
-                f'<td width="110" style="color:{TEXT_SECONDARY};font-size:11px;padding:5px 6px;font-weight:600;">{label}</td>'
-                f'<td width="{bar_w}" style="padding:2px 6px;">'
-                f'<div style="background:{BG_CARD_HOVER};border-radius:5px;height:26px;width:{bar_w}px;">'
-                f'<div style="background:{GREEN_WR};height:26px;width:{int(bar_w * pct_a / 100)}px;border-radius:5px;"></div></div></td>'
-                f'<td width="28" style="color:{GREEN_WR};font-size:12px;text-align:center;font-weight:700;">{val_a}</td>'
-                f'<td width="28" style="color:{RED_WR};font-size:12px;text-align:center;font-weight:700;">{val_e}</td>'
-                f'<td width="{bar_w}" style="padding:2px 6px;">'
-                f'<div style="background:{BG_CARD_HOVER};border-radius:5px;height:26px;width:{bar_w}px;">'
-                f'<div style="background:{RED_WR};height:26px;width:{int(bar_w * pct_e / 100)}px;border-radius:5px;"></div></div></td>'
-                f'</tr>'
-            )
+        # === CHAMPION INFO ROW (native) ===
+        def _tag_lbl(text, color=TEXT_MUTED):
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet(f"color: {color}; font-size: 9px; font-weight: 600; background: transparent;")
+            return lbl
 
+        self._clear_layout(self.info_1v1_layout)
+        info_a = QHBoxLayout()
+        info_a.setSpacing(2)
+        info_a.addWidget(_tag_lbl(t_a.get('damage_type', '?'), ACCENT_TEAL))
+        info_a.addWidget(_tag_lbl("|", TEXT_SUBTLE))
+        info_a.addWidget(_tag_lbl(t_a.get('champion_class', '?'), GREEN_WR))
+        info_a.addWidget(_tag_lbl("|", TEXT_SUBTLE))
+        info_a.addWidget(_tag_lbl(self._difficulty(t_a.get('difficulty', 2)), TEXT_SECONDARY))
+        self.info_1v1_layout.addLayout(info_a, 1)
+
+        vs_lbl = QLabel("  VS  ")
+        vs_lbl.setAlignment(Qt.AlignCenter)
+        vs_lbl.setStyleSheet(f"color: {RED_WR}; font-size: 10px; font-weight: 800; background: transparent;")
+        self.info_1v1_layout.addWidget(vs_lbl)
+
+        info_e = QHBoxLayout()
+        info_e.setSpacing(2)
+        info_e.addWidget(_tag_lbl(t_e.get('damage_type', '?'), YELLOW_WR))
+        info_e.addWidget(_tag_lbl("|", TEXT_SUBTLE))
+        info_e.addWidget(_tag_lbl(t_e.get('champion_class', '?'), RED_WR))
+        info_e.addWidget(_tag_lbl("|", TEXT_SUBTLE))
+        info_e.addWidget(_tag_lbl(self._difficulty(t_e.get('difficulty', 2)), TEXT_SECONDARY))
+        self.info_1v1_layout.addLayout(info_e, 1)
+
+        # === ANALISIS IA ===
         html = f"""
         <div style="font-family:{FONT_FAMILY};font-size:11px;">
         <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
-        <p style="color:{ACCENT_RED};font-weight:700;font-size:14px;letter-spacing:1px;margin:6px 0;">
-            ⚡ STATS COMPARATIVAS
-        </p>
-        <table cellspacing="4" style="margin:8px 0;">
-            {_barra_html(mob_a, mob_e, 5, "Movilidad")}
-            {_barra_html(cc_a, cc_e, 5, "Control (CC)")}
-            {_barra_html(early_a, early_e, 3, "Early Game")}
-            {_barra_html(scale_a, scale_e, 4, "Escalado")}
-        </table>
-        <p style="color:{TEXT_MUTED};font-size:10px;margin:4px 0;text-align:center;">
-            <span style="color:{GREEN_WR};font-size:11px;">{aliado}</span>
-            &nbsp;&nbsp;
-            Daño: {t_a.get('damage_type','?')}
-            &nbsp;|&nbsp;
-            Clase: {t_a.get('champion_class','?')}
-            &nbsp;|&nbsp;
-            {self._difficulty(t_a.get('difficulty', 2))}
-            &nbsp;&nbsp;VS&nbsp;&nbsp;
-            <span style="color:{RED_WR};font-size:11px;">{enemigo}</span>
-            &nbsp;&nbsp;
-            Daño: {t_e.get('damage_type','?')}
-            &nbsp;|&nbsp;
-            Clase: {t_e.get('champion_class','?')}
-            &nbsp;|&nbsp;
-            {self._difficulty(t_e.get('difficulty', 2))}
-        </p>
-        <hr style="border:none;border-top:1px solid {BORDER_ACCENT};margin:8px 0;">
         <p style="color:{ACCENT_RED};font-weight:700;font-size:12px;letter-spacing:1px;margin:4px 0;">
-            🧠 QUE VE LA IA
+            QUE VE LA IA
         </p>
         <ul style="margin:3px 0;padding-left:16px;line-height:1.6;">"""
 

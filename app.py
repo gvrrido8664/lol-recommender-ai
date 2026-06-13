@@ -376,7 +376,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             with self._cache_imagenes_lock:
                 self._cache_imagenes[cache_key] = ruta_local
             return ruta_local
-        except:
+        except Exception:
             return None
 
     def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40):
@@ -718,7 +718,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 ts = ts / 1000
             try:
                 return datetime.fromtimestamp(ts)
-            except:
+            except Exception:
                 pass
         fecha_str = g.get("gameCreationDate", "")
         if not fecha_str:
@@ -732,11 +732,11 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         ]:
             try:
                 return datetime.strptime(fecha_str, fmt)
-            except:
+            except Exception:
                 continue
         try:
             return datetime.strptime(fecha_str[:10], "%b %d, %Y")
-        except:
+        except Exception:
             pass
         return None
 

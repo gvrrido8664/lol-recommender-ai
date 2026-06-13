@@ -44,7 +44,7 @@ def analizar_fatiga(historial_games):
                 except ValueError:
                     try:
                         dt = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
-                    except:
+                    except Exception:
                         continue
             else:
                 ts = g.get("gameCreation", 0)
@@ -162,5 +162,5 @@ def guardar_fatiga(data):
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(FATIGA_PATH, "w", encoding="utf-8") as f:
             json.dump(historial, f, ensure_ascii=False, indent=2)
-    except:
+    except Exception:
         pass

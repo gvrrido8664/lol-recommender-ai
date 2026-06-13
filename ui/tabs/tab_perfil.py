@@ -489,46 +489,11 @@ class PerfilTabMixin:
         print(f"[RiotAPI] {downloaded} OK, {errores} err en {elapsed:.0f}s ({pct:.0f}/s)")
         return games
 
-    def _get_season_cache_path(self, puuid: str):
-        """Ruta del archivo de cache JSON para partidas de temporada."""
-        import sys as _sys
-        if getattr(_sys, 'frozen', False):
-            base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender', 'cache')
-        else:
-            base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-        os.makedirs(base, exist_ok=True)
-        safe_puuid = puuid.replace("-", "_")
-        return os.path.join(base, f"season_cache_{safe_puuid}.json")
-
     def _load_season_cache(self, puuid: str):
-        """Carga partidas desde cache JSON si es de hoy. Retorna lista o None."""
-        cache_path = self._get_season_cache_path(puuid)
-        if not os.path.exists(cache_path):
-            return None
-        try:
-            mtime = os.path.getmtime(cache_path)
-            age_hours = (time.time() - mtime) / 3600
-            if age_hours > 24:
-                return None
-            with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            print(f"[Cache] Cargadas {len(data)} partidas desde cache ({age_hours:.1f}h de antiguedad)")
-            return data
-        except Exception as e:
-            print(f"[Cache] Error cargando: {e}")
-        return None
+        return cargar_season_cache(puuid)
 
     def _save_season_cache(self, puuid: str, games: list):
-        """Guarda partidas en cache JSON."""
-        if not games or len(games) < 10:
-            return
-        try:
-            cache_path = self._get_season_cache_path(puuid)
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(games, f)
-            print(f"[Cache] Guardadas {len(games)} partidas en cache")
-        except Exception as e:
-            print(f"[Cache] Error guardando: {e}")
+        guardar_season_cache(puuid, games)
 
     def _riot_season_background(self, puuid: str, all_games: list, game_name: str, tag_line: str):
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
@@ -537,12 +502,7 @@ class PerfilTabMixin:
             # Intentar cache primero
             cached = self._load_season_cache(puuid)
             if cached:
-                existing_gids = set()
-                for g in all_games:
-                    gid = str(g.get("gameId", ""))
-                    if not gid:
-                        gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    existing_gids.add(gid)
+                existing_gids = {self._gid_or_fallback(g) for g in all_games}
                 nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
                 if nuevos_cache:
                     self.season_partial.emit(nuevos_cache)
@@ -569,6 +529,9 @@ class PerfilTabMixin:
         gid = str(g.get("gameId", ""))
         if not gid:
             gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+            return gid
+        if '_' in gid:
+            gid = gid.rsplit('_', 1)[-1]
         return gid
 
     # ================= CARGA DE PERFIL (HILO SEGUNDARIO) =================
@@ -622,6 +585,7 @@ class PerfilTabMixin:
             
             # ── Fase 4: Historial (con reintentos, no fatal si falla) ──
             puuid = perfil.get("puuid")
+            self._season_puuid = puuid
             historial = None
             if puuid:
                 for intento in range(3):
@@ -644,6 +608,9 @@ class PerfilTabMixin:
                 gid = str(g.get("gameId", "") or "")
                 if not gid:
                     gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                    return gid
+                if '_' in gid:
+                    gid = gid.rsplit('_', 1)[-1]
                 return gid
 
             if all_games and self.lcu and self.lcu.port:
@@ -799,9 +766,7 @@ class PerfilTabMixin:
             seen = set()
             games_dedup = []
             for g in games:
-                gid = str(g.get("gameId", ""))
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
+                gid = self._gid_or_fallback(g)
                 if gid and gid not in seen:
                     seen.add(gid)
                     games_dedup.append(g)
@@ -840,7 +805,7 @@ class PerfilTabMixin:
             games = sorted(games, key=lambda g: (
                 self._parse_game_date(g) or datetime(2000,1,1)
             ), reverse=True)
-        except:
+        except Exception:
             pass
 
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0

@@ -62,7 +62,7 @@ class LCUConnector:
                 auth_base64 = b64encode(auth_string.encode('ascii')).decode('ascii')
                 self.headers = {"Authorization": f"Basic {auth_base64}", "Accept": "application/json"}
                 return True
-        except Exception:
+        except (OSError, IndexError, ValueError):
             return False
 
     def reconnect(self):
@@ -73,18 +73,30 @@ class LCUConnector:
         return self.conectar()
 
     def request(self, method, endpoint, **kwargs):
-        if not self.port:
-            if not self.conectar():
+        _RETRIES = 3
+        _BACKOFF = 0.5
+        for intento in range(_RETRIES):
+            if not self.port:
+                if not self.conectar():
+                    if intento < _RETRIES - 1:
+                        time.sleep(_BACKOFF * (2 ** intento))
+                    continue
+            url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
+            kwargs.setdefault("headers", self.headers)
+            kwargs.setdefault("verify", False)
+            kwargs.setdefault("timeout", 3)
+            try:
+                res = requests.request(method, url, **kwargs)
+                return res
+            except requests.ConnectionError:
+                self.reconnect()
+            except requests.Timeout:
+                pass
+            except requests.RequestException:
                 return None
-        url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
-        kwargs.setdefault("headers", self.headers)
-        kwargs.setdefault("verify", False)
-        kwargs.setdefault("timeout", 3)
-        try:
-            res = requests.request(method, url, **kwargs)
-            return res
-        except requests.RequestException:
-            return None
+            if intento < _RETRIES - 1:
+                time.sleep(_BACKOFF * (2 ** intento))
+        return None
 
     def obtener_sesion_draft(self):
         res = self.request('GET', '/lol-champ-select/v1/session')

@@ -74,6 +74,9 @@ Write-Host "[4/5] Compilando con PyInstaller (--onedir)..." -ForegroundColor Yel
     --hidden-import PySide6.QtWidgets `
     --hidden-import PySide6.QtGui `
     --hidden-import PySide6.QtCore `
+    --hidden-import qdarktheme `
+    --hidden-import darkdetect `
+    --collect-all qdarktheme `
     --exclude-module PySide6.Qt3DAnimation `
     --exclude-module PySide6.Qt3DCore `
     --exclude-module PySide6.Qt3DExtras `

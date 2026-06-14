@@ -132,13 +132,6 @@ class SettingsDialog(QDialog):
         self.cb_auto_items.setToolTip("Crea un set de objetos con el core build y early game recomendados.")
         g_auto.addWidget(self.cb_auto_items)
 
-        # ── 4. OVERLAY ──
-        g_overlay = _seccion("🖥️ OVERLAY IN-GAME")
-        self.cb_overlay = QCheckBox("📡 Mostrar overlay flotante durante la partida (KDA, CS, jugadores)")
-        self.cb_overlay.setChecked(self.settings.get("overlay_ingame", False))
-        self.cb_overlay.setToolTip("Ventana flotante sobre el juego con tu KDA, CS y estado de todos los jugadores.\nAtajo: Ctrl+Shift+I para mostrar/ocultar.")
-        g_overlay.addWidget(self.cb_overlay)
-
         # ── 5. COMPORTAMIENTO ──
         g_comp = _seccion("🎮 COMPORTAMIENTO")
         self.cb_auto_switch = QCheckBox("🔄 Cambiar automáticamente a la pestaña Radar en Champ Select")
@@ -215,6 +208,5 @@ class SettingsDialog(QDialog):
                 "auto_items": self.cb_auto_items.isChecked(),
                 "auto_switch_radar": self.cb_auto_switch.isChecked(),
                 "auto_aceptar": self.cb_auto_aceptar.isChecked(),
-                "overlay_ingame": self.cb_overlay.isChecked(),
                 "notificaciones_escritorio": self.cb_notificaciones.isChecked(),
                 }

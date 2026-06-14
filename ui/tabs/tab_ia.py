@@ -286,12 +286,25 @@ class IATabMixin:
     def actualizar_listas_ia(self, value):
         if not value or value not in ROL_TO_API:
             return
-        champs = obtener_campeones_por_rol(ROL_TO_API[value], min_partidas=20)
+        rol_api = ROL_TO_API[value]
+        champs = obtener_campeones_por_rol(rol_api, min_partidas=20)
         self.cb_ia_aliado.clear()
         self.cb_ia_enemigo.clear()
         self.cb_ia_aliado.addItems(champs)
         self.cb_ia_enemigo.addItems(champs)
         if len(champs) >= 2: self.cb_ia_enemigo.setCurrentText(champs[1])
+        # Precalentar cache WR en hilo secundario para evitar freeze en el primer Simular
+        threading.Thread(target=self._precalentar_cache_ia, args=(champs, rol_api), daemon=True).start()
+
+    def _precalentar_cache_ia(self, champs, rol_api):
+        """Ejecutado en hilo secundario. Precarga WR global en cache de sesion."""
+        for campeon in champs:
+            key = (campeon, rol_api)
+            if key not in self._cache_wr_global:
+                try:
+                    self._cache_wr_global[key] = obtener_winrate_global(campeon, rol_api)
+                except Exception:
+                    self._cache_wr_global[key] = (None, 0)
 
     def intercambiar_picks_1v1(self):
         """Da vuelta el matchup: intercambia aliado <-> enemigo y recalcula."""

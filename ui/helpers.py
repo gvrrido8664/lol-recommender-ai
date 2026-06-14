@@ -79,6 +79,49 @@ SKILL_ORDERS = {
     "Mel": "Q>E>W", "Ambessa": "Q>E>W",
 }
 
+
+def expandir_skill_order(orden_maxeo):
+    """Expande un orden de maxeo ('Q>W>E') a la secuencia heuristica de 18 niveles.
+
+    Reglas: R en niveles 6/11/16; niveles 1-3 un punto a cada basica (orden de
+    prioridad); luego se maximiza segun prioridad respetando el cap de rango por
+    nivel del juego (rango N de una basica requiere nivel >= 2N-1).
+    Devuelve una lista de 18 letras (Q/W/E/R). Es heuristica, no data pro real.
+    """
+    prio = [s for s in orden_maxeo.replace(">", " ").split() if s in ("Q", "W", "E")]
+    if len(prio) < 3:
+        prio = ["Q", "W", "E"]
+    pts = {"Q": 0, "W": 0, "E": 0, "R": 0}
+    seq = []
+    for lvl in range(1, 19):
+        if lvl in (6, 11, 16):
+            pts["R"] += 1
+            seq.append("R")
+            continue
+        chosen = None
+        if lvl <= 3:
+            # Asegurar las 3 basicas temprano, en orden de prioridad
+            for ab in prio:
+                if pts[ab] == 0:
+                    chosen = ab
+                    break
+        if chosen is None:
+            allowed = min(5, (lvl + 1) // 2)  # rango maximo permitido a este nivel
+            for ab in prio:
+                if pts[ab] < allowed:
+                    chosen = ab
+                    break
+            if chosen is None:  # ninguna puede subir por el cap -> la primera con < 5
+                for ab in prio:
+                    if pts[ab] < 5:
+                        chosen = ab
+                        break
+        if chosen is None:
+            chosen = prio[0]
+        pts[chosen] += 1
+        seq.append(chosen)
+    return seq
+
 # ─── PATHING DE JUNGLA ───────────────────────────────────────
 JUNGLA_ESTILO = {
     "early_gank": {
@@ -195,10 +238,19 @@ def ajustar_shards_adaptativos(ids_runas: list, mi_champ: str, enemigo_lane: str
 
     result = list(ids_runas)
 
+    # ── EXCEPCION ADC: los tiradores casi siempre llevan los mismos shards.
+    # No adaptamos a la composicion (no tiene sentido armadura+tenacidad en un ADC):
+    # Velocidad de Ataque + Fuerza Adaptativa + Vida.
+    if es_tirador(champ_sanitized):
+        result[8] = _SHARD_ATT_SPEED
+        result[9] = _SHARD_ADAPTIVE
+        result[10] = _SHARD_HEALTH
+        return result
+
     # Shard 8 (row 1): adaptive / att speed / haste
     if champ_sanitized in _HASTE_PREF or es_mago(champ_sanitized):
         result[8] = _SHARD_HASTE
-    elif champ_sanitized in _AA_HEAVY or es_tirador(champ_sanitized):
+    elif champ_sanitized in _AA_HEAVY:
         result[8] = _SHARD_ATT_SPEED
     else:
         result[8] = _SHARD_ADAPTIVE
@@ -356,7 +408,6 @@ DEFAULT_SETTINGS = {
     "auto_habilidades": False,
     "auto_items": False,
     "auto_switch_radar": True,
-    "overlay_ingame": False,
     "notificaciones_escritorio": True,
     "auto_aceptar": False,
 }

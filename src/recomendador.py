@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import threading
 from .db_manager import obtener_conexion, DATA_DIR
 from .riot_api import cargar_objetos, cargar_campeones
 from .roles import POS_EQUIVALENTES as pos_equivalentes, normalizar_posicion
@@ -34,13 +36,12 @@ _BOTASREALES_STR = {str(b) for b in BOTASREALES}
 _SOPORTE_QUEST = {str(i) for i in ITEMS_SUPP_FINAL} | {"3865","3850","3851","3854","3855"}
 
 
-def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
-    """Reordena el build en el orden real de compra:
-      1. Ítem de soporte quest (si existe) — siempre primero para UTILITY
-      2. Ítem más caro del core (primer power-spike)
-      3. Botas
-      4. Resto del core por coste descendente
-      5. Ítems baratos (< 2000g) al final
+def _ordenar_build_por_timing(build_final: list, items_data: dict, orden_pos: dict = None) -> list:
+    """Reordena el build en el orden de compra.
+
+    Si `orden_pos` trae datos REALES del timeline ({iid: [indices de compra]}),
+    ordena por la posicion media real de compra de cada item (datos descargados).
+    Si no hay datos, cae a la heuristica por coste (power-spike -> botas -> resto).
     """
     if not build_final:
         return build_final
@@ -51,6 +52,20 @@ def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
         if not info and iid_s.isdigit():
             info = items_data.get(int(iid_s), {})
         return (info.get("oro", 0) or 0) if isinstance(info, dict) else 0
+
+    # ── Orden REAL de compra (datos del timeline), si hay suficiente cobertura ──
+    if orden_pos:
+        def pos_media(iid):
+            idxs = orden_pos.get(str(iid))
+            return (sum(idxs) / len(idxs)) if idxs else None
+
+        con_datos = [(i, pos_media(i)) for i in build_final]
+        tienen = sorted([(i, m) for i, m in con_datos if m is not None], key=lambda x: x[1])
+        sin = [i for i, m in con_datos if m is None]
+        # Si al menos la mitad de los items tienen orden real, usamos ese orden;
+        # los que no tienen dato van al final por coste descendente.
+        if len(tienen) >= max(1, len(build_final) // 2):
+            return [i for i, _ in tienen] + sorted(sin, key=costo, reverse=True)
 
     soporte_q  = [i for i in build_final if str(i) in _SOPORTE_QUEST]
     botas      = [i for i in build_final if str(i) in _BOTASREALES_STR and str(i) not in _SOPORTE_QUEST]
@@ -70,7 +85,26 @@ def _ordenar_build_por_timing(build_final: list, items_data: dict) -> list:
 
     return resultado
 
+# Cache del pool de campeones por rol: es un GROUP BY completo sobre participantes
+# (costoso contra la BD remota) y se invoca muchas veces por tick del radar. El pool
+# no cambia en una sesion salvo nuevas descargas, asi que cacheamos con TTL.
+_CAMPS_ROL_CACHE = {}
+_CAMPS_ROL_CACHE_LOCK = threading.Lock()
+_CAMPS_ROL_TTL = 600  # 10 min
+
+def invalidar_cache_campeones_por_rol():
+    """Limpia el cache (llamar tras descargar nuevas partidas)."""
+    with _CAMPS_ROL_CACHE_LOCK:
+        _CAMPS_ROL_CACHE.clear()
+
 def obtener_campeones_por_rol(rol_api, min_partidas=20):
+    key = (rol_api, min_partidas)
+    ahora = time.time()
+    with _CAMPS_ROL_CACHE_LOCK:
+        hit = _CAMPS_ROL_CACHE.get(key)
+        if hit and (ahora - hit[1] < _CAMPS_ROL_TTL):
+            return list(hit[0])
+
     conn = obtener_conexion()
     cur = conn.cursor()
 
@@ -92,9 +126,13 @@ def obtener_campeones_por_rol(rol_api, min_partidas=20):
         from .tags_champions import obtener_champs_rol_base
         con_datos_set = set(con_datos)
         sin_datos = [c for c in obtener_champs_rol_base(rol_api) if c not in con_datos_set]
-        return con_datos + sin_datos
+        resultado = con_datos + sin_datos
     except Exception:
-        return con_datos
+        resultado = con_datos
+
+    with _CAMPS_ROL_CACHE_LOCK:
+        _CAMPS_ROL_CACHE[key] = (resultado, ahora)
+    return resultado
 
 def obtener_counters(carril, enemigo, min_partidas=20):
     conn = obtener_conexion()
@@ -184,11 +222,11 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
     if conn_owned:
         conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("SELECT items, win FROM participantes WHERE champion = %s AND team_position = %s AND items != ''", (campeon, carril))
+    cur.execute("SELECT items, win, items_order FROM participantes WHERE champion = %s AND team_position = %s AND items != ''", (campeon, carril))
     filas = cur.fetchall()
-    
+
     if not filas:
-        cur.execute("SELECT items, win FROM participantes WHERE champion = %s AND items != ''", (campeon,))
+        cur.execute("SELECT items, win, items_order FROM participantes WHERE champion = %s AND items != ''", (campeon,))
         filas = cur.fetchall()
 
     if not filas:
@@ -197,11 +235,23 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
         return ["1055", "2003", "2003"], []
 
     core_count, botas_count, supp_final_count, starters_count = {}, {}, {}, {}
+    orden_pos = {}  # iid -> [indices de compra reales] (del timeline, si hay datos)
 
     items_data = _get_items_data()
     for row in filas:
         items_lista = [i.strip() for i in row["items"].split(",") if i and i.strip() != "0"]
-        peso = 2 if bool(row["win"]) else 1 
+        peso = 2 if bool(row["win"]) else 1
+
+        # Acumular orden de compra real (primera aparicion de cada item en la secuencia)
+        io = row.get("items_order")
+        if io:
+            seq = [x.strip() for x in io.split(",") if x and x.strip() != "0"]
+            vistos = set()
+            for idx_i, iid in enumerate(seq):
+                if iid in vistos:
+                    continue
+                vistos.add(iid)
+                orden_pos.setdefault(iid, []).append(idx_i)
 
         for i in items_lista:
             i = str(i).strip()
@@ -243,11 +293,16 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
                 if "Boots" in tags and "Consumable" not in tags and "Vision" not in tags and iid not in ("1001", "2422"):
                     botas_count[iid] = botas_count.get(iid, 0) + 1
     if botas_count:
-        if enemigos:
+        # Por defecto: la bota MAS USADA por este campeon en los datos descargados.
+        bota_data = max(botas_count, key=botas_count.get)
+        clase = obtener_tag(campeon).get("champion_class", "")
+        # Adaptamos a la composicion SOLO para frontline (Fighter/Tank), que
+        # genuinamente eligen entre armadura/RM. El resto usa su bota mas usada.
+        if enemigos and clase in ("Fighter", "Tank"):
             bota_inteligente = _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril)
-            build_final.append(bota_inteligente if bota_inteligente else max(botas_count, key=botas_count.get))
+            build_final.append(bota_inteligente or bota_data)
         else:
-            build_final.append(max(botas_count, key=botas_count.get))
+            build_final.append(bota_data)
 
     item_supp_mejorado = None
     if carril == "UTILITY":
@@ -264,8 +319,8 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
         core_ordenado = sorted(core_count, key=core_count.get, reverse=True)[:espacios_restantes]
         build_final.extend(core_ordenado)
 
-    # Reordenar en secuencia de compra real: item de poder → botas → resto
-    build_final = _ordenar_build_por_timing(build_final, items_data)
+    # Reordenar: si hay orden de compra REAL (timeline), usarlo; si no, heuristica
+    build_final = _ordenar_build_por_timing(build_final, items_data, orden_pos)
 
     if conn_owned:
         conn.close()
@@ -419,90 +474,121 @@ def _score_pick(wr, es_ap, es_ad, es_tank, pct_ad, pct_ap, tank_count):
     Base: WR mapeada al rango 1-10 (centrada en 50% = 5.0, minima 1.0).
     Bonus: hasta +1.0 si cubre una necesidad urgente del equipo.
     """
-    # Mapeo WR -> score base: 30% -> 1.0, 50% -> 5.0, 70% -> 10.0
-    base = max(1.0, min(10.0, 1.0 + (wr - 30.0) / 4.0))
-    
-    # Bonus de sinergia: cubrir lo que le falta al equipo (proporcional a la escala)
+    # Mapeo WR -> score base centrado en 50% = 5.0, con mayor dispersion:
+    # 30% -> 0.0(->1.0), 40% -> 2.5, 50% -> 5.0, 60% -> 7.5, 70% -> 10.0
+    base = 5.0 + (wr - 50.0) * 0.25
+
+    # Bonus de sinergia: cubrir lo que le falta al equipo
     bonus = 0.0
     if pct_ad >= 60 and es_ap:
-        bonus = 0.8  # El equipo necesita AP urgente
+        bonus = 1.2  # El equipo necesita AP urgente
     elif pct_ap >= 60 and es_ad:
-        bonus = 0.8  # El equipo necesita AD urgente
+        bonus = 1.2  # El equipo necesita AD urgente
     elif tank_count == 0 and es_tank:
-        bonus = 1.0  # El equipo necesita frontlane urgente
+        bonus = 1.5  # El equipo necesita frontlane urgente
     elif es_ap and pct_ad >= 50:
-        bonus = 0.3  # Buen balance con AP extra
+        bonus = 0.4  # Buen balance con AP extra
     elif es_ad and pct_ap >= 50:
-        bonus = 0.3  # Buen balance con AD extra
+        bonus = 0.4  # Buen balance con AD extra
     elif es_tank and tank_count <= 1:
-        bonus = 0.4  # Refuerzo de frontlane
-    
-    return round(base + bonus, 1)
+        bonus = 0.6  # Refuerzo de frontlane
 
-def recomendar_picks_vivo(rol, aliados, enemigos):
+    return round(max(1.0, min(10.0, base + bonus)), 1)
+
+def recomendar_picks_vivo(rol, aliados, enemigos, enemigo_lane=None):
     conn = obtener_conexion()
     cur = conn.cursor()
     campeones_rol = obtener_campeones_por_rol(rol, min_partidas=20)
-    if not campeones_rol: return {}
+    if not campeones_rol:
+        conn.close(); return {}
 
     # Filtrar campeones ya pickeados (aliados o enemigos) para no recomendarlos
     picks_existentes = set(aliados) | set(enemigos)
     campeones_rol = [c for c in campeones_rol if c not in picks_existentes]
-    if not campeones_rol: return {}
+    if not campeones_rol:
+        conn.close(); return {}
 
     pct_ad, pct_ap, tank_count = analizar_composicion(aliados)
     candidatos = {"⭐ Sinergia/Balance": [], "🔮 Falta Daño Mágico (AP)": [], "⚔️ Falta Daño Físico (AD)": [], "🛡️ Falta Tanque/Engage": []}
-    
+    campeones_rol_set = set(campeones_rol)
+
+    # ── WR de TODOS los campeones del rol en consultas EN LOTE (set-based) ──
+    # Antes se hacia 1-3 queries POR campeon (decenas en total) y congelaba la UI.
+    # Ahora: 3 queries totales (prior + lane-specific + global).
+    ph_ch = ",".join(["%s"] * len(campeones_rol))
+    lane_map, global_map, prior_map = {}, {}, {}
+    if enemigos:
+        ph_en = ",".join(["%s"] * len(enemigos))
+        # Prior: WR del campeon en el rol (base para suavizado bayesiano)
+        cur.execute(
+            f"SELECT champion, SUM(win), COUNT(*) FROM participantes "
+            f"WHERE team_position = %s AND champion IN ({ph_ch}) GROUP BY champion",
+            [rol] + campeones_rol)
+        for champ, wins, n in cur.fetchall():
+            if n: prior_map[champ] = float(wins) * 100.0 / int(n)
+        # Lane-specific: WR vs enemigos en la misma linea
+        cur.execute(
+            f"SELECT p1.champion, SUM(p1.win), COUNT(*) "
+            f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
+            f"WHERE p1.team_position = %s AND p1.champion IN ({ph_ch}) "
+            f"AND p2.champion IN ({ph_en}) AND p2.team_position = p1.team_position "
+            f"AND p1.team != p2.team GROUP BY p1.champion",
+            [rol] + campeones_rol + enemigos)
+        for champ, wins, n in cur.fetchall():
+            lane_map[champ] = (float(wins), int(n))
+        # Global: WR vs enemigos en cualquier posicion (fallback)
+        cur.execute(
+            f"SELECT p1.champion, SUM(p1.win), COUNT(*) "
+            f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
+            f"WHERE p1.team_position = %s AND p1.champion IN ({ph_ch}) "
+            f"AND p2.champion IN ({ph_en}) AND p1.team != p2.team GROUP BY p1.champion",
+            [rol] + campeones_rol + enemigos)
+        for champ, wins, n in cur.fetchall():
+            global_map[champ] = (float(wins), int(n))
+
+    def _resolver_wr(c):
+        if not enemigos:
+            return 50.0
+        lw, gw = lane_map.get(c), global_map.get(c)
+        prior = prior_map.get(c, 50.0)
+        if lw and lw[1] >= 3:
+            return round(lw[0] * 100.0 / lw[1], 1)
+        if gw and gw[1] >= 3:
+            return round(gw[0] * 100.0 / gw[1], 1)
+        # Suavizado bayesiano con el mejor crudo disponible
+        raw, n = None, 0
+        if lw and lw[1] > 0:
+            raw, n = lw[0] * 100.0 / lw[1], lw[1]
+        elif gw and gw[1] > 0:
+            raw, n = gw[0] * 100.0 / gw[1], gw[1]
+        if raw is None:
+            return round(prior, 1)
+        return round((raw * n + prior * (3 - n)) / 3, 1)
+
+    # Counters al rival de linea: una sola query reutilizando el cursor
+    counter_rows = []
+    if enemigo_lane:
+        cur.execute(
+            "SELECT p2.champion, ROUND(SUM(p2.win)*100.0/COUNT(*),1) AS wr, COUNT(*) AS n "
+            "FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
+            "WHERE p1.champion = %s AND p1.team_position = %s "
+            "AND p2.team_position = p1.team_position AND p1.team != p2.team "
+            "GROUP BY p2.champion HAVING COUNT(*) >= 10 "
+            "ORDER BY wr DESC LIMIT 30",
+            (enemigo_lane, rol))
+        counter_rows = [(r[0], float(r[1]), int(r[2])) for r in cur.fetchall()]
+
+    conn.close()
+
     for c in campeones_rol:
         dano = obtener_dano(c)
         es_tank = _es_frontlane(c)
         es_ap = dano in ("AP", "HYBRID")
         es_ad = dano in ("AD", "HYBRID")
+        wr = _resolver_wr(c)
 
-        wr = 50.0
-        if enemigos:
-            placeholders = ",".join(["%s"]*len(enemigos))
-            
-            # Query 1: WR vs enemigos en LA MISMA LÍNEA (lane-specific, mas preciso)
-            cur.execute(
-                f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1), COUNT(*) "
-                f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
-                f"WHERE p1.champion = %s AND p1.team_position = %s "
-                f"AND p2.champion IN ({placeholders}) AND p2.team_position = p1.team_position "
-                f"AND p1.team != p2.team",
-                [c, rol] + enemigos
-            )
-            row = cur.fetchone()
-            
-            # Fallback: si no hay datos de misma linea, usar query global (cualquier rol enemigo)
-            if not row or not row[0] or (row[1] and row[1] < 3):
-                cur.execute(
-                    f"SELECT ROUND(SUM(p1.win)*100.0/COUNT(*),1), COUNT(*) "
-                    f"FROM participantes p1 JOIN participantes p2 ON p1.match_id = p2.match_id "
-                    f"WHERE p1.champion = %s AND p1.team_position = %s "
-                    f"AND p2.champion IN ({placeholders}) AND p1.team != p2.team",
-                    [c, rol] + enemigos
-                )
-                row = cur.fetchone()
-            
-            if row and row[0]:
-                n = int(row[1])
-                wr_raw = float(row[0])
-                if n < 3:
-                    # Suavizado bayesiano: prior del campeon en ese rol (no 50% fijo)
-                    cur.execute(
-                        "SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes "
-                        "WHERE champion = %s AND team_position = %s", (c, rol))
-                    prior_row = cur.fetchone()
-                    prior = float(prior_row[0]) if prior_row and prior_row[0] else 50.0
-                    wr = round((wr_raw * n + prior * (3 - n)) / 3, 1)
-                else:
-                    wr = wr_raw
-        
-        # Calcular puntuacion 1.0–10.0
         puntuacion = _score_pick(wr, es_ap, es_ad, es_tank, pct_ad, pct_ap, tank_count)
-        
-        # Determinar categoria y razon
+
         if pct_ad >= 60 and es_ap:
             candidatos["🔮 Falta Daño Mágico (AP)"].append((c, puntuacion, f"AP — {wr}% WR"))
         elif pct_ap >= 60 and es_ad:
@@ -519,11 +605,23 @@ def recomendar_picks_vivo(rol, aliados, enemigos):
                 razon = "⚖️ Decente"
             candidatos["⭐ Sinergia/Balance"].append((c, puntuacion, f"{razon} — {wr}% WR"))
 
-    conn.close()
     finales = {}
+
+    # Categoria de counters directos al rival de linea (va primera si existe)
+    if counter_rows:
+        counter_picks = []
+        for c_name, c_wr, c_part in counter_rows:
+            if c_name in campeones_rol_set and c_name not in picks_existentes:
+                pts = round(max(1.0, min(10.0, 5.0 + (c_wr - 50.0) * 0.25)), 1)
+                counter_picks.append((c_name, pts, f"🎯 {c_wr}% vs rival ({c_part}p)"))
+            if len(counter_picks) >= 6:
+                break
+        if counter_picks:
+            finales["🎯 Counter al rival"] = counter_picks
+
     for cat, champs in candidatos.items():
         if champs:
-            finales[cat] = sorted(champs, key=lambda x: x[1], reverse=True)[:4]
+            finales[cat] = sorted(champs, key=lambda x: x[1], reverse=True)[:6]
     return finales
 
 def calcular_winrate_5v5(aliados, enemigos, pos_aliados=None, pos_enemigos=None):

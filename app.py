@@ -35,6 +35,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     lcu_task_finished = Signal(object, object, str, str)
     perfil_listo = Signal(dict)
     radar_listo = Signal(object)
+    radar_db_listo = Signal(dict)  # DB data precomputada en hilo secundario (anti-freeze)
     meta_builds_listo = Signal(list, dict, str, str)  # (resultados, builds_data, rol_api, enemigo)
     postgame_ready = Signal(dict)
     season_partial = Signal(list)  # streaming: batch de partidas de Riot descargadas
@@ -138,10 +139,6 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self._setup_tray()
         
         # Cache para post-game (eliminado — feature de in-game removida)
-
-        # Overlay in-game
-        self.overlay = OverlayWindow()
-        self.overlay.closed.connect(lambda: None)
 
         # Discord Rich Presence
         QTimer.singleShot(3000, self._iniciar_discord_rpc)
@@ -260,8 +257,6 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     def _salir_app(self):
         """Cierra la app."""
         self.tray_icon.hide()
-        if hasattr(self, "overlay"):
-            self.overlay.cleanup()
         try:
             detener_discord_rpc()
         except Exception:
@@ -379,11 +374,33 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         except Exception:
             return None
 
-    def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40):
+    def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40, numero=None):
         ruta = self.descargar_imagen(id_elemento, tipo)
         if not ruta: return
-            
+
         pixmap = QPixmap(ruta).scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        # Badge con el numero de orden de compra (esquina superior izquierda)
+        if numero is not None and not pixmap.isNull():
+            painter = QPainter()
+            if painter.begin(pixmap):
+                try:
+                    d = max(14, size // 3)
+                    painter.setRenderHint(QPainter.Antialiasing)
+                    painter.setPen(QPen(QColor("#ffffff")))
+                    painter.setBrush(QBrush(QColor(ACCENT_RED)))
+                    painter.drawEllipse(0, 0, d, d)
+                    f = QFont(); f.setBold(True); f.setPixelSize(int(d * 0.62))
+                    painter.setFont(f)
+                    painter.setPen(QColor("#ffffff"))
+                    fm = painter.fontMetrics()
+                    txt = str(numero)
+                    tx = (d - fm.horizontalAdvance(txt)) / 2
+                    ty = (d + fm.ascent() - fm.descent()) / 2
+                    painter.drawText(int(tx), int(ty), txt)
+                finally:
+                    painter.end()
+
         info_texto = info_extra
         if tipo == "runa": info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
         elif tipo == "item": info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
@@ -458,14 +475,15 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             if s2 == "4" and s1 != "4": s1, s2 = s2, s1
         threading.Thread(target=lambda: self.lcu.importar_hechizos(s1, s2), daemon=True).start()
 
-    def _auto_importar_items(self, campeon, ids_start, ids_core):
+    def _auto_importar_items(self, campeon, ids_start, ids_core, ids_sit=None):
         if not ids_core: return
         threading.Thread(
             target=lambda: self.lcu.importar_item_set(
                 campeon,
                 next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
                 ids_start or [],
-                ids_core
+                ids_core,
+                ids_sit or []
             ), daemon=True
         ).start()
 
@@ -498,7 +516,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             daemon=True
         ).start()
 
-    def accion_importar_items(self, campeon, ids_start, ids_core, btn):
+    def accion_importar_items(self, campeon, ids_start, ids_core, btn, ids_sit=None):
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
@@ -507,7 +525,8 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                     campeon,
                     next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
                     ids_start or [],
-                    ids_core
+                    ids_core,
+                    ids_sit or []
                 ),
                 btn,
                 "Crear Item Set en LoL",
@@ -539,7 +558,11 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         clear_layout(parent_layout)
 
         main_wrap = QWidget()
-        wrap_layout = QHBoxLayout(main_wrap)
+        outer_layout = QVBoxLayout(main_wrap)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(8)
+        top_row = QWidget()
+        wrap_layout = QHBoxLayout(top_row)
         wrap_layout.setContentsMargins(0, 0, 0, 0)
         wrap_layout.setSpacing(10)
 
@@ -623,7 +646,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             for i_id in ids_start: self.renderizar_icono(i_id, "item", grid_start, 0, 0, size=40)
         l_items.addWidget(w_start)
         
-        lbl_i2 = QLabel("CORE BUILD")
+        lbl_i2 = QLabel("CORE BUILD (orden de compra)")
         lbl_i2.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px; padding-top: 10px;")
         l_items.addWidget(lbl_i2, alignment=Qt.AlignCenter)
         
@@ -632,78 +655,94 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         grid_core.setContentsMargins(0,0,0,0)
         grid_core.setAlignment(Qt.AlignCenter)
         if ids_core:
-            for idx, i_id in enumerate(ids_core): self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45)
+            for idx, i_id in enumerate(ids_core): self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45, numero=idx + 1)
         l_items.addWidget(w_core)
 
         if mostrar_botones:
             l_items.addStretch()
             btn_items = QPushButton("Crear Item Set")
-            btn_items.clicked.connect(lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items))
+            btn_items.clicked.connect(lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items, ids_sit))
             l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
         wrap_layout.addWidget(card_items)
 
-        # ── CARD SITUACIONALES ──────────────────────────────────
+        # ── CARD SITUACIONALES (fila completa, 2 columnas) ───────────────
         if ids_sit:
             _PRIO_COLOR   = {1: "#ef4444", 2: "#f59e0b", 3: "#7a6f68"}
             _PRIO_LABEL   = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
             _CAT_LABEL    = {
-                "anti_heal": "Anti-curación",  "anti_cc": "Anti-CC",
-                "anti_ap": "Anti-AP",          "anti_ad": "Anti-AD",
-                "anti_tank": "Anti-tanques",   "penetracion": "Penetración",
-                "supervivencia": "Supervivencia",
+                "anti_heal": "🩸 Anti-curación",   "anti_cc": "⛓ Anti-CC",
+                "anti_ap": "🔮 Anti-AP",           "anti_ad": "⚔ Anti-AD",
+                "anti_tank": "🛡 Anti-tanques",    "penetracion": "🗡 Penetración",
+                "anti_shield": "💠 Anti-escudo",   "supervivencia": "❤ Supervivencia",
             }
 
             card_sit = QFrame()
             card_sit.setObjectName("BuildCard")
             l_sit = QVBoxLayout(card_sit)
             l_sit.setSpacing(6)
+            l_sit.setContentsMargins(10, 8, 10, 8)
 
-            lbl_sit_t = QLabel("SITUACIONALES")
+            lbl_sit_t = QLabel("OBJETOS SITUACIONALES")
             lbl_sit_t.setStyleSheet(f"color: {YELLOW_WARNING}; font-weight: bold; font-size: 11px;")
-            l_sit.addWidget(lbl_sit_t, alignment=Qt.AlignCenter)
+            l_sit.addWidget(lbl_sit_t)
+            lbl_sit_sub = QLabel("Cómpralos según el enemigo — no son parte fija de la build")
+            lbl_sit_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
+            l_sit.addWidget(lbl_sit_sub)
 
-            for sit in ids_sit[:5]:  # max 5 items para no saturar
-                row_w = QWidget()
-                row_l = QHBoxLayout(row_w)
-                row_l.setContentsMargins(2, 2, 2, 2)
-                row_l.setSpacing(6)
+            grid_sit = QGridLayout()
+            grid_sit.setHorizontalSpacing(14)
+            grid_sit.setVerticalSpacing(8)
+            for idx, sit in enumerate(ids_sit[:6]):  # hasta 6 items, 2 columnas
+                fila, col = idx // 2, idx % 2
+                item_w = QWidget()
+                row_l = QHBoxLayout(item_w)
+                row_l.setContentsMargins(0, 0, 0, 0)
+                row_l.setSpacing(8)
 
-                # Icono del ítem
-                self.renderizar_icono(sit["id"], "item", row_l, size=32)
+                # Icono del item
+                self.renderizar_icono(sit["id"], "item", row_l, size=40)
 
-                # Texto: categoría + nombre + razón
                 txt_w = QWidget()
                 txt_l = QVBoxLayout(txt_w)
                 txt_l.setContentsMargins(0, 0, 0, 0)
-                txt_l.setSpacing(1)
+                txt_l.setSpacing(2)
 
+                # Linea 1: badge de prioridad (pildora) + categoria
                 prio_col = _PRIO_COLOR.get(sit["prioridad"], "#7a6f68")
                 cat_txt  = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
-                lbl_cat = QLabel(f"<span style='color:{prio_col};font-weight:bold;font-size:9px;'>"
-                                 f"{_PRIO_LABEL.get(sit['prioridad'],'')}</span>"
-                                 f"<span style='color:{TEXT_MUTED};font-size:9px;'> · {cat_txt}</span>")
+                lbl_cat = QLabel(
+                    f"<span style='background:{prio_col};color:#fff;font-weight:bold;"
+                    f"font-size:8px;'>&nbsp;{_PRIO_LABEL.get(sit['prioridad'],'')}&nbsp;</span>"
+                    f"<span style='color:{TEXT_MUTED};font-size:9px;'>&nbsp; {cat_txt}</span>")
                 lbl_cat.setTextFormat(Qt.RichText)
                 txt_l.addWidget(lbl_cat)
 
-                lbl_name = QLabel(f"{sit['nombre']}  <span style='color:{TEXT_SUBTLE};font-size:9px;'>{sit['coste']}g</span>")
-                lbl_name.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 10px; font-weight: bold;")
+                # Linea 2: nombre + coste
+                lbl_name = QLabel(
+                    f"{sit['nombre']}  <span style='color:{TEXT_SUBTLE};font-size:9px;'>{sit['coste']}g</span>")
+                lbl_name.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: bold;")
                 lbl_name.setTextFormat(Qt.RichText)
+                lbl_name.setWordWrap(True)
                 txt_l.addWidget(lbl_name)
 
-                razon = sit["razon"]
-                if len(razon) > 75:
-                    razon = razon[:72] + "…"
-                lbl_razon = QLabel(razon)
+                # Linea 3: razon COMPLETA (word wrap, sin truncar)
+                lbl_razon = QLabel(sit["razon"])
                 lbl_razon.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
                 lbl_razon.setWordWrap(True)
                 txt_l.addWidget(lbl_razon)
 
-                row_l.addWidget(txt_w)
-                row_l.addStretch()
-                l_sit.addWidget(row_w)
+                row_l.addWidget(txt_w, 1)
+                grid_sit.addWidget(item_w, fila, col)
 
-            l_sit.addStretch()
-            wrap_layout.addWidget(card_sit)
+            grid_sit.setColumnStretch(0, 1)
+            grid_sit.setColumnStretch(1, 1)
+            l_sit.addLayout(grid_sit)
+
+        # Las 3 tarjetas principales van en la fila superior; situacionales debajo
+        # (evita que se salgan del marco hacia la derecha).
+        outer_layout.addWidget(top_row)
+        if ids_sit:
+            outer_layout.addWidget(card_sit)
 
         parent_layout.addWidget(main_wrap)
 

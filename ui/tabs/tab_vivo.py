@@ -87,8 +87,13 @@ class VivoTabMixin:
         self.panel_skills, self.l_skills = self.crear_panel("📖 RUTA DE HABILIDADES")
         self.lbl_skill_order = QLabel("Selecciona un campeón")
         self.lbl_skill_order.setAlignment(Qt.AlignCenter)
-        self.lbl_skill_order.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 16px; font-weight: bold; padding: 8px;")
+        self.lbl_skill_order.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 16px; font-weight: bold; padding: 4px;")
         self.l_skills.addWidget(self.lbl_skill_order)
+        # Fila visual de 18 niveles (que subir en cada nivel)
+        self.fr_skill_levels = QHBoxLayout()
+        self.fr_skill_levels.setSpacing(2)
+        self.fr_skill_levels.setAlignment(Qt.AlignCenter)
+        self.l_skills.addLayout(self.fr_skill_levels)
         self.btn_export_skills = QPushButton("📤 Subir orden al Cliente")
         self.btn_export_skills.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD}; border: 1px solid {ACCENT_TEAL}; border-radius: 4px; color: {ACCENT_TEAL}; font-size: 11px; padding: 6px 16px; font-weight: bold; }}
@@ -124,7 +129,16 @@ class VivoTabMixin:
         self.pnl_pathing.setVisible(False)
         l_center.addWidget(self.pnl_pathing)
 
-        draft_layout.addWidget(col_center, 3)
+        # Columna central scrollable (es la mas densa: picks + setup + skills + pathing)
+        scroll_center = QScrollArea()
+        scroll_center.setWidgetResizable(True)
+        scroll_center.setFrameShape(QFrame.NoFrame)
+        # Horizontal AsNeeded: si el contenido no entra, se puede desplazar en vez de recortarse
+        scroll_center.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_center.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll_center.viewport().setStyleSheet("background: transparent;")
+        scroll_center.setWidget(col_center)
+        draft_layout.addWidget(scroll_center, 3)
 
         self.col_ally, l_ally = self.crear_panel("Aliados")
         self.lbl_ally_stats = QLabel("AD: --% | AP: --% | Tanks: 0")
@@ -134,8 +148,35 @@ class VivoTabMixin:
         l_ally.addLayout(self.fr_aliados_picks)
         l_ally.addStretch() 
         draft_layout.addWidget(self.col_ally, 1)
-        
-        layout.addLayout(draft_layout)
+
+        layout.addLayout(draft_layout, 1)
+
+    _SKILL_COLORS = {"Q": "#3b82f6", "W": "#10b981", "E": "#f59e0b", "R": "#e11d48"}
+
+    def _render_skill_levels(self, seq):
+        """Dibuja la fila de 18 celdas (nivel -> habilidad a subir)."""
+        clear_layout(self.fr_skill_levels)
+        if not seq:
+            return
+        for lvl, ab in enumerate(seq, start=1):
+            color = self._SKILL_COLORS.get(ab, TEXT_MUTED)
+            cell = QWidget()
+            cl = QVBoxLayout(cell)
+            cl.setContentsMargins(0, 0, 0, 0)
+            cl.setSpacing(1)
+            lbl_lvl = QLabel(str(lvl))
+            lbl_lvl.setAlignment(Qt.AlignCenter)
+            lbl_lvl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 7px;")
+            lbl_ab = QLabel(ab)
+            lbl_ab.setAlignment(Qt.AlignCenter)
+            lbl_ab.setFixedSize(18, 18)
+            lbl_ab.setStyleSheet(
+                f"color: #fff; background-color: {color}; border-radius: 3px; "
+                f"font-size: 10px; font-weight: bold;"
+            )
+            cl.addWidget(lbl_lvl)
+            cl.addWidget(lbl_ab, alignment=Qt.AlignCenter)
+            self.fr_skill_levels.addWidget(cell)
 
     def abrir_settings(self):
         dlg = SettingsDialog(self.user_settings, self)
@@ -313,20 +354,268 @@ class VivoTabMixin:
 
     # ================= RADAR / DRAFT (HILO SEGUNDARIO) =================
     def _fetch_radar(self):
-        """Se ejecuta en hilo secundario. Solo obtiene el draft de LCU."""
+        """Se ejecuta en hilo secundario. Obtiene draft de LCU y precomputa datos BD."""
         try:
             draft = self.lcu.obtener_sesion_draft()
         except Exception as e:
             draft = None
-        self.radar_listo.emit(draft)
 
-    def _on_radar_listo(self, draft):
-        """Se ejecuta en el hilo principal. Actualiza la UI del radar.
-        Si no hay draft activo, simplemente se salta la actualización SIN desconectar."""
+        db_data = None
+        if draft:
+            try:
+                db_data = self._radar_db_compute(draft)
+            except Exception:
+                db_data = None
+
+        self.radar_listo.emit({"draft": draft, "db_data": db_data})
+
+    def _radar_db_compute(self, draft):
+        """Ejecutado en hilo secundario. Extrae toda la info del draft y hace TODAS
+        las consultas BD de una vez, sin tocar la UI. Retorna un dict con los resultados."""
+        picks_al, picks_en = [], []
+        pos_al, pos_en = [], []
+        mi_campeon = None
+        mi_celda = draft.get("localPlayerCellId")
+        rol_api = self.lcu.obtener_mi_rol(draft)
+
+        for j in draft.get("myTeam", []):
+            champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
+            if champ:
+                picks_al.append(champ)
+                pos_al.append(j.get("assignedPosition", "MIDDLE"))
+            if j.get("cellId") == mi_celda:
+                mi_campeon = champ
+
+        enemigo_lane = None
+        posiciones = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+
+        def _normalizar_pos(pos_str):
+            p = (pos_str or "").upper().strip()
+            mapa = {"SUPPORT": "UTILITY", "ADC": "BOTTOM", "JUNGLA": "JUNGLE", "MID": "MIDDLE"}
+            return mapa.get(p, p) if p in posiciones or p in mapa else ""
+
+        enemigos_procesados = []
+        for idx, j in enumerate(draft.get("theirTeam", [])):
+            champ = self.procesar_nombre_champ(j.get("championId", 0), j.get("championPickIntent", 0))
+            if champ:
+                picks_en.append(champ)
+                pos = _normalizar_pos(j.get("assignedPosition", ""))
+                pos_from_lcu = bool(pos)
+                if not pos:
+                    pos = posiciones[idx] if idx < 5 else "MIDDLE"
+                pos_en.append(pos)
+                enemigos_procesados.append((champ, pos, idx))
+                if pos_from_lcu and pos == rol_api:
+                    enemigo_lane = champ
+
+        # Cache de campeones por rol
+        cache_rol_tipico = {}
+        for rol_key in posiciones:
+            champs_rol = set(obtener_campeones_por_rol(rol_key, min_partidas=5))
+            cache_rol_tipico[rol_key] = champs_rol
+
+        # Normalizar nombres a ingles para queries SQL
+        picks_al_db = self._nombres_db(picks_al)
+        picks_en_db = self._nombres_db(picks_en)
+
+        # Inferir rival de linea via BD (si no se encontro por posicion)
+        if not enemigo_lane and enemigos_procesados:
+            from src.tags_champions import obtener_tag
+            rol_to_class = {
+                "TOP": ("Fighter", "Tank"), "JUNGLE": ("Fighter", "Tank", "Assassin"),
+                "MIDDLE": ("Mage", "Assassin"), "BOTTOM": ("Marksman",),
+                "UTILITY": ("Support",)
+            }
+            expected = rol_to_class.get(rol_api, ())
+            for champ, pos, idx in enemigos_procesados:
+                try:
+                    tag = obtener_tag(champ)
+                    if tag.get("champion_class", "") in expected:
+                        enemigo_lane = champ
+                        break
+                except Exception:
+                    pass
+            if not enemigo_lane:
+                conn_radar = obtener_conexion()
+                try:
+                    cur = conn_radar.cursor()
+                    champs_list = [champ for champ, pos, idx in enemigos_procesados]
+                    ph = ",".join(["%s"] * len(enemigos_procesados))
+                    cur.execute(
+                        f"SELECT champion, COUNT(*) as cnt FROM participantes "
+                        f"WHERE champion IN ({ph}) AND team_position = %s "
+                        f"GROUP BY champion",
+                        champs_list + [rol_api]
+                    )
+                    freq_map = {row["champion"]: row["cnt"] for row in cur.fetchall()}
+                except Exception:
+                    freq_map = {}
+                finally:
+                    conn_radar.close()
+                rol_cache = cache_rol_tipico.get(rol_api, set())
+                candidatos = []
+                for champ, pos, idx in enemigos_procesados:
+                    if champ in rol_cache:
+                        candidatos.append((champ, freq_map.get(champ, 0)))
+                if candidatos:
+                    candidatos.sort(key=lambda x: x[1], reverse=True)
+                    enemigo_lane = candidatos[0][0]
+                if not enemigo_lane:
+                    for champ, pos, idx in enemigos_procesados:
+                        if pos and pos.upper() == rol_api.upper():
+                            enemigo_lane = champ
+                            break
+                if not enemigo_lane:
+                    mi_idx = next((i for i, j in enumerate(draft.get("myTeam", []))
+                                   if j.get("cellId") == mi_celda), -1)
+                    if 0 <= mi_idx < len(enemigos_procesados):
+                        champ_idx = enemigos_procesados[mi_idx][0]
+                        if champ_idx in rol_cache:
+                            enemigo_lane = champ_idx
+
+        enemigo_lane_db = self._nombre_db(enemigo_lane) if enemigo_lane else None
+        mi_campeon_db = self._nombre_db(mi_campeon) if mi_campeon else None
+
+        # ── EARLY-EXIT: el timer dispara cada 1.5s aunque el draft no cambie.
+        #    Si el estado es identico al ultimo compute, no re-consultamos NADA.
+        sig = (rol_api, tuple(picks_al), tuple(picks_en), mi_campeon, enemigo_lane)
+        if sig == getattr(self, "_last_radar_sig", None) and getattr(self, "_last_radar_db_data", None):
+            return self._last_radar_db_data
+
+        # Caches de sesion enemy-independientes (runas/hechizos/bans por champ+rol)
+        cache_rs = getattr(self, "_cache_runas_radar", None)
+        if cache_rs is None: cache_rs = self._cache_runas_radar = {}
+        cache_bans = getattr(self, "_cache_bans_radar", None)
+        if cache_bans is None: cache_bans = self._cache_bans_radar = {}
+
+        db_data = {
+            "cache_rol_tipico": cache_rol_tipico,
+            "enemigo_lane_db": enemigo_lane_db,
+            "wr_5v5": None,
+            "draft_id": None,
+            "bans": [],
+            "runas": [],
+            "hechizos": [],
+            "items_start": [],
+            "items_core": [],
+            "items_sit": [],
+            "picks": {},
+            "counters": [],
+            "mi_campeon_db": mi_campeon_db,
+            "mi_campeon": mi_campeon,
+            "enemigo_lane": enemigo_lane,
+        }
+
+        # ─── Paralelizar TODAS las consultas BD (cada una su propio future) ───
+        # Asi el tiempo total ≈ la query mas lenta, no la suma de todas.
+        _t0 = time.time()
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        enemigos_db_list = [self._nombre_db(e) or e for e in picks_en_db]
+
+        def _wr_task():
+            if len(picks_al_db) >= 5 and len(picks_en_db) >= 5:
+                wr = calcular_winrate_5v5(picks_al_db, picks_en_db, pos_al, pos_en)
+                draft_id = None
+                if mi_campeon_db:
+                    try:
+                        bans_act = [self.procesar_nombre_champ(
+                            b.get("championId", 0), 0) for b in draft.get("bans", {}).get("myBans", [])]
+                        bans_act = [b for b in bans_act if b]
+                        draft_id = guardar_draft(mi_campeon_db, rol_api, bans_act, picks_al, picks_en, wr)
+                    except Exception:
+                        pass
+                return ("wr", wr, draft_id)
+            return ("wr", None, None)
+
+        def _bans_task():
+            ck = (mi_campeon_db, rol_api)
+            if ck in cache_bans:
+                return ("bans", cache_bans[ck])
+            if mi_campeon_db:
+                bans = obtener_peores_matchups(mi_campeon_db, rol_api, min_partidas=20)
+                if not bans:
+                    bans = obtener_peores_matchups(mi_campeon_db, rol_api, min_partidas=5)
+                if not bans:
+                    bans = obtenermejoresbaneos(rol_api, min_partidas=20)
+            else:
+                bans = obtenermejoresbaneos(rol_api, min_partidas=20)
+            cache_bans[ck] = bans
+            return ("bans", bans)
+
+        def _picks_task():
+            return ("picks", recomendar_picks_vivo(rol_api, picks_al_db, picks_en_db, enemigo_lane_db))
+
+        def _counters_task():
+            cnt = obtener_counters(rol_api, enemigo_lane_db, min_partidas=10) if enemigo_lane_db else []
+            return ("counters", cnt)
+
+        def _runas_task():
+            if not mi_campeon_db:
+                return ("runas", [], [])
+            ck = (mi_campeon_db, rol_api)
+            if ck in cache_rs:
+                r, h = cache_rs[ck]
+                return ("runas", r, h)
+            r = obtener_top_runas(mi_campeon_db, rol_api)
+            h = obtener_top_hechizos(mi_campeon_db, rol_api)
+            cache_rs[ck] = (r, h)
+            return ("runas", r, h)
+
+        def _items_task():
+            if not mi_campeon_db:
+                return ("items", [], [], [])
+            i_start, i_core = obtener_top_items(mi_campeon_db, rol_api, enemigos=enemigos_db_list)
+            i_sit = obtener_items_situacionales(
+                mi_campeon_db, rol_api, enemigos_db_list, excluir=i_core) if picks_en_db else []
+            return ("items", i_start, i_core, i_sit)
+
+        tasks = [_wr_task, _bans_task, _picks_task, _counters_task, _runas_task, _items_task]
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = [executor.submit(t) for t in tasks]
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    key = result[0]
+                    if key == "wr":
+                        db_data["wr_5v5"] = result[1]; db_data["draft_id"] = result[2]
+                    elif key == "bans":
+                        db_data["bans"] = result[1]
+                    elif key == "picks":
+                        db_data["picks"] = result[1]
+                    elif key == "counters":
+                        db_data["counters"] = result[1]
+                    elif key == "runas":
+                        db_data["runas"] = result[1]; db_data["hechizos"] = result[2]
+                    elif key == "items":
+                        db_data["items_start"] = result[1]
+                        db_data["items_core"] = result[2]
+                        db_data["items_sit"] = result[3]
+                except Exception:
+                    pass
+
+        try:
+            log.info("Radar DB compute: %.2fs (champ=%s rol=%s)", time.time() - _t0, mi_campeon_db, rol_api)
+        except Exception:
+            pass
+
+        self._last_radar_sig = sig
+        self._last_radar_db_data = db_data
+        return db_data
+
+    def _on_radar_listo(self, payload):
+        """Se ejecuta en el hilo principal. Si db_data viene precomputado (nuevo flujo
+        anti-freeze), lo usa para saltar todas las consultas BD en el hilo principal."""
         self._actualizando_radar = False
         
         if not self.radar_activo:
             return
+
+        db_data = {}
+        if isinstance(payload, dict) and "draft" in payload:
+            draft = payload.get("draft")
+            db_data = payload.get("db_data") or {}
+        else:
+            draft = payload  # backward compat: objeto draft directo
         
         if not draft:
             # No hay sesión de draft activa → no desconectar, solo esperar
@@ -361,7 +650,12 @@ class VivoTabMixin:
             if not hasattr(self, '_cache_rol_tipico'):
                 self._cache_rol_tipico = {}
                 self._cache_rol_tipico_lock = threading.Lock()
-            if rol_api not in self._cache_rol_tipico or not self._cache_rol_tipico.get(rol_api):
+            cache_rol_pre = db_data.get("cache_rol_tipico", {}) if db_data else {}
+            if cache_rol_pre:
+                with self._cache_rol_tipico_lock:
+                    for rk, champs in cache_rol_pre.items():
+                        self._cache_rol_tipico[rk] = champs if isinstance(champs, set) else set(champs)
+            elif rol_api not in self._cache_rol_tipico or not self._cache_rol_tipico.get(rol_api):
                 with self._cache_rol_tipico_lock:
                     if rol_api not in self._cache_rol_tipico or not self._cache_rol_tipico.get(rol_api):
                         for rol_key in posiciones:
@@ -385,70 +679,70 @@ class VivoTabMixin:
                         enemigo_lane = champ
             
             # Fallback inteligente si no se encontro rival de linea por posicion
+            enemigo_lane_db_pre = db_data.get("enemigo_lane_db") if db_data else None
             if not enemigo_lane and enemigos_procesados:
-                # 1. Por CLASE del campeon (mas fiable: Marksman→BOTTOM, Support→UTILITY, etc.)
-                from src.tags_champions import obtener_tag
-                rol_to_class = {
-                    "TOP": ("Fighter", "Tank"), "JUNGLE": ("Fighter", "Tank", "Assassin"),
-                    "MIDDLE": ("Mage", "Assassin"), "BOTTOM": ("Marksman",),
-                    "UTILITY": ("Support",)
-                }
-                expected = rol_to_class.get(rol_api, ())
-                for champ, pos, idx in enemigos_procesados:
-                    try:
-                        tag = obtener_tag(champ)
-                        if tag.get("champion_class", "") in expected:
-                            enemigo_lane = champ
-                            print(f"[Radar] Rival de linea por clase: {champ} ({tag.get('champion_class')}) en {rol_api}")
-                            break
-                    except Exception:
-                        pass
-                
-                # 2. Por rol tipico en BD (cache) — con tiebreaker: el mas frecuente en este rol
-                if not enemigo_lane:
-                    cache_rol = self._cache_rol_tipico.get(rol_api, set())
-                    candidatos_cache = []
-                    conn_radar = obtener_conexion()
-                    try:
-                        cur = conn_radar.cursor()
-                        placeholders = ",".join(["?"] * len(enemigos_procesados))
-                        champs_list = [champ for champ, pos, idx in enemigos_procesados]
-                        cur.execute(
-                            f"SELECT champion, COUNT(*) as cnt FROM participantes "
-                            f"WHERE champion IN ({placeholders}) AND team_position = ? "
-                            f"GROUP BY champion",
-                            champs_list + [rol_api]
-                        )
-                        freq_map = {row["champion"]: row["cnt"] for row in cur.fetchall()}
-                    except Exception:
-                        freq_map = {}
-                    finally:
-                        conn_radar.close()
+                if enemigo_lane_db_pre:
+                    # El hilo secundario ya infirio el rival con BD + tags
                     for champ, pos, idx in enemigos_procesados:
-                        if champ in cache_rol:
-                            freq = freq_map.get(champ, 0)
-                            candidatos_cache.append((champ, freq))
-                    if candidatos_cache:
-                        # Elegir el campeon mas frecuente en este rol, no el primero de la lista
-                        candidatos_cache.sort(key=lambda x: x[1], reverse=True)
-                        enemigo_lane = candidatos_cache[0][0]
-                        print(f"[Radar] Rival de linea inferido por rol tipico (frec={candidatos_cache[0][1]}): {enemigo_lane} en {rol_api}")
-                
-                # 3. Por posicion normalizada de la LCU (si no coincidio antes por alguna razon)
-                if not enemigo_lane:
-                    for champ, pos, idx in enemigos_procesados:
-                        if pos and pos.upper() == rol_api.upper():
+                        if self._nombre_db(champ) == enemigo_lane_db_pre or champ == enemigo_lane_db_pre:
                             enemigo_lane = champ
                             break
-                
-                # 4. Por indice verificando rol tipico (ultimo recurso)
-                if not enemigo_lane:
-                    mi_idx = next((i for i, j in enumerate(draft.get("myTeam", [])) if j.get("cellId") == mi_celda), -1)
-                    if 0 <= mi_idx < len(enemigos_procesados):
-                        champ_idx = enemigos_procesados[mi_idx][0]
-                        if champ_idx in cache_rol:
-                            enemigo_lane = champ_idx
-                            print(f"[Radar] Rival de linea por indice (verificado): {champ_idx} en {rol_api}")
+                    if not enemigo_lane:
+                        enemigo_lane = enemigo_lane_db_pre
+                else:
+                    # Fallback inline (sin BD precomputada)
+                    from src.tags_champions import obtener_tag
+                    rol_to_class = {
+                        "TOP": ("Fighter", "Tank"), "JUNGLE": ("Fighter", "Tank", "Assassin"),
+                        "MIDDLE": ("Mage", "Assassin"), "BOTTOM": ("Marksman",),
+                        "UTILITY": ("Support",)
+                    }
+                    expected = rol_to_class.get(rol_api, ())
+                    for champ, pos, idx in enemigos_procesados:
+                        try:
+                            tag = obtener_tag(champ)
+                            if tag.get("champion_class", "") in expected:
+                                enemigo_lane = champ
+                                break
+                        except Exception:
+                            pass
+                    if not enemigo_lane:
+                        cache_rol = self._cache_rol_tipico.get(rol_api, set())
+                        candidatos_cache = []
+                        conn_radar = obtener_conexion()
+                        try:
+                            cur = conn_radar.cursor()
+                            ph = ",".join(["%s"] * len(enemigos_procesados))
+                            champs_list = [champ for champ, pos, idx in enemigos_procesados]
+                            cur.execute(
+                                f"SELECT champion, COUNT(*) as cnt FROM participantes "
+                                f"WHERE champion IN ({ph}) AND team_position = %s "
+                                f"GROUP BY champion",
+                                champs_list + [rol_api]
+                            )
+                            freq_map = {row["champion"]: row["cnt"] for row in cur.fetchall()}
+                        except Exception:
+                            freq_map = {}
+                        finally:
+                            conn_radar.close()
+                        for champ, pos, idx in enemigos_procesados:
+                            if champ in cache_rol:
+                                freq = freq_map.get(champ, 0)
+                                candidatos_cache.append((champ, freq))
+                        if candidatos_cache:
+                            candidatos_cache.sort(key=lambda x: x[1], reverse=True)
+                            enemigo_lane = candidatos_cache[0][0]
+                    if not enemigo_lane:
+                        for champ, pos, idx in enemigos_procesados:
+                            if pos and pos.upper() == rol_api.upper():
+                                enemigo_lane = champ
+                                break
+                    if not enemigo_lane:
+                        mi_idx = next((i for i, j in enumerate(draft.get("myTeam", [])) if j.get("cellId") == mi_celda), -1)
+                        if 0 <= mi_idx < len(enemigos_procesados):
+                            champ_idx = enemigos_procesados[mi_idx][0]
+                            if champ_idx in cache_rol:
+                                enemigo_lane = champ_idx
                 
             if picks_al != self.last_aliados or picks_en != self.last_enemigos:
                 self.last_aliados, self.last_enemigos = picks_al.copy(), picks_en.copy()
@@ -465,14 +759,22 @@ class VivoTabMixin:
                 ad_en, ap_en, tanks_en = analizar_composicion(picks_en_db)
                 self.lbl_enemy_stats.setText(f"Daño AD: {ad_en}% | Daño AP: {ap_en}% | Frontlane: {tanks_en}")
                 
-                self.mostrar_picks_vivo(rol_api, picks_al_db, picks_en_db)
+                self.mostrar_picks_vivo(rol_api, picks_al_db, picks_en_db,
+                                        self._nombre_db(enemigo_lane) if enemigo_lane else None,
+                                        sugerencias=db_data.get("picks") if db_data else None)
 
                 # Actualizar counters si cambia el rival de linea (aunque no haya cambiado mi pick)
                 if enemigo_lane != self.last_enemigo_lane:
-                    self._actualizar_counters_vivo(rol_api, enemigo_lane)
+                    self._actualizar_counters_vivo(rol_api, enemigo_lane,
+                                                   counters_pre=db_data.get("counters") if db_data else None)
 
                 if len(picks_al_db) == 5 and len(picks_en_db) == 5:
-                    wr = calcular_winrate_5v5(picks_al_db, picks_en_db, pos_al, pos_en)
+                    wr_pre = db_data.get("wr_5v5") if db_data else None
+                    draft_id_pre = db_data.get("draft_id") if db_data else None
+                    if wr_pre is not None:
+                        wr = wr_pre
+                    else:
+                        wr = calcular_winrate_5v5(picks_al_db, picks_en_db, pos_al, pos_en)
                     color = GREEN_WR if wr > 52 else RED_WR if wr < 48 else YELLOW_WR
                     tendencia = "↑ Ventaja de Sinergia" if wr > 52 else "↓ Desventaja de Draft" if wr < 48 else "≈ Matchup Equilibrado"
                     self.lbl_wr_numero.setText(f"{wr}%")
@@ -482,35 +784,39 @@ class VivoTabMixin:
 
                     # Guardar draft en historial
                     if mi_campeon:
-                        try:
-                            bans_actuales = [self.procesar_nombre_champ(
-                                b.get("championId", 0), 0) for b in draft.get("bans", {}).get("myBans", [])]
-                            bans_actuales = [b for b in bans_actuales if b]
-                            self._draft_id_actual = guardar_draft(mi_campeon, rol_api, bans_actuales, picks_al, picks_en, wr)
-                        except Exception as e:
-                            print(f"[DraftHistory] Error guardando draft: {e}")
+                        if draft_id_pre is not None:
+                            self._draft_id_actual = draft_id_pre
+                        else:
+                            try:
+                                bans_actuales = [self.procesar_nombre_champ(
+                                    b.get("championId", 0), 0) for b in draft.get("bans", {}).get("myBans", [])]
+                                bans_actuales = [b for b in bans_actuales if b]
+                                self._draft_id_actual = guardar_draft(mi_campeon, rol_api, bans_actuales, picks_al, picks_en, wr)
+                            except Exception as e:
+                                print(f"[DraftHistory] Error guardando draft: {e}")
 
             if mi_campeon != self.last_my_champ or rol_api != self.last_my_role:
                 self.last_my_champ = mi_campeon
                 self.last_my_role = rol_api
                 
                 clear_layout(self.fr_bans_icons_vivo)
+                bans_pre = db_data.get("bans") if db_data else []
                 if mi_campeon: 
                     self.panel_bans_vivo.label_title.setText(
                         f"BANS SI PICKEO {self._nombre_display(mi_campeon).upper()}"
                     )
-                    bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=20)
-                    # Fallback: si no hay datos para este campeon en este rol (ej. Quinn JG),
-                    # usar bans generales del rol
-                    if not bans_sugeridos:
-                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=5)
-                    if not bans_sugeridos:
-                        # Ultimo fallback: bans mas comunes del rol
-                        bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
-                        self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
+                    if not bans_pre:
+                        bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=20)
+                        if not bans_sugeridos:
+                            bans_sugeridos = obtener_peores_matchups(mi_campeon, rol_api, min_partidas=5)
+                        if not bans_sugeridos:
+                            bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
+                            self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
+                    else:
+                        bans_sugeridos = bans_pre
                 else: 
                     self.panel_bans_vivo.label_title.setText(f"BANS SUGERIDOS ({rol_ui})")
-                    bans_sugeridos = obtenermejoresbaneos(rol_api, min_partidas=20)
+                    bans_sugeridos = bans_pre if bans_pre else obtenermejoresbaneos(rol_api, min_partidas=20)
 
                 bans_filtrados = [(b, wr, p) for b, wr, p in bans_sugeridos if b not in self.last_aliados and b not in self.last_enemigos][:4]
                 if bans_filtrados:
@@ -523,25 +829,39 @@ class VivoTabMixin:
                     self.fr_bans_icons_vivo.addWidget(lbl_noban)
 
                 # ── COUNTER PICKS contra el rival de linea ──
-                self._actualizar_counters_vivo(rol_api, enemigo_lane)
+                self._actualizar_counters_vivo(rol_api, enemigo_lane,
+                                               counters_pre=db_data.get("counters") if db_data else None)
 
                 if mi_campeon:
-                    ids_runas = obtener_top_runas(mi_campeon, rol_api)
-                    ids_runas = ajustar_shards_adaptativos(
-                        ids_runas,
-                        self._nombre_db(mi_campeon) or mi_campeon,
-                        self._nombre_db(enemigo_lane) or enemigo_lane if enemigo_lane else None,
-                        [self._nombre_db(c) or c for c in picks_en_db],
-                    )
-                    ids_spells = obtener_top_hechizos(mi_campeon, rol_api)
-                    ids_start, ids_core = obtener_top_items(mi_campeon, rol_api, enemigos=self.last_enemigos)
-                    ids_sit = obtener_items_situacionales(
-                        self._nombre_db(mi_campeon) or mi_campeon,
-                        rol_api,
-                        [self._nombre_db(e) or e for e in self.last_enemigos],
-                        excluir=ids_core,
-                    ) if self.last_enemigos else []
-                    self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core, self.fr_runas_icons_vivo, ids_sit=ids_sit)
+                    mi_campeon_db = self._nombre_db(mi_campeon) or mi_campeon
+                    ids_runas = db_data.get("runas") if db_data else []
+                    if not ids_runas:
+                        ids_runas = obtener_top_runas(mi_campeon, rol_api)
+                    # Shards adaptativos SOLO para frontline (Fighter/Tank). El resto
+                    # usa los shards mas usados que ya vienen de los datos.
+                    from src.tags_champions import obtener_tag as _obtener_tag
+                    if _obtener_tag(mi_campeon_db).get("champion_class", "") in ("Fighter", "Tank"):
+                        ids_runas = ajustar_shards_adaptativos(
+                            ids_runas, mi_campeon_db,
+                            self._nombre_db(enemigo_lane) or enemigo_lane if enemigo_lane else None,
+                            [self._nombre_db(c) or c for c in picks_en_db],
+                        )
+                    ids_spells = db_data.get("hechizos") if db_data else []
+                    if not ids_spells:
+                        ids_spells = obtener_top_hechizos(mi_campeon, rol_api)
+                    ids_start = db_data.get("items_start") if db_data else []
+                    ids_core = db_data.get("items_core") if db_data else []
+                    if not ids_start and not ids_core:
+                        ids_start, ids_core = obtener_top_items(mi_campeon, rol_api, enemigos=self.last_enemigos)
+                    ids_sit = db_data.get("items_sit") if db_data else []
+                    if not ids_sit and self.last_enemigos:
+                        ids_sit = obtener_items_situacionales(
+                            mi_campeon_db, rol_api,
+                            [self._nombre_db(e) or e for e in self.last_enemigos],
+                            excluir=ids_core,
+                        )
+                    self.renderizar_setup_completo(mi_campeon, ids_runas, ids_spells, ids_start, ids_core,
+                                                    self.fr_runas_icons_vivo, ids_sit=ids_sit)
                     
                     # Ruta de habilidades
                     skill_key = self._nombre_db(mi_campeon) or mi_campeon
@@ -549,6 +869,7 @@ class VivoTabMixin:
                     skill_order = SKILL_ORDERS.get(skill_key_sanitized, SKILL_ORDERS.get(skill_key, "Q>W>E"))
                     self.current_skill_order = skill_order
                     self.lbl_skill_order.setText(f"Max: {skill_order}  (R al 6/11/16)")
+                    self._render_skill_levels(expandir_skill_order(skill_order))
                     self.btn_export_skills.setVisible(True)
 
                     # Auto-import segun configuración
@@ -559,11 +880,12 @@ class VivoTabMixin:
                     if self.user_settings.get("auto_habilidades", False):
                         self._auto_importar_skill_order()
                     if self.user_settings.get("auto_items", False):
-                        self._auto_importar_items(mi_campeon, ids_start, ids_core)
+                        self._auto_importar_items(mi_campeon, ids_start, ids_core, ids_sit)
                 else: 
                     self.current_skill_order = None
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)
                     self.lbl_skill_order.setText("Selecciona un campeón")
+                    clear_layout(self.fr_skill_levels)
                     self.btn_export_skills.setVisible(False)
             # ── PATHING JUNGLA ──
             if rol_api == "JUNGLE" and mi_campeon:
@@ -596,7 +918,7 @@ class VivoTabMixin:
             # Actualizar tip según estado del draft
             if mi_campeon and enemigo_lane:
                 self.lbl_radar_tip.setText(
-                    f"âš¡ <b>Coach:</b> Juegas <b>{self._nombre_display(mi_campeon)}</b> vs <b>{self._nombre_display(enemigo_lane)}</b>. "
+                    f"⚡ <b>Coach:</b> Juegas <b>{self._nombre_display(mi_campeon)}</b> vs <b>{self._nombre_display(enemigo_lane)}</b>. "
                     f"Revisa los counters, runas y hechizos abajo. ¡Buena suerte!"
                 )
             elif mi_campeon and not enemigo_lane:
@@ -630,5 +952,6 @@ class VivoTabMixin:
             else:
                 self.lbl_matchup_tips.setVisible(False)
         except Exception:
-            pass
+            import traceback
+            log.error("Error en _on_radar_listo:\n%s", traceback.format_exc())
 

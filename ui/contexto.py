@@ -42,10 +42,10 @@ from src.recomendador import (obtener_counters, obtener_top_items, obtener_campe
                               obtener_items_situacionales, obtener_winrate_global)
 from src.roles import ROLES_UI as UI_ROLES, UI_TO_API as ROL_TO_API, API_TO_UI as API_TO_ROL
 from src.lcu_api import LCUConnector
+from src.riot_public_api import RiotPublicAPI
 from src.analizador_fatiga import analizar_fatiga
 from src.perfil_jugador import analizar_personalidad, detectar_habitos, generar_objetivos_semanales, analizar_emocional_vs_wr
 from src.entrenador_ia import extraer_features_comparativas, interpretar_features, consejos_matchup
-from src.overlay import OverlayWindow
 from src.discord_rpc import iniciar_discord_rpc, detener_discord_rpc, actualizar_discord_rpc
 from src.logros import evaluar_logros, obtener_logros_conseguidos, LOGROS_DEFINICIONES
 from src.logger import get_logger
@@ -60,7 +60,7 @@ from ui.dialogs.settings_dialog import SettingsDialog
 from ui.dialogs.lp_graph import LPGraphWidget
 from ui.dialogs.postgame_dialog import PostGameDialog
 from ui.helpers import (clear_layout, cargar_settings, guardar_settings,
-                        DEFAULT_SETTINGS, STAT_SHARDS, SKILL_ORDERS, JUNGLA_ESTILO,
+                        DEFAULT_SETTINGS, STAT_SHARDS, SKILL_ORDERS, expandir_skill_order, JUNGLA_ESTILO,
                         _jungla_estilo, sugerir_pathing_jungla, ajustar_shards_adaptativos,
                         MATCHUP_TIPS, obtener_tip_matchup, obtener_tips_matchup)
 

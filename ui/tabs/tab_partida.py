@@ -14,6 +14,18 @@ class PartidaTabMixin:
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
+        # Cache anti-freeze: WR, stats y racha reciente se precargan en hilo secundario
+        self._cache_partida_db = {}
+        self._cache_partida_db_lock = threading.Lock()
+        self._cache_partida_db_stale = True
+        self._cache_partida_pendiente = False
+        self._last_cache_champions = set()
+
+        # Perfiles Riot (rango/main/WR) de los jugadores de la partida, por riot-id
+        self._cache_perfil_riot = {}
+        self._perfil_riot_pendientes = set()
+        self._riot_api = None
+
         # Header
         self.lbl_partida_header = QLabel("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
         self.lbl_partida_header.setAlignment(Qt.AlignCenter)
@@ -47,17 +59,18 @@ class PartidaTabMixin:
         tablas_layout = QHBoxLayout()
         tablas_layout.setSpacing(8)
 
+        _COLS = ["Jugador", "Rango", "KDA", "CS", "Perfil"]
         # ── Aliados ──
         self.tb_partida_aliados = QTableWidget()
-        self.tb_partida_aliados.setColumnCount(4)
-        self.tb_partida_aliados.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
+        self.tb_partida_aliados.setColumnCount(len(_COLS))
+        self.tb_partida_aliados.setHorizontalHeaderLabels(_COLS)
         self._estilizar_tabla_partida(self.tb_partida_aliados, "#0d0b10")
         tablas_layout.addWidget(self.tb_partida_aliados)
 
         # ── Enemigos ──
         self.tb_partida_enemigos = QTableWidget()
-        self.tb_partida_enemigos.setColumnCount(4)
-        self.tb_partida_enemigos.setHorizontalHeaderLabels(["Campeon", "KDA", "CS", "Comentario"])
+        self.tb_partida_enemigos.setColumnCount(len(_COLS))
+        self.tb_partida_enemigos.setHorizontalHeaderLabels(_COLS)
         self._estilizar_tabla_partida(self.tb_partida_enemigos, "#1a0a0f")
         tablas_layout.addWidget(self.tb_partida_enemigos)
 
@@ -70,10 +83,12 @@ class PartidaTabMixin:
         layout.addWidget(self.lbl_partida_comp)
 
     def _estilizar_tabla_partida(self, tabla, bg_color):
+        # 0=Jugador(stretch) 1=Rango 2=KDA 3=CS (contenido) 4=Perfil(stretch)
         tabla.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         tabla.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         tabla.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        tabla.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        tabla.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        tabla.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         tabla.setEditTriggers(QAbstractItemView.NoEditTriggers)
         tabla.setSelectionMode(QAbstractItemView.NoSelection)
         tabla.verticalHeader().setDefaultSectionSize(38)
@@ -91,8 +106,6 @@ class PartidaTabMixin:
 
         fase = self.lcu.obtener_fase_juego()
         if fase not in ("InProgress", "GameStart"):
-            if hasattr(self, "overlay") and self.overlay._visible:
-                self.overlay.hide_overlay()
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)
             self.tb_partida_enemigos.setVisible(False)
@@ -147,6 +160,24 @@ class PartidaTabMixin:
         aliados = [j for j in jugadores if j.get("team") == "ORDER"]
         enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
 
+        # Precargar cache BD en hilo secundario si los campeones cambiaron
+        champions_actuales = set()
+        for j in aliados + enemigos:
+            cn = j.get("championName", "") or ""
+            if cn and cn != "?":
+                champions_actuales.add(cn)
+        if champions_actuales and (
+            champions_actuales != self._last_cache_champions or self._cache_partida_db_stale
+        ):
+            self._last_cache_champions = champions_actuales
+            self._cache_partida_db_stale = True
+            if not self._cache_partida_pendiente:
+                self._cache_partida_pendiente = True
+                threading.Thread(
+                    target=self._precargar_cache_partida_db,
+                    args=(champions_actuales,), daemon=True
+                ).start()
+
         # Buscar nuestro jugador
         mi_nombre_raw = self.lcu.obtener_nombre_invocador() or ""
         mi_nombre = mi_nombre_raw.split("#")[0].strip().lower()
@@ -181,12 +212,6 @@ class PartidaTabMixin:
         # Tablas aliados/enemigos
         self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK, yo)
         self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f", yo)
-
-        # Alimentar overlay si está activado
-        if self.user_settings.get("overlay_ingame", False):
-            if not self.overlay._visible:
-                self.overlay.show_overlay()
-            self.overlay.feed_live_data(jugadores, game_info, mi_nombre_raw)
 
         # Composicion
         a_nombres = [j.get("championName", "") for j in aliados if j.get("championName")]
@@ -233,6 +258,25 @@ class PartidaTabMixin:
 
         aliados = [j for j in jugadores if j.get("team") == "ORDER"]
         enemigos = [j for j in jugadores if j.get("team") == "CHAOS"]
+
+        # Precargar cache BD en hilo secundario si los campeones cambiaron
+        champions_actuales = set()
+        for j in aliados + enemigos:
+            cid = int(j.get("championId", 0))
+            cn = self.procesar_nombre_champ(str(cid), "0")
+            if cn and cn != "?":
+                champions_actuales.add(cn)
+        if champions_actuales and (
+            champions_actuales != self._last_cache_champions or self._cache_partida_db_stale
+        ):
+            self._last_cache_champions = champions_actuales
+            self._cache_partida_db_stale = True
+            if not self._cache_partida_pendiente:
+                self._cache_partida_pendiente = True
+                threading.Thread(
+                    target=self._precargar_cache_partida_db,
+                    args=(champions_actuales,), daemon=True
+                ).start()
 
         self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK)
         self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f")
@@ -469,68 +513,165 @@ class PartidaTabMixin:
         except Exception:
             pass
 
+    _TIER_COLORS = {
+        "Iron": "#7c6f64", "Bronze": "#a05a2c", "Silver": "#9fb0c0", "Gold": "#e6b800",
+        "Platinum": "#3bc4c4", "Emerald": "#2ecc71", "Diamond": "#4aa3ff",
+        "Master": "#b14aff", "Grandmaster": "#ff4a4a", "Challenger": "#f0c040",
+    }
+
+    def _get_riot_api(self):
+        """Crea (perezosamente) el cliente de la API publica de Riot con la region del cliente."""
+        if self._riot_api is None:
+            try:
+                region = self.lcu.obtener_region() if self.lcu else None
+            except Exception:
+                region = None
+            self._riot_api = RiotPublicAPI(region)
+        return self._riot_api
+
+    def _riot_id_parts(self, j):
+        """Devuelve (game_name, tag_line) de un jugador del LiveClient."""
+        g = (j.get("riotIdGameName") or "").strip()
+        t = (j.get("riotIdTagLine") or "").strip()
+        if g and t:
+            return g, t
+        raw = (j.get("riotId") or j.get("summonerName") or "").strip()
+        if "#" in raw:
+            g2, t2 = raw.rsplit("#", 1)
+            return g2.strip(), t2.strip()
+        return raw, ""  # sin tag no se puede resolver el puuid
+
+    def _perfil_riot_de(self, j):
+        g, t = self._riot_id_parts(j)
+        if not g or not t:
+            return None
+        return self._cache_perfil_riot.get(f"{g}#{t}".lower())
+
+    def _resolver_perfil_riot_async(self, gname, tag):
+        """Lanza en hilo de fondo la resolucion del perfil Riot (rango/main/WR)."""
+        key = f"{gname}#{tag}".lower()
+        if key in self._cache_perfil_riot or key in self._perfil_riot_pendientes:
+            return
+        api = self._get_riot_api()
+        if not api.disponible:
+            return
+        self._perfil_riot_pendientes.add(key)
+
+        def _trabajo():
+            try:
+                perfil = api.perfil_completo(gname, tag)
+            except Exception:
+                perfil = None
+            self._cache_perfil_riot[key] = perfil or {}
+            self._perfil_riot_pendientes.discard(key)
+
+        threading.Thread(target=_trabajo, daemon=True).start()
+
+    def _texto_perfil_jugador(self, cname, liga, maestria, perfil):
+        """Texto de la columna Perfil: main champ + tipo (OTP) + WR soloq."""
+        if perfil is None:
+            return ("cargando…", TEXT_MUTED)
+        partes, color = [], TEXT_MUTED
+        mid = maestria.get("champion_id")
+        main = self.procesar_nombre_champ(mid, 0) if mid else None
+        if main:
+            nivel = maestria.get("nivel", 0)
+            partes.append(f"Main: {self._nombre_display(main)}" + (f" (M{nivel})" if nivel else ""))
+            if self._nombre_db(main) == self._nombre_db(cname):
+                partes.append("🎯 OTP/Main")
+                color = YELLOW_WR
+        wr_s = liga.get("wr")
+        if wr_s is not None:
+            partes.append(f"{wr_s}% WR SoloQ")
+        return (" · ".join(partes) if partes else "—", color)
+
     def _llenar_tabla_partida(self, tabla, jugadores, team_label, bg, yo):
-        """Llena una tabla con datos de jugadores (LiveClient)."""
+        """Tabla in-game estilo Porofessor: jugador, rango, KDA, CS y perfil
+        (main + WR de SoloQ + tipo). Rango/main/WR vienen de la API de Riot,
+        cacheados por riot-id y resueltos en hilos de fondo (no bloquea)."""
         tabla.setRowCount(0)
+        NCOLS = 5
+
+        # Disparar resolucion de perfiles que falten (no bloquea la UI)
+        for j in jugadores:
+            gname, tag = self._riot_id_parts(j)
+            if gname and tag:
+                self._resolver_perfil_riot_async(gname, tag)
+
+        # WR de equipo: promedio del WR soloq de los miembros con datos
+        wrs = [(self._perfil_riot_de(j) or {}).get("liga", {}).get("wr")
+               for j in jugadores]
+        wrs = [w for w in wrs if w is not None]
+        wr_equipo = round(sum(wrs) / len(wrs)) if wrs else None
+        header_txt = team_label + (f"   ·   WR equipo: {wr_equipo}%" if wr_equipo is not None else "")
 
         # Header row
         row = tabla.rowCount(); tabla.insertRow(row)
-        hdr = QTableWidgetItem(team_label)
+        hdr = QTableWidgetItem(header_txt)
         hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
         f = hdr.font(); f.setBold(True); hdr.setFont(f)
         tabla.setItem(row, 0, hdr)
-        for c in range(1, 4):
+        for c in range(1, NCOLS):
             e = QTableWidgetItem(""); e.setBackground(QColor(bg)); tabla.setItem(row, c, e)
 
-        conn_db = obtener_conexion()
-        try:
-            for j in jugadores:
-                cname = j.get("championName", "?") or "?"
-                k, d, a_v = j.get("kills", 0) or 0, j.get("deaths", 0) or 0, j.get("assists", 0) or 0
-                cs = j.get("creepScore", 0) or 0
+        for j in jugadores:
+            cname = j.get("championName", "?") or "?"
+            k, d, a_v = j.get("kills", 0) or 0, j.get("deaths", 0) or 0, j.get("assists", 0) or 0
+            cs = j.get("creepScore", 0) or 0
+            kda_val = (k + a_v) / max(1, d)
 
-                # Comentario: basado en KDA y WR de BD
-                kda_val = (k + a_v) / max(1, d)
-                comentario, color_com = self._comentar_jugador_partida(cname, k, d, a_v, kda_val, conn=conn_db)
+            perfil = self._perfil_riot_de(j)
+            liga = (perfil or {}).get("liga") or {}
+            maestria = (perfil or {}).get("maestria") or {}
 
-                # WR desde BD
-                wr = "--"
-                try:
-                    cur = conn_db.cursor()
-                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=%s", (cname,))
-                    r = cur.fetchone()
-                    if r and r[0]:
-                        wr = f"{float(r[0])}%"
-                except Exception:
-                    pass
+            row = tabla.rowCount(); tabla.insertRow(row)
 
-                row = tabla.rowCount(); tabla.insertRow(row)
-                item_c = QTableWidgetItem(f"  {cname}")
-                icon_p = self.descargar_imagen(cname, "champ")
-                if icon_p:
-                    item_c.setIcon(QIcon(icon_p))
-                # Color de nombre segun si es el jugador local
-                item_c.setForeground(QColor(TEXT_GOLD if j == yo else TEXT_WHITE))
-                tabla.setItem(row, 0, item_c)
+            # Col 0: icono campeon + nombre de usuario
+            gname, _tag = self._riot_id_parts(j)
+            nombre_usuario = gname or j.get("summonerName", "?") or "?"
+            item_c = QTableWidgetItem(f"  {nombre_usuario}")
+            icon_p = self.descargar_imagen(cname, "champ")
+            if icon_p:
+                item_c.setIcon(QIcon(icon_p))
+            item_c.setForeground(QColor(TEXT_GOLD if j == yo else TEXT_WHITE))
+            item_c.setToolTip(f"{nombre_usuario} — {cname}")
+            tabla.setItem(row, 0, item_c)
 
-                item_kda = QTableWidgetItem(f"{k}/{d}/{a_v}")
-                if k + d + a_v > 0:
-                    color_kda = GREEN_WR if kda_val >= 3 else YELLOW_WR if kda_val >= 1.5 else RED_WR
-                    item_kda.setForeground(QColor(color_kda))
-                tabla.setItem(row, 1, item_kda)
+            # Col 1: rango
+            if liga.get("tier"):
+                rango_txt = f"{liga['tier']} {liga.get('rank', '')}".strip()
+                item_rango = QTableWidgetItem(rango_txt)
+                item_rango.setForeground(QColor(self._TIER_COLORS.get(liga["tier"], TEXT_WHITE)))
+                item_rango.setToolTip(
+                    f"{liga.get('lp', 0)} LP · {liga.get('wins', 0)}V {liga.get('losses', 0)}D en SoloQ")
+            elif perfil is not None:
+                item_rango = QTableWidgetItem("Unranked")
+                item_rango.setForeground(QColor(TEXT_MUTED))
+            else:
+                item_rango = QTableWidgetItem("…")
+                item_rango.setForeground(QColor(TEXT_MUTED))
+            tabla.setItem(row, 1, item_rango)
 
-                item_cs = QTableWidgetItem(str(cs))
-                item_cs.setForeground(QColor(ACCENT_TEAL))
-                tabla.setItem(row, 2, item_cs)
+            # Col 2: KDA
+            item_kda = QTableWidgetItem(f"{k}/{d}/{a_v}")
+            if k + d + a_v > 0:
+                ck = GREEN_WR if kda_val >= 3 else YELLOW_WR if kda_val >= 1.5 else RED_WR
+                item_kda.setForeground(QColor(ck))
+            tabla.setItem(row, 2, item_kda)
 
-                item_com = QTableWidgetItem(f"WR:{wr} {comentario}")
-                item_com.setForeground(QColor(color_com))
-                tabla.setItem(row, 3, item_com)
-        finally:
-            conn_db.close()
+            # Col 3: CS
+            item_cs = QTableWidgetItem(str(cs))
+            item_cs.setForeground(QColor(ACCENT_TEAL))
+            tabla.setItem(row, 3, item_cs)
+
+            # Col 4: perfil (main + tipo + WR soloq)
+            perfil_txt, perfil_col = self._texto_perfil_jugador(cname, liga, maestria, perfil)
+            item_perf = QTableWidgetItem(perfil_txt)
+            item_perf.setForeground(QColor(perfil_col))
+            tabla.setItem(row, 4, item_perf)
 
     def _llenar_tabla_partida_lcu(self, tabla, jugadores, team_label, bg):
-        """Llena una tabla con datos de jugadores (LCU, sin KDA)."""
+        """Llena una tabla con datos de jugadores (LCU, sin KDA). Lee de cache sin BD."""
         tabla.setRowCount(0)
 
         row = tabla.rowCount(); tabla.insertRow(row)
@@ -538,41 +679,51 @@ class PartidaTabMixin:
         hdr.setBackground(QColor(bg)); hdr.setForeground(QColor(BORDER_ACCENT))
         f = hdr.font(); f.setBold(True); hdr.setFont(f)
         tabla.setItem(row, 0, hdr)
-        for c in range(1, 4):
+        for c in range(1, 5):
             e = QTableWidgetItem(""); e.setBackground(QColor(bg)); tabla.setItem(row, c, e)
 
-        conn_db = obtener_conexion()
-        try:
-            for j in jugadores:
-                cid = int(j.get("championId", 0))
-                cname = self.procesar_nombre_champ(str(cid), "0") or "?"
+        for j in jugadores:
+            cid = int(j.get("championId", 0))
+            cname = self.procesar_nombre_champ(str(cid), "0") or "?"
 
-                # Comentario desde BD
-                comentario, color_com = self._comentar_jugador_partida(cname, 0, 0, 0, 0, conn=conn_db)
+            cache_entry = self._cache_partida_db.get(cname, {})
+            wr = cache_entry.get("wr", "--")
+            total = cache_entry.get("total", 0)
+            avg_k = cache_entry.get("avg_k", 0.0)
+            avg_d = cache_entry.get("avg_d", 0.0)
+            recent_wins = cache_entry.get("recent_wins", [])
 
-                wr = "--"
-                try:
-                    cur = conn_db.cursor()
-                    cur.execute("SELECT ROUND(SUM(win)*100.0/COUNT(*),1) FROM participantes WHERE champion=%s", (cname,))
-                    r = cur.fetchone()
-                    if r and r[0]:
-                        wr = f"{float(r[0])}%"
-                except Exception:
-                    pass
+            comentarios = []
+            color = "#a39a93"
+            if total < 5:
+                comentarios.append("1a vez?")
+                color = "#7a6f68"
+            else:
+                if avg_d and avg_d >= 6:
+                    comentarios.append("Muchas muertes")
+                if avg_k and avg_k >= 7:
+                    comentarios.append("Buenas kills")
+            if total >= 5 and recent_wins:
+                w_count = sum(1 for w in recent_wins if w)
+                if w_count >= 4:
+                    comentarios.append("🔥 Racha buena")
+                    color = GREEN_WR
+                elif w_count <= 1:
+                    comentarios.append("❄️ Racha mala")
+                    color = RED_WR if total > 10 else color
+            comentario = " · ".join(comentarios) if comentarios else "—"
 
-                row = tabla.rowCount(); tabla.insertRow(row)
-                item_c = QTableWidgetItem(f"  {cname}")
-                icon_p = self.descargar_imagen(cname, "champ")
-                if icon_p:
-                    item_c.setIcon(QIcon(icon_p))
-                tabla.setItem(row, 0, item_c)
-                tabla.setItem(row, 1, QTableWidgetItem("--/--/--"))
-                tabla.setItem(row, 2, QTableWidgetItem("--"))
-                item_com = QTableWidgetItem(f"WR:{wr} {comentario}")
-                item_com.setForeground(QColor(color_com))
-                tabla.setItem(row, 3, item_com)
-        finally:
-            conn_db.close()
+            row = tabla.rowCount(); tabla.insertRow(row)
+            item_c = QTableWidgetItem(f"  {cname}")
+            icon_p = self.descargar_imagen(cname, "champ")
+            if icon_p:
+                item_c.setIcon(QIcon(icon_p))
+            tabla.setItem(row, 0, item_c)
+            tabla.setItem(row, 1, QTableWidgetItem("--/--/--"))
+            tabla.setItem(row, 2, QTableWidgetItem("--"))
+            item_com = QTableWidgetItem(f"WR:{wr} {comentario}")
+            item_com.setForeground(QColor(color))
+            tabla.setItem(row, 3, item_com)
 
     def _comentar_jugador_partida(self, champion, k, d, a, kda_val, conn=None):
         """Genera un comentario estilo Porofessor sobre un jugador."""
@@ -622,7 +773,7 @@ class PartidaTabMixin:
             if total >= 5:
                 try:
                     cur.execute("""SELECT p.win FROM participantes p JOIN matches m ON p.match_id=m.match_id 
-                                  WHERE p.champion=? ORDER BY m.fecha_descarga DESC LIMIT 5""", (champion,))
+                                  WHERE p.champion=%s ORDER BY m.fecha_descarga DESC LIMIT 5""", (champion,))
                     wins = [r2[0] for r2 in cur.fetchall()]
                     if wins:
                         w_count = sum(1 for w in wins if w)
@@ -645,7 +796,73 @@ class PartidaTabMixin:
             if close_conn and conn is not None:
                 conn.close()
 
-    def _actualizar_counters_vivo(self, rol_api, enemigo_lane):
+    def _precargar_cache_partida_db(self, champions):
+        """Ejecutado en hilo secundario. Batch-fetch WR, stats y racha reciente de una sola vez."""
+        if not champions:
+            return
+        try:
+            conn = obtener_conexion()
+            try:
+                cur = conn.cursor()
+                champs_list = list(champions)
+                ph = ",".join(["%s"] * len(champs_list))
+
+                wr_map = {}
+                cur.execute(
+                    f"SELECT champion, ROUND(SUM(win)*100.0/COUNT(*),1) as wr "
+                    f"FROM participantes WHERE champion IN ({ph}) GROUP BY champion",
+                    champs_list
+                )
+                for row in cur.fetchall():
+                    wr_map[row["champion"]] = f"{float(row['wr'])}%"
+
+                stats_map = {}
+                cur.execute(
+                    f"SELECT champion, COUNT(*) as total, "
+                    f"ROUND(AVG(COALESCE(kills,0)),1) as avg_k, "
+                    f"ROUND(AVG(COALESCE(deaths,0)),1) as avg_d "
+                    f"FROM participantes WHERE champion IN ({ph}) GROUP BY champion",
+                    champs_list
+                )
+                for row in cur.fetchall():
+                    stats_map[row["champion"]] = (
+                        int(row["total"]), float(row["avg_k"] or 0), float(row["avg_d"] or 0)
+                    )
+
+                recent_wins = {}
+                cur.execute(
+                    f"SELECT p.champion, p.win FROM participantes p "
+                    f"JOIN matches m ON p.match_id=m.match_id "
+                    f"WHERE p.champion IN ({ph}) ORDER BY m.fecha_descarga DESC"
+                )
+                for row in cur.fetchall():
+                    champ = row["champion"]
+                    if champ not in recent_wins:
+                        recent_wins[champ] = []
+                    if len(recent_wins[champ]) < 5:
+                        recent_wins[champ].append(row["win"])
+
+                with self._cache_partida_db_lock:
+                    for champ in champs_list:
+                        wr = wr_map.get(champ, "--")
+                        stats = stats_map.get(champ, (0, 0.0, 0.0))
+                        wins_list = recent_wins.get(champ, [])
+                        self._cache_partida_db[champ] = {
+                            "wr": wr,
+                            "total": stats[0],
+                            "avg_k": stats[1],
+                            "avg_d": stats[2],
+                            "recent_wins": wins_list,
+                        }
+                    self._cache_partida_db_stale = False
+            finally:
+                conn.close()
+        except Exception as e:
+            print(f"[PartidaDB] Error precargando cache: {e}")
+        finally:
+            self._cache_partida_pendiente = False
+
+    def _actualizar_counters_vivo(self, rol_api, enemigo_lane, counters_pre=None):
         """Actualiza la seccion de counter picks contra el rival de linea."""
         self.last_enemigo_lane = enemigo_lane
         clear_layout(self.fr_counters_vivo)
@@ -653,7 +870,10 @@ class PartidaTabMixin:
             self.panel_counters_vivo.label_title.setText(
                 f"COUNTERS vs {self._nombre_display(enemigo_lane).upper()}"
             )
-            counters = obtener_counters(rol_api, enemigo_lane, min_partidas=10)
+            if counters_pre is not None:
+                counters = counters_pre
+            else:
+                counters = obtener_counters(rol_api, enemigo_lane, min_partidas=10)
             counters_filtrados = [(c, wr, p) for c, wr, p in counters 
                                  if c not in self.last_aliados and c not in self.last_enemigos][:6]
             for i, (c, wr, p) in enumerate(counters_filtrados):
@@ -917,51 +1137,50 @@ class PartidaTabMixin:
             finally:
                 self._cargando_season = False
 
-    def mostrar_picks_vivo(self, rol, aliados, enemigos):
+    def mostrar_picks_vivo(self, rol, aliados, enemigos, enemigo_lane=None, sugerencias=None):
         clear_layout(self.fr_picks_icons)
-        sugerencias = recomendar_picks_vivo(rol, aliados, enemigos)
+        if sugerencias is None:
+            sugerencias = recomendar_picks_vivo(rol, aliados, enemigos, enemigo_lane)
         col_idx = 0
-        
+
         for categoria, champs in sugerencias.items():
             if not champs: continue
-            
+
             cat_layout = QVBoxLayout()
             cat_layout.setAlignment(Qt.AlignTop)
+            cat_layout.setSpacing(4)
             lbl_cat = QLabel(categoria)
             lbl_cat.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px;")
             lbl_cat.setAlignment(Qt.AlignCenter)
             cat_layout.addWidget(lbl_cat)
-            
+
             grid_icons = QGridLayout()
             grid_icons.setAlignment(Qt.AlignCenter)
-            for i, (champ, puntuacion, razon) in enumerate(champs[:4]):
-                # Estrellas segun puntuacion (escala 1.0-10.0)
-                if puntuacion >= 9.0: estrellas = "⭐⭐⭐⭐⭐"
-                elif puntuacion >= 7.0: estrellas = "⭐⭐⭐⭐"
-                elif puntuacion >= 5.0: estrellas = "⭐⭐⭐"
-                elif puntuacion >= 3.0: estrellas = "⭐⭐"
-                else: estrellas = "⭐"
-                
-                # Color segun puntuacion
-                if puntuacion >= 8.0: color_pts = GREEN_WR
-                elif puntuacion >= 5.0: color_pts = TEXT_GOLD
-                elif puntuacion >= 3.0: color_pts = YELLOW_WR
+            grid_icons.setVerticalSpacing(2)
+            for i, (champ, puntuacion, razon) in enumerate(champs[:6]):
+                # Color del badge de puntaje
+                if puntuacion >= 7.0: color_pts = GREEN_WR
+                elif puntuacion >= 5.0: color_pts = YELLOW_WR
                 else: color_pts = RED_WR
-                
+
                 tooltip = (
                     f"{self._nombre_display(champ)}\n"
-                    f"⭐ Puntuacion: {puntuacion}/10.0\n"
-                    f"📊 {razon}"
+                    f"Puntuacion: {puntuacion}/10\n"
+                    f"{razon}"
                 )
-                self.renderizar_icono(champ, "champ", grid_icons, i // 2, i % 2,
-                    tooltip, size=35)
-                
-                # Etiqueta de puntuación debajo del icono
-                lbl_pts = QLabel(f"{puntuacion}")
+                fila = (i // 2) * 2
+                col = i % 2
+                self.renderizar_icono(champ, "champ", grid_icons, fila, col, tooltip, size=38)
+
+                # Badge de puntaje (pildora coloreada) debajo del icono
+                lbl_pts = QLabel(f" {puntuacion} ")
                 lbl_pts.setAlignment(Qt.AlignCenter)
-                lbl_pts.setStyleSheet(f"color: {color_pts}; font-size: 9px; font-weight: bold; padding: 0px;")
-                grid_icons.addWidget(lbl_pts, (i // 2) * 2 + 1, i % 2)  # fila impar debajo del icono
-                
+                lbl_pts.setStyleSheet(
+                    f"color: #fff; background-color: {color_pts}; border-radius: 6px; "
+                    f"font-size: 9px; font-weight: bold; padding: 0px 4px;"
+                )
+                grid_icons.addWidget(lbl_pts, fila + 1, col, alignment=Qt.AlignCenter)
+
             cat_layout.addLayout(grid_icons)
             self.fr_picks_icons.addLayout(cat_layout, 0, col_idx)
             col_idx += 1
@@ -1053,13 +1272,13 @@ class PartidaTabMixin:
         if cur >= 2: lines.append("   🔥 Morellonomicón / Ejecutor (curaciones enemigas)")
 
         # Sinergias
-        lines.append("\nâš¡ SINERGIAS CLAVE:")
+        lines.append("\n⚡ SINERGIAS CLAVE:")
         if "Yasuo" in aliados:
             kn = [a for a in aliados if obtener_nivel_cc(a) >= 3 and obtener_tag(a).get("sub_class") in ("Vanguard","Catcher")]
             if kn: lines.append("   🌪️ Yasuo + {} = combo R garantizada".format(kn[0]))
         if "Orianna" in aliados:
             eng = [a for a in aliados if obtener_tag(a).get("sub_class") == "Vanguard"]
-            if eng: lines.append("   âš½ Orianna + {} = wombo combo R".format(eng[0]))
+            if eng: lines.append("   ⚽ Orianna + {} = wombo combo R".format(eng[0]))
         if "Kalista" in aliados:
             supp = [a for a in aliados if es_soporte(a)]
             if supp: lines.append("   🤝 Kalista + {} = engage/doble knockup".format(supp[0]))

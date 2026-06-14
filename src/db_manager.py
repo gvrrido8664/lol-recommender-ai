@@ -130,6 +130,8 @@ def inicializar_db():
         ("kills", "INTEGER"),
         ("deaths", "INTEGER"),
         ("assists", "INTEGER"),
+        ("items_order", "TEXT"),  # secuencia de compra real (del timeline)
+        ("item_timeline", "JSONB"),  # [{iid, ts}, ...] con timestamps reales de compra
     ]:
         tabla = 'participantes' if col != 'patch' else 'matches'
         cur.execute(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {col} {tipo}")
@@ -153,6 +155,9 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_win ON participantes(win);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_pos ON participantes(champion, team_position);")
+    # Índices adicionales para acelerar consultas frecuentes (anti-freeze)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pos_champ ON participantes(team_position, champion);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_match ON participantes(champion, match_id);")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS estado_emocional (

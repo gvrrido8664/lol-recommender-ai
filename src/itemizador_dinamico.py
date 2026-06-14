@@ -135,6 +135,8 @@ def recomendar_bota(campeon: str, enemigos: list, botas_data: dict = None) -> tu
         fallback = max(botas_data, key=botas_data.get) if botas_data else None
         return (fallback, "Sin datos de draft", False)
 
+    # Las botas estaticas (configuradas por campeon) se respetan primero.
+    # Esto permite que ADCs atipicos (Smolder, Ezreal, Jhin...) usen su bota real.
     if es_botas_estaticas(campeon):
         bota = obtener_bota_estatica(campeon)
         if bota:
@@ -142,14 +144,21 @@ def recomendar_bota(campeon: str, enemigos: list, botas_data: dict = None) -> tu
             clase = tag.get("champion_class", "")
             sub = tag.get("sub_class", "")
             if clase == "Mage" or sub == "Artillery":
-                razon = "Botas de Hechicero — penetración mágica core de magos"
+                if clase == "Marksman":
+                    razon = "Botas de Lucidez — reduccion de enfriamiento para tiradores de habilidad"
+                else:
+                    razon = "Botas de Hechicero — penetracion magica core de magos"
             elif clase == "Marksman":
                 razon = "Grebas de Berserker — velocidad de ataque core de tiradores"
             elif sub == "Enchanter":
-                razon = "Botas de Lucidez — más hechizos y summoners, core de encantadores"
+                razon = "Botas de Lucidez — mas hechizos y summoners, core de encantadores"
             else:
                 razon = f"Botas fijas de {campeon} — parte esencial de su build"
             return (bota, razon, True)
+
+    # Tiradores sin bota estatica → Berserker (regla general para la mayoria de ADCs)
+    if es_tirador(campeon):
+        return (BOTA_BERSERKER, "Grebas de Berserker — velocidad de ataque core de tiradores", True)
 
     return _calcular_bota_adaptativa(campeon, enemigos, botas_data)
 

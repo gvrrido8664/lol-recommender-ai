@@ -522,6 +522,9 @@ class LCUConnector:
                     
                     players.append({
                         "summonerName": p.get("summonerName", p.get("riotId", "")),
+                        "riotId": p.get("riotId", ""),
+                        "riotIdGameName": p.get("riotIdGameName", ""),
+                        "riotIdTagLine": p.get("riotIdTagLine", ""),
                         "championName": p.get("championName", ""),
                         "team": team_norm,
                         "level": p.get("level", 1),
@@ -564,6 +567,16 @@ class LCUConnector:
                 if isinstance(qdata, dict) and qdata.get("tier"):
                     result["queues"][qtype] = qdata
             return result
+        return None
+
+    def obtener_region(self):
+        """Devuelve el codigo de region del cliente (p. ej. 'LA2', 'EUW'). None si falla."""
+        res = self.request('GET', '/riotclient/region-locale')
+        if res and res.status_code == 200:
+            try:
+                return (res.json() or {}).get("region")
+            except Exception:
+                return None
         return None
 
     def obtener_historial_extendido(self, puuid: str = None, inicio: int = 0, cantidad: int = 100):
@@ -665,8 +678,9 @@ class LCUConnector:
         res_post = self.request('POST', '/lol-perks/v1/pages', json=data, timeout=3)
         return res_post is not None and res_post.status_code == 200
 
-    def importar_item_set(self, campeon, champ_id_int, ids_start, ids_core):
-        """Fix definitivo: Requiere champ_id_int (el id numérico) para asociarlo correctamente en la tienda de LoL"""
+    def importar_item_set(self, campeon, champ_id_int, ids_start, ids_core, ids_sit=None):
+        """Fix definitivo: Requiere champ_id_int (el id numérico) para asociarlo correctamente en la tienda de LoL.
+        ids_sit: lista opcional de situacionales (ids o dicts con clave 'id') -> bloque extra "Situacionales"."""
         sum_res = self.request('GET', '/lol-summoner/v1/current-summoner')
         if not sum_res or sum_res.status_code != 200:
             return "No se pudo obtener el invocador"
@@ -689,13 +703,25 @@ class LCUConnector:
         clean_start = [{"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"]
         clean_core = [{"id": str(i).strip(), "count": 1} for i in ids_core if str(i).strip() and str(i).strip() != "0"]
 
+        # Situacionales: aceptar lista de ids o de dicts {'id': ...}
+        clean_sit = []
+        for it in (ids_sit or []):
+            iid = it.get("id") if isinstance(it, dict) else it
+            iid = str(iid).strip()
+            if iid and iid != "0":
+                clean_sit.append({"id": iid, "count": 1})
+
+        blocks = [
+            {"type": "Start & Early Game", "items": clean_start},
+            {"type": "Core Build (orden de compra)", "items": clean_core},
+        ]
+        if clean_sit:
+            blocks.append({"type": "Situacionales", "items": clean_sit})
+
         nuevo_set = {
             "associatedChampions": [champ_id_int] if champ_id_int > 0 else [],
             "associatedMaps": [11],
-            "blocks": [
-                {"type": "Start & Early Game", "items": clean_start},
-                {"type": "Core Build", "items": clean_core}
-            ],
+            "blocks": blocks,
             "title": f"LEA - {campeon}",
             "uid": f"lea_custom_build_{campeon.lower()}",
             "type": "custom",

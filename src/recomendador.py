@@ -119,6 +119,28 @@ def obtener_counters(carril, enemigo, min_partidas=20):
     conn.close()
     return resultados
 
+def obtener_winrate_global(campeon, carril):
+    """Winrate global de un campeon en una linea (sobre todas las partidas de la BD).
+
+    Devuelve (winrate_float, partidas_int) o (None, 0) si no hay datos.
+    """
+    conn = obtener_conexion()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ROUND(SUM(win)*100.0/COUNT(*),1) AS wr, COUNT(*) AS partidas "
+            "FROM participantes WHERE champion = %s AND team_position = %s",
+            (campeon, carril),
+        )
+        row = cur.fetchone()
+        if row and row["wr"] is not None and row["partidas"]:
+            return float(row["wr"]), int(row["partidas"])
+        return None, 0
+    except Exception:
+        return None, 0
+    finally:
+        conn.close()
+
 def obtener_peores_matchups(campeon, carril, min_partidas=20):
     conn = obtener_conexion()
     cur = conn.cursor()

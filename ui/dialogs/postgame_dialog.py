@@ -1,27 +1,64 @@
-"""Dialogo de resumen post-partida. Extraido de app.py sin cambios."""
+"""Revision post-partida tipo coach (solo tus stats de la partida):
+comparativa vs benchmarks de rol, series por minuto (si hay timeline),
+fortalezas/mejoras y veredicto con acciones concretas."""
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget,
-                               QLabel, QPushButton)
+                               QLabel, QPushButton, QScrollArea, QFrame)
 from PySide6.QtCore import Qt, Signal
 
 from ui.design import *
+from ui.dialogs.postgame_charts import BarComparisonWidget, TimelineChartWidget
 
 
 class PostGameDialog(QDialog):
-    """Resumen rápido al terminar partida: KDA, CS/min, comparativa y consejo del coach."""
+    """Revision completa de TU partida: stats, comparativa, series y veredicto."""
 
     coaching_requested = Signal()
 
     def __init__(self, stats: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Resumen de Partida")
+        self.setWindowTitle("Revisión de Partida")
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(420)
+        self.setFixedWidth(500)
         self._build_ui(stats)
         if parent:
             pr = parent.frameGeometry()
-            self.move(pr.center().x() - self.width() // 2, pr.top() + 80)
+            self.move(pr.center().x() - self.width() // 2, max(40, pr.top() + 40))
+
+    # ── helpers ──
+    def _seccion(self, lay, titulo, color=None):
+        lbl = QLabel(titulo)
+        lbl.setStyleSheet(f"color: {color or ACCENT_RED}; font-size: 11px; font-weight: bold; "
+                          f"letter-spacing: 1px; margin-top: 6px;")
+        lay.addWidget(lbl)
+        sep = QLabel(); sep.setFixedHeight(1); sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
+        lay.addWidget(sep)
+
+    def _metricas(self, s):
+        gt = max(1, s.get("game_time", 1))
+        mins = gt / 60.0
+        k, d, a = s.get("kills", 0), s.get("deaths", 0), s.get("assists", 0)
+        kda = (k + a) / max(1, d)
+        cs_min = s.get("cs", 0) / mins
+        vis_min = s.get("vision_score", 0) / mins
+        dmg_min = s.get("damage_dealt", 0) / mins
+        gold_min = s.get("gold", 0) / mins
+        role = (s.get("role") or "").upper()
+        lane = (s.get("lane") or "").upper()
+        es_sup = "SUPPORT" in role or "SUPPORT" in lane
+        es_jg = lane == "JUNGLE"
+        b_cs = 1.5 if es_sup else (5.5 if es_jg else 7.0)
+        b_gold = 250 if es_sup else 350
+        b_dmg = 250 if es_sup else (400 if es_jg else 500)
+        b_vis = 1.8 if es_sup else 0.9
+        return [
+            {"label": "KDA",        "valor": f"{kda:.1f}",       "ratio": kda / 3.0},
+            {"label": "CS/min",     "valor": f"{cs_min:.1f}",    "ratio": cs_min / b_cs},
+            {"label": "Oro/min",    "valor": f"{gold_min:.0f}",  "ratio": gold_min / b_gold},
+            {"label": "Daño/min",   "valor": f"{dmg_min:.0f}",   "ratio": dmg_min / b_dmg},
+            {"label": "Visión/min", "valor": f"{vis_min:.2f}",   "ratio": vis_min / b_vis},
+        ]
 
     def _build_ui(self, s):
         outer = QVBoxLayout(self)
@@ -30,153 +67,114 @@ class PostGameDialog(QDialog):
         card = QWidget()
         card.setObjectName("pgCard")
         card.setStyleSheet(f"""
-            QWidget#pgCard {{
-                background: {BG_PANEL};
-                border: 2px solid {BORDER_ACCENT};
-                border-radius: 10px;
-            }}
+            QWidget#pgCard {{ background: {BG_PANEL}; border: 2px solid {BORDER_ACCENT}; border-radius: 10px; }}
             QLabel {{ color: {TEXT_WHITE}; background: transparent; }}
         """)
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(18, 14, 18, 14)
-        lay.setSpacing(8)
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(16, 12, 16, 12)
+        card_lay.setSpacing(8)
 
-        # Título + resultado
+        # ── Cabecera (fija) ──
         hdr = QHBoxLayout()
-        lbl_title = QLabel("🏁  RESUMEN DE PARTIDA")
+        lbl_title = QLabel("🏁  REVISIÓN DE PARTIDA")
         lbl_title.setStyleSheet(f"color: {ACCENT_RED}; font-size: 13px; font-weight: bold; letter-spacing: 1px;")
         hdr.addWidget(lbl_title)
         hdr.addStretch()
         resultado = s.get("resultado", "")
-        if resultado == "Victoria":
-            lbl_res = QLabel("  VICTORIA  ")
-            lbl_res.setStyleSheet(f"background: {GREEN_WR}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
-        elif resultado == "Derrota":
-            lbl_res = QLabel("  DERROTA  ")
-            lbl_res.setStyleSheet(f"background: {RED_WR}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
-        else:
-            lbl_res = QLabel("")
-        hdr.addWidget(lbl_res)
+        if resultado in ("Victoria", "Derrota"):
+            lbl_res = QLabel(f"  {resultado.upper()}  ")
+            col = GREEN_WR if resultado == "Victoria" else RED_WR
+            lbl_res.setStyleSheet(f"background: {col}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
+            hdr.addWidget(lbl_res)
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(20, 20)
         btn_close.setStyleSheet(f"background: transparent; border: none; color: {TEXT_MUTED}; font-size: 12px;")
         btn_close.clicked.connect(self.close)
         hdr.addWidget(btn_close)
-        lay.addLayout(hdr)
+        card_lay.addLayout(hdr)
 
-        sep = QLabel(); sep.setFixedHeight(1)
-        sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
-        lay.addWidget(sep)
+        # ── Contenido scrollable ──
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.viewport().setStyleSheet("background: transparent;")
+        scroll.setMaximumHeight(640)
+        cont = QWidget(); cont.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(cont)
+        lay.setContentsMargins(0, 0, 6, 0)
+        lay.setSpacing(6)
 
-        # Campeón
+        # Campeon + KDA
         champ = s.get("champion", "?")
-        lbl_champ = QLabel(f"🎮  {champ}")
+        k, d, a = s.get("kills", 0), s.get("deaths", 0), s.get("assists", 0)
+        gt = s.get("game_time", 0)
+        cs = s.get("cs", 0)
+        cs_min = cs / max(1, gt / 60) if gt else 0
+        lbl_champ = QLabel(f"🎮  {champ}    "
+                           f"<span style='color:{ACCENT_TEAL};font-weight:bold;'>{k}/{d}/{a}</span>"
+                           f"   <span style='color:{TEXT_MUTED};font-size:10px;'>{cs} CS · {cs_min:.1f}/min · {gt//60}min</span>")
+        lbl_champ.setTextFormat(Qt.RichText)
         lbl_champ.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ACCENT_TEAL};")
         lay.addWidget(lbl_champ)
 
-        # KDA
-        k, d, a = s.get("kills", 0), s.get("deaths", 0), s.get("assists", 0)
-        avg_k = s.get("avg_k", 0)
-        avg_d = s.get("avg_d", 1)
-        avg_a = s.get("avg_a", 0)
+        # ── Comparativa vs benchmark de rol ──
+        self._seccion(lay, "📊  RENDIMIENTO vs BENCHMARK DEL ROL")
+        leyenda = QLabel("Barra llena = referencia del rol · verde supera, ámbar cerca, rojo bajo")
+        leyenda.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
+        lay.addWidget(leyenda)
+        chart = BarComparisonWidget()
+        chart.set_data(self._metricas(s))
+        lay.addWidget(chart)
 
-        kda_row = QHBoxLayout()
-        kda_row.setSpacing(4)
-        for val, ref, label, good_high in [(k, avg_k, "K", True), (d, avg_d, "D", False), (a, avg_a, "A", True)]:
-            col = GREEN_WR if (val >= ref if good_high else val <= ref) else RED_WR
-            lbl = QLabel(f"<b style='color:{col};font-size:22px;'>{val}</b><span style='color:{TEXT_MUTED};font-size:10px;'> {label}</span>")
-            lbl.setAlignment(Qt.AlignCenter)
-            kda_row.addWidget(lbl)
-            if label != "A":
-                kda_row.addWidget(QLabel("/"))
-        kda_row.addStretch()
+        # ── Series por minuto (si hay timeline) ──
+        timeline = s.get("timeline") or {}
+        if timeline.get("oro") and len(timeline["oro"]) >= 2:
+            self._seccion(lay, "📈  EVOLUCIÓN POR MINUTO", ACCENT_TEAL)
+            ch_oro = TimelineChartWidget()
+            ch_oro.set_data(timeline["oro"], "Oro total", "#f0b232", " oro")
+            lay.addWidget(ch_oro)
+            if timeline.get("cs"):
+                ch_cs = TimelineChartWidget()
+                ch_cs.set_data(timeline["cs"], "CS acumulado", ACCENT_TEAL, " CS")
+                lay.addWidget(ch_cs)
 
-        avg_kda_str = f"Tu media: {avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f}"
-        lbl_avg = QLabel(avg_kda_str)
-        lbl_avg.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
-        lbl_avg.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        kda_row.addWidget(lbl_avg)
-        lay.addLayout(kda_row)
-
-        # CS/min
-        cs = s.get("cs", 0)
-        game_time = s.get("game_time", 1)
-        cs_min = cs / max(1, game_time / 60)
-        cs_ref = 6.5
-        cs_color = GREEN_WR if cs_min >= cs_ref else (YELLOW_WR if cs_min >= 5.0 else RED_WR)
-        lbl_cs = QLabel(f"🌾  CS: {cs}  ({cs_min:.1f}/min)  — ref. {cs_ref}/min")
-        lbl_cs.setStyleSheet(f"color: {cs_color}; font-size: 11px;")
-        lay.addWidget(lbl_cs)
-
-        # Vision y objetivos
-        vision = s.get("vision_score", 0)
-        wards = s.get("wards_placed", 0)
-        cwards = s.get("control_wards", 0)
-        objectives = s.get("objectives", 0)
-        dmg = s.get("damage_dealt", 0)
-        if game_time > 0:
-            dmg_min = dmg / (game_time / 60)
-            dmg_str = f"{dmg_min/1000:.1f}k/min" if dmg > 0 else ""
-        else:
-            dmg_str = ""
-        extras = []
-        if vision > 0:
-            extras.append(f"👁 Vision {vision}")
-        if wards > 0:
-            extras.append(f"🏮 Wards {wards}")
-        if cwards > 0:
-            extras.append(f"🔮 Control {cwards}")
-        if objectives > 0:
-            extras.append(f"🎯 Objs {objectives}")
-        if dmg_str:
-            extras.append(f"⚔️ Dano {dmg_str}")
-        if extras:
-            lbl_extras = QLabel("  |  ".join(extras))
-            lbl_extras.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; padding: 2px 0;")
-            lay.addWidget(lbl_extras)
-
-        # Coaching tip
-        tip = s.get("tip", "")
+        # ── Fortalezas / A mejorar ──
         positives = s.get("positives", [])
         negatives = s.get("negatives", [])
+        if positives:
+            self._seccion(lay, "✅  LO QUE HICISTE BIEN", GREEN_WR)
+            for pt in positives:
+                l = QLabel(f"•  {pt}"); l.setWordWrap(True)
+                l.setStyleSheet(f"color: {GREEN_WR}; font-size: 10px;")
+                lay.addWidget(l)
+        if negatives:
+            self._seccion(lay, "⚠️  A MEJORAR", RED_WR)
+            for ng in negatives:
+                l = QLabel(f"•  {ng}"); l.setWordWrap(True)
+                l.setStyleSheet(f"color: {RED_WR}; font-size: 10px;")
+                lay.addWidget(l)
 
-        if positives or negatives:
-            sep2 = QLabel(); sep2.setFixedHeight(1)
-            sep2.setStyleSheet(f"background: {BORDER_SUBTLE};")
-            lay.addWidget(sep2)
+        # ── Veredicto del coach ──
+        veredicto = s.get("veredicto") or ([s["tip"]] if s.get("tip") else [])
+        if veredicto:
+            self._seccion(lay, "🧠  VEREDICTO DEL COACH", YELLOW_WR)
+            for v in veredicto:
+                l = QLabel(f"▸  {v}"); l.setWordWrap(True)
+                l.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 0;")
+                lay.addWidget(l)
 
-            if positives:
-                for pt in positives:
-                    lbl_p = QLabel(pt)
-                    lbl_p.setWordWrap(True)
-                    lbl_p.setStyleSheet(f"color: {GREEN_WR}; font-size: 10px; padding: 1px 0;")
-                    lay.addWidget(lbl_p)
+        lay.addStretch(1)
+        scroll.setWidget(cont)
+        card_lay.addWidget(scroll, 1)
 
-            if negatives:
-                for ng in negatives:
-                    lbl_n = QLabel(ng)
-                    lbl_n.setWordWrap(True)
-                    lbl_n.setStyleSheet(f"color: {RED_WR}; font-size: 10px; padding: 1px 0;")
-                    lay.addWidget(lbl_n)
-
-        if tip:
-            sep3 = QLabel(); sep3.setFixedHeight(1)
-            sep3.setStyleSheet(f"background: {BORDER_SUBTLE};")
-            lay.addWidget(sep3)
-            lbl_tip = QLabel(tip)
-            lbl_tip.setWordWrap(True)
-            lbl_tip.setStyleSheet(f"color: {YELLOW_WR}; font-size: 10px; padding: 4px 0;")
-            lay.addWidget(lbl_tip)
-
-        # Botones
+        # ── Botones (fijos) ──
         btn_row = QHBoxLayout()
         btn_coach = QPushButton("📖 Ver Coaching")
         btn_coach.setStyleSheet(f"""
-            QPushButton {{
-                background: {BG_CARD}; color: {ACCENT_TEAL};
-                border: 1px solid {ACCENT_TEAL}; border-radius: 5px;
-                padding: 5px 12px; font-size: 11px;
-            }}
+            QPushButton {{ background: {BG_CARD}; color: {ACCENT_TEAL}; border: 1px solid {ACCENT_TEAL};
+                           border-radius: 5px; padding: 5px 12px; font-size: 11px; }}
             QPushButton:hover {{ background: {ACCENT_TEAL}; color: #000; }}
         """)
         btn_coach.clicked.connect(self._on_coaching)
@@ -184,16 +182,13 @@ class PostGameDialog(QDialog):
         btn_row.addStretch()
         btn_ok = QPushButton("Cerrar")
         btn_ok.setStyleSheet(f"""
-            QPushButton {{
-                background: {BG_CARD}; color: {TEXT_MUTED};
-                border: 1px solid {BORDER_SUBTLE}; border-radius: 5px;
-                padding: 5px 12px; font-size: 11px;
-            }}
+            QPushButton {{ background: {BG_CARD}; color: {TEXT_MUTED}; border: 1px solid {BORDER_SUBTLE};
+                           border-radius: 5px; padding: 5px 12px; font-size: 11px; }}
             QPushButton:hover {{ color: {TEXT_WHITE}; border-color: {TEXT_WHITE}; }}
         """)
         btn_ok.clicked.connect(self.close)
         btn_row.addWidget(btn_ok)
-        lay.addLayout(btn_row)
+        card_lay.addLayout(btn_row)
 
         outer.addWidget(card)
 

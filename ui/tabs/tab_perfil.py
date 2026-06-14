@@ -9,7 +9,22 @@ class PerfilTabMixin:
         layout = QVBoxLayout(self.tab_perfil)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(0)
-        
+
+        # Boton de refresco manual
+        refresh_row = QHBoxLayout()
+        refresh_row.addStretch()
+        self.btn_refrescar = QPushButton("🔄 Actualizar Perfil")
+        self.btn_refrescar.setStyleSheet(f"""
+            QPushButton {{ background-color: {BG_CARD}; color: {ACCENT_TEAL};
+                           border: 1px solid {ACCENT_TEAL}; border-radius: 4px;
+                           font-size: 11px; padding: 4px 12px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: #1a3a3a; }}
+            QPushButton:disabled {{ color: {BG_BORDER}; border-color: {BG_CARD_HOVER}; }}
+        """)
+        self.btn_refrescar.clicked.connect(self.refrescar_perfil)
+        refresh_row.addWidget(self.btn_refrescar)
+        layout.addLayout(refresh_row)
+
         self.pnl_perfil = QWidget()
         l_pnl = QHBoxLayout(self.pnl_perfil)
         l_pnl.setContentsMargins(0, 0, 0, 0)
@@ -651,6 +666,14 @@ class PerfilTabMixin:
             print(f"[_fetch_perfil] Error crítico: {e}")
             data["ok"] = False
             self.perfil_listo.emit(data)
+
+    def refrescar_perfil(self):
+        """Fuerza una recarga completa del perfil desde LCU. Util tanto desde el
+        boton manual como desde el auto-refresh al terminar una partida."""
+        self.perfil_cargado = False
+        if not self._cargando_perfil:
+            self._cargando_perfil = True
+            threading.Thread(target=self._fetch_perfil, daemon=True).start()
 
     def _on_perfil_listo(self, data):
         """Se ejecuta en el hilo principal. Actualiza la UI con los datos ya recogidos."""

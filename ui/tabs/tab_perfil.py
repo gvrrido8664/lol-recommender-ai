@@ -6,7 +6,8 @@ from ui.contexto import *
 
 class PerfilTabMixin:
     def armar_tab_perfil(self):
-        layout = QVBoxLayout(self.tab_perfil)
+        cont = QWidget()
+        layout = QVBoxLayout(cont)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(0)
 
@@ -302,6 +303,11 @@ class PerfilTabMixin:
         
         l_pnl.addLayout(self.col_hist, 65)
         layout.addWidget(self.pnl_perfil)
+
+        # Envolver en scroll responsive: legible hasta ~1100px, scroll por debajo
+        outer = QVBoxLayout(self.tab_perfil)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.crear_scroll_responsive(cont, 1080))
 
     def _riot_resolve_puuid(self, game_name: str, tag_line: str):
         """Obtiene el PUUID nuevo (match v5) desde el riot id (gameName#tagLine).

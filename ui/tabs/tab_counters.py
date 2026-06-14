@@ -6,7 +6,8 @@ from ui.contexto import *
 class CountersTabMixin:
     # ================= META & BUILDS =================
     def armar_tab_counters(self):
-        layout = QVBoxLayout(self.tab_counters)
+        cont = QWidget()
+        layout = QVBoxLayout(cont)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
         
@@ -63,7 +64,11 @@ class CountersTabMixin:
         split_layout.addWidget(self.panel_visual, 1)
         
         layout.addLayout(split_layout, 1)
-        
+
+        outer = QVBoxLayout(self.tab_counters)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.crear_scroll_responsive(cont, 1000))
+
         self.actualizar_listas_counter(UI_ROLES[0])
 
     def buscar_counters(self):

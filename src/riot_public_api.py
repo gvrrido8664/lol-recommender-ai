@@ -126,6 +126,35 @@ class RiotPublicAPI:
             "nivel": top.get("championLevel", 0),
         }
 
+    def obtener_match(self, match_id):
+        url = f"https://{self.routing}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        return self._get(url)
+
+    def series_por_minuto(self, match_id, puuid):
+        """Series por minuto del jugador (oro/CS/dano a campeones) del timeline
+        de match-v5. Devuelve {'oro':[...], 'cs':[...], 'dano':[...]} o None."""
+        url = f"https://{self.routing}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+        tl = self._get(url)
+        if not tl:
+            return None
+        info = tl.get("info", {})
+        pid = None
+        for p in info.get("participants", []):
+            if p.get("puuid") == puuid:
+                pid = p.get("participantId")
+                break
+        if not pid:
+            return None
+        oro, cs, dano = [], [], []
+        for frame in info.get("frames", []):
+            pf = (frame.get("participantFrames") or {}).get(str(pid)) or {}
+            oro.append(pf.get("totalGold", 0))
+            cs.append(pf.get("minionsKilled", 0) + pf.get("jungleMinionsKilled", 0))
+            dano.append((pf.get("damageStats") or {}).get("totalDamageDoneToChampions", 0))
+        if len(oro) < 2:
+            return None
+        return {"oro": oro, "cs": cs, "dano": dano}
+
     def perfil_completo(self, game_name, tag_line):
         """Resuelve liga + maestria de un jugador, cacheado por puuid.
         Pesado (3 requests) -> llamar SIEMPRE en hilo de fondo."""

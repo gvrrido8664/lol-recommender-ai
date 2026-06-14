@@ -117,7 +117,9 @@ class PartidaTabMixin:
                     self._postgame_shown = True
                     threading.Thread(target=self._preparar_postgame, daemon=True).start()
             else:
-                # Nueva fase de lobby → resetear para la próxima partida
+                # Nueva fase de lobby → refrescar perfil si venimos de partida
+                if self._postgame_shown:
+                    self.refrescar_perfil()
                 self._postgame_shown = False
                 self.lbl_partida_header.setText("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
             self._last_fase = fase
@@ -337,6 +339,10 @@ class PartidaTabMixin:
                     stats["penta"] = part_stats.get("pentaKills", 0)
                     stats["triple"] = part_stats.get("tripleKills", 0)
                     stats["first_blood"] = part_stats.get("firstBloodKill", False)
+                    tl_part = part.get("timeline", {})
+                    stats["lane"] = tl_part.get("lane", "")
+                    stats["role"] = tl_part.get("role", "")
+                    stats["game_id"] = ult.get("gameId")
             except Exception as e:
                 print(f"[PostGame] Error obteniendo datos LCU: {e}")
 
@@ -440,6 +446,37 @@ class PartidaTabMixin:
             stats["negatives"] = negatives[:4]
             tips_dedup = list(dict.fromkeys(tips))
             stats["tip"] = "  |  ".join(tips_dedup[:3]) if tips_dedup else ""
+
+            # Veredicto del coach: 2-3 acciones concretas para la proxima partida
+            es_sup = "SUPPORT" in (stats.get("role", "") or "").upper()
+            ver = []
+            if d >= 6:
+                ver.append("Reduce muertes: antes de pelear confirma visión y los summoners del rival.")
+            if not es_sup and cs_min < 6 and game_time >= 600:
+                ver.append("Sube el CS: apunta a +6/min haciendo last-hits bajo torre los primeros 10 min.")
+            if stats.get("vision_score", 0) / max(1, game_time / 60) < (1.5 if es_sup else 0.7):
+                ver.append("Mejora la visión: 1 ward de control por vuelta a la base, colócalo en el río.")
+            if (k + a) < d * 1.5 and game_time >= 600:
+                ver.append("Participa más: rota a objetivos (dragón/heraldo) tras limpiar tu oleada.")
+            if not ver:
+                ver.append("Partida sólida: repite lo que funcionó y corrige los errores puntuales del replay.")
+            stats["veredicto"] = ver[:3]
+
+            # Series por minuto (best-effort, via API publica de Riot con timeline)
+            try:
+                region = self.lcu.obtener_region()
+                gid = stats.get("game_id")
+                perfil = self.lcu.obtener_perfil() or {}
+                puuid = perfil.get("puuid")
+                if region and gid and puuid:
+                    api = self._get_riot_api()
+                    if api.disponible:
+                        match_id = f"{region}_{gid}"
+                        series = api.series_por_minuto(match_id, puuid)
+                        if series:
+                            stats["timeline"] = series
+            except Exception as e:
+                print(f"[PostGame] Timeline no disponible: {e}")
 
             self.postgame_ready.emit(stats)
         except Exception as e:

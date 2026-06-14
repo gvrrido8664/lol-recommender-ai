@@ -10,7 +10,8 @@ class PartidaTabMixin:
     # ═══════════════════════════════════════════════════════════
 
     def armar_tab_partida(self):
-        layout = QVBoxLayout(self.tab_partida)
+        cont = QWidget()
+        layout = QVBoxLayout(cont)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
@@ -81,6 +82,10 @@ class PartidaTabMixin:
         self.lbl_partida_comp.setAlignment(Qt.AlignCenter)
         self.lbl_partida_comp.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(self.lbl_partida_comp)
+
+        outer = QVBoxLayout(self.tab_partida)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.crear_scroll_responsive(cont, 1000))
 
     def _estilizar_tabla_partida(self, tabla, bg_color):
         # 0=Jugador(stretch) 1=Rango 2=KDA 3=CS (contenido) 4=Perfil(stretch)

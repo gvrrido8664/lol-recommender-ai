@@ -289,6 +289,22 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             fr.label_title = lbl
         return fr, layout
 
+    def crear_scroll_responsive(self, contenido, min_width=1080):
+        """Envuelve un widget en un QScrollArea responsive: el contenido mantiene su
+        tamano legible (min_width) y aparecen barras de scroll cuando la ventana es
+        mas chica, en vez de aplastarse. Fondo transparente para no romper el tema."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.viewport().setStyleSheet("background: transparent;")
+        if min_width:
+            contenido.setMinimumWidth(min_width)
+        scroll.setWidget(contenido)
+        return scroll
+
     def crear_interfaz(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

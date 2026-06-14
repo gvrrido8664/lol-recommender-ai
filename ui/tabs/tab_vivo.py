@@ -60,6 +60,7 @@ class VivoTabMixin:
         self.fr_counters_vivo = QHBoxLayout()
         self.l_counters_vivo.addLayout(self.fr_counters_vivo)
         l_enemy.addWidget(self.panel_counters_vivo)
+        self.col_enemy.setMinimumWidth(240)
         draft_layout.addWidget(self.col_enemy, 1)
 
         col_center = QWidget()
@@ -129,16 +130,10 @@ class VivoTabMixin:
         self.pnl_pathing.setVisible(False)
         l_center.addWidget(self.pnl_pathing)
 
-        # Columna central scrollable (es la mas densa: picks + setup + skills + pathing)
-        scroll_center = QScrollArea()
-        scroll_center.setWidgetResizable(True)
-        scroll_center.setFrameShape(QFrame.NoFrame)
-        # Horizontal AsNeeded: si el contenido no entra, se puede desplazar en vez de recortarse
-        scroll_center.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_center.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        scroll_center.viewport().setStyleSheet("background: transparent;")
-        scroll_center.setWidget(col_center)
-        draft_layout.addWidget(scroll_center, 3)
+        # Columna central (la mas densa: picks + setup + skills + pathing).
+        # El scroll lo maneja un unico QScrollArea que envuelve todo el draft (abajo).
+        col_center.setMinimumWidth(520)
+        draft_layout.addWidget(col_center, 3)
 
         self.col_ally, l_ally = self.crear_panel("Aliados")
         self.lbl_ally_stats = QLabel("AD: --% | AP: --% | Tanks: 0")
@@ -146,10 +141,15 @@ class VivoTabMixin:
         l_ally.addWidget(self.lbl_ally_stats)
         self.fr_aliados_picks = QVBoxLayout()
         l_ally.addLayout(self.fr_aliados_picks)
-        l_ally.addStretch() 
+        l_ally.addStretch()
+        self.col_ally.setMinimumWidth(240)
         draft_layout.addWidget(self.col_ally, 1)
 
-        layout.addLayout(draft_layout, 1)
+        # Un solo scroll responsive para todo el draft: la barra superior queda fija
+        # y los 3 paneles scrollean (horizontal cuando la ventana es angosta).
+        draft_widget = QWidget()
+        draft_widget.setLayout(draft_layout)
+        layout.addWidget(self.crear_scroll_responsive(draft_widget, 1080), 1)
 
     _SKILL_COLORS = {"Q": "#3b82f6", "W": "#10b981", "E": "#f59e0b", "R": "#e11d48"}
 

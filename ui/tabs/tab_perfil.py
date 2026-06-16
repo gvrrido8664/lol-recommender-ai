@@ -1124,7 +1124,7 @@ class PerfilTabMixin:
         queue_map = {"Solo/Dúo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
         queue = queue_map.get(self.cb_lp_queue.currentText(), "RANKED_SOLO_5x5")
         try:
-            history = obtener_historial_lp(queue, dias=30)
+            history = obtener_historial_lp(queue)
             self.lp_graph.set_data(history)
         except Exception as e:
             print(f"[LP Graph] Error: {e}")

@@ -38,9 +38,9 @@ class LPGraphWidget(QWidget):
         # Fondo
         p.fillRect(0, 0, w, h, QColor(BG_CARD))
 
-        if not self._data or len(self._data) < 2:
+        if not self._data:
             p.setPen(QColor(TEXT_MUTED))
-            p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos suficientes (mín. 2 días)")
+            p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos de LP")
             p.end()
             return
 
@@ -54,6 +54,37 @@ class LPGraphWidget(QWidget):
 
         def to_py(val):
             return h - pad_b - int((val - mn) / rng * (h - pad_t - pad_b))
+
+        # 1 solo dia: mostrar punto unico con label de tier
+        if n == 1:
+            d = self._data[0]
+            py = to_py(d["lp_total"])
+            # Tier line de referencia
+            for base, name in self.TIER_LABELS:
+                if mn - 100 <= base <= mx + 100:
+                    ty = to_py(base)
+                    if pad_t <= ty <= h - pad_b:
+                        p.setPen(QPen(QColor("#251d2b"), 1, Qt.DashLine))
+                        p.drawLine(pad_l, ty, w - pad_r, ty)
+                        p.setPen(QColor(self.TIER_COLORS.get(name, "#7a6f68")))
+                        p.drawText(2, ty - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
+            # Punto
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(QColor(ACCENT_TEAL)))
+            p.drawEllipse(w // 2 - 5, py - 5, 10, 10)
+            # Label
+            label = f"{d['tier'].title()} {d['division'].upper()} {d['lp']} LP"
+            p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+            p.setPen(QColor(ACCENT_TEAL))
+            p.drawText(0, pad_t, w, 22, Qt.AlignCenter, label)
+            # Fecha
+            p.setFont(QFont("Segoe UI", 8))
+            p.setPen(QColor(TEXT_MUTED))
+            p.drawText(0, py + 14, w, 16, Qt.AlignCenter, d["fecha"])
+            p.end()
+            return
+
+        # ── 2+ dias: grafica normal ──
 
         # Líneas de tier en gris sutil
         p.setFont(QFont("Segoe UI", 7))

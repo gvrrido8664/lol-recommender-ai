@@ -526,11 +526,28 @@ class PerfilTabMixin:
     def _save_season_cache(self, puuid: str, games: list):
         guardar_season_cache(puuid, games)
 
+    def _cache_es_reciente(self, puuid: str) -> bool:
+        """True si el cache tiene menos de 2 horas (evita re-descargar)."""
+        import time as _time
+        try:
+            from src.db_manager import obtener_conexion
+            conn = obtener_conexion()
+            cur = conn.cursor()
+            cur.execute("SELECT season_ts FROM player_cache WHERE puuid = %s", (puuid,))
+            row = cur.fetchone()
+            conn.close()
+            if row and row["season_ts"]:
+                age_h = (_time.time() - row["season_ts"].timestamp()) / 3600
+                return age_h < 2
+        except Exception:
+            pass
+        return False
+
     def _riot_season_background(self, puuid: str, all_games: list, game_name: str, tag_line: str):
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
         Usa streaming via season_partial para mostrar datos mientras llegan."""
         try:
-            # Emitir cache si existe (sin bloquear descarga de nuevas partidas)
+            # Emitir cache si existe
             cached = self._load_season_cache(puuid)
             if cached:
                 existing_gids = {self._gid_or_fallback(g) for g in all_games}
@@ -538,7 +555,10 @@ class PerfilTabMixin:
                 if nuevos_cache:
                     self.season_partial.emit(nuevos_cache)
                     print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
-                all_games.extend(nuevos_cache)  # para que Riot API no las vuelva a bajar
+                all_games = list(cached)  # usar cache como base
+                # Si el cache es reciente (< 2h), no re-descargar
+                if self._cache_es_reciente(puuid):
+                    return
 
             # Resolver PUUID nuevo
             riot_puuid = puuid
@@ -554,8 +574,15 @@ class PerfilTabMixin:
                 return
             if riot_ids:
                 riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)
-                # Guardar cache (usar puuid original del LCU, no el resuelto)
-                self._save_season_cache(puuid, riot_games)
+                # Merge con cache existente y guardar
+                merged = list(all_games)  # all_games ya incluye el cache
+                seen = {self._gid_or_fallback(g) for g in merged if self._gid_or_fallback(g)}
+                for g in riot_games:
+                    gid = self._gid_or_fallback(g)
+                    if gid and gid not in seen:
+                        merged.append(g)
+                        seen.add(gid)
+                self._save_season_cache(puuid, merged)
         except Exception as e:
             print(f"[RiotAPI] Error en background: {e}")
 

@@ -1,4 +1,11 @@
-﻿# PLAN COMPLETO DE MEJORAS — LoL Recommender v2
+﻿> ⚠️ **DOCUMENTO HISTÓRICO (superado).** Este plan (junio 2026) predata la
+> modularización de `app.py` (de ~6640 a ~945 líneas, ahora 7 mixins en `ui/tabs/`) y
+> varias de sus prioridades críticas ya están resueltas (P1 pool de conexiones, P5
+> secretos fuera del repo). Las referencias `app.py:NNNN` ya **no** corresponden al
+> código actual. La fuente de verdad vigente es **`plans/ROADMAP.md`**. Se conserva
+> solo como registro de la auditoría original.
+
+# PLAN COMPLETO DE MEJORAS — LoL Recommender v2
 
 **Fecha:** 2026-06-12  
 **Alcance:** `app.py` (6.640 lineas) + 22 modulos `src/` (~6.400 lineas propias) ≈ **13.000 lineas**  

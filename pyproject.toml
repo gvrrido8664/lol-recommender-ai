@@ -1,0 +1,45 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+    "migrar_a_supabase.py",
+    "src/migrate_to_pg.py",
+    "src/recolector_masivo.py",
+    "build_onedir/**",
+    "__pycache__/**",
+    ".venv_check/**",
+    ".venv/**",
+    "venv/**",
+    "models/**",
+    "data/**",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",       # pycodestyle errors
+    "F",       # pyflakes
+    "W",       # pycodestyle warnings
+    "I",       # isort
+    "B",       # flake8-bugbear
+]
+ignore = [
+    "E402",    # module-import-not-at-top-of-file (sys.path / ctypes init)
+    "E501",    # line too long (manejado por el formatter)
+    "E701",    # multiple-statements-on-one-line-colon (comun en UI boilerplate)
+    "E702",    # multiple-statements-on-one-line-semicolon (comun en UI)
+    "E741",    # ambiguous-variable-name (l, I, O)
+    "F403",    # undefined-local-with-import-star (patron intencional ui.contexto)
+    "F405",    # undefined-local-with-import-star-usage (patron intencional ui.contexto)
+    "B008",    # do not perform function calls in argument defaults (OK en UI)
+    "B904",    # raise without from inside except (no critico)
+    "B905",    # zip-without-explicit-strict (no critico)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "ui", "src", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

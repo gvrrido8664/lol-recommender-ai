@@ -1,5 +1,5 @@
-import time
 import threading
+import time
 
 _RPC_CLIENT = None
 _RPC_THREAD = None
@@ -12,6 +12,7 @@ def _get_rpc_client():
     if _RPC_CLIENT is None:
         try:
             from pypresence import Presence
+
             _RPC_CLIENT = Presence("1356306895325102150")
         except Exception:
             _RPC_CLIENT = False
@@ -61,10 +62,17 @@ def detener_discord_rpc():
                 pass
 
 
-def actualizar_discord_rpc(details="En el cliente de LoL", state="Menu principal",
-                           large_image="lol", large_text="League of Legends",
-                           small_image=None, small_text=None,
-                           start_timestamp=None, party_size=None, party_max=None):
+def actualizar_discord_rpc(
+    details="En el cliente de LoL",
+    state="Menu principal",
+    large_image="lol",
+    large_text="League of Legends",
+    small_image=None,
+    small_text=None,
+    start_timestamp=None,
+    party_size=None,
+    party_max=None,
+):
     if not _RPC_RUNNING:
         return
     client = _get_rpc_client()

@@ -6,9 +6,10 @@ Evalúa el contexto físico/mental del jugador analizando:
 - Rendimiento de la primera partida del día vs partidas acumuladas
 - Tasa de victorias según hora del día y tamaño de sesión
 """
-from datetime import datetime, timedelta
+
 import json
 import os
+from datetime import datetime, timedelta
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 FATIGA_PATH = os.path.join(DATA_DIR, "fatiga_sesiones.json")
@@ -19,19 +20,23 @@ RESET_SEGUNDOS = 3 * 3600  # 3 horas entre el fin de una partida y el inicio de 
 def analizar_fatiga(historial_games):
     """
     Analiza el historial de partidas y devuelve un dict con métricas de fatiga.
-    
+
     Args:
         historial_games: lista de partidas de LCU, cada una con:
             - gameCreationDate: string de fecha
             - gameDuration: duración en segundos
             - participants[0].stats.win: bool
-    
+
     Returns:
         dict con: sesiones, partidas_hoy, racha_actual, rendimiento_primera_vs_resto,
                  estado (fresh/tired/tilted), recomendacion
     """
     if not historial_games:
-        return {"estado": "sin_datos", "mensaje": "Sin datos de partidas recientes", "recomendacion": "Juega una partida para que el sistema aprenda tus patrones."}
+        return {
+            "estado": "sin_datos",
+            "mensaje": "Sin datos de partidas recientes",
+            "recomendacion": "Juega una partida para que el sistema aprenda tus patrones.",
+        }
 
     partidas = []
     for g in historial_games:
@@ -56,14 +61,18 @@ def analizar_fatiga(historial_games):
             dur = g.get("gameDuration", 0)
             win = g.get("participants", [{}])[0].get("stats", {}).get("win", False)
             partidas.append({"fecha": dt, "duracion": dur, "win": win})
-        except Exception as e:
+        except Exception:
             continue
 
     # Ordenar por fecha ascendente (más antigua primero) para detectar sesiones correctamente
     partidas.sort(key=lambda p: p["fecha"])
 
     if not partidas:
-        return {"estado": "sin_datos", "mensaje": "No se pudieron procesar las partidas", "recomendacion": "Verifica que el cliente de LoL esté funcionando correctamente."}
+        return {
+            "estado": "sin_datos",
+            "mensaje": "No se pudieron procesar las partidas",
+            "recomendacion": "Verifica que el cliente de LoL esté funcionando correctamente.",
+        }
 
     # ── Detectar sesiones: 3h entre fin de partida e inicio de la siguiente = nueva sesión ──
     sesiones = []
@@ -130,7 +139,9 @@ def analizar_fatiga(historial_games):
         else:
             estado = "fresh"
             mensaje = "🌟 Primera partida de la sesión. Estás fresco."
-            recomendacion = "Buen momento para jugar. Recuerda: tú eres el factor constante en tu progreso. Cada partida suma."
+            recomendacion = (
+                "Buen momento para jugar. Recuerda: tú eres el factor constante en tu progreso. Cada partida suma."
+            )
     else:
         estado = "neutral"
         mensaje = "👌 Sesión corta. Todo bien por ahora."

@@ -1,22 +1,22 @@
 """Widget de grafica LP estilo op.gg — curvas bezier, bandas de tier, fill degradado."""
 
-from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QPainterPath, QColor, QPen, QBrush, QLinearGradient, QFont
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QWidget
 
 from ui.design import *
 
 
 class LPGraphWidget(QWidget):
     TIER_BANDS = [
-        (0,    400,  "Iron",     "#6b7280"),
-        (400,  800,  "Bronze",   "#b45309"),
-        (800,  1200, "Silver",   "#a39a93"),
-        (1200, 1600, "Gold",     "#f59e0b"),
-        (1600, 2000, "Plat",     "#c89b3c"),
-        (2000, 2400, "Emerald",  "#22c55e"),
-        (2400, 2800, "Diamond",  "#f0b232"),
-        (2800, 3200, "Master+",  "#e879f9"),
+        (0, 400, "Iron", "#6b7280"),
+        (400, 800, "Bronze", "#b45309"),
+        (800, 1200, "Silver", "#a39a93"),
+        (1200, 1600, "Gold", "#f59e0b"),
+        (1600, 2000, "Plat", "#c89b3c"),
+        (2000, 2400, "Emerald", "#22c55e"),
+        (2400, 2800, "Diamond", "#f0b232"),
+        (2800, 3200, "Master+", "#e879f9"),
     ]
 
     def __init__(self, parent=None):
@@ -60,7 +60,7 @@ class LPGraphWidget(QWidget):
 
         chart_bottom = h - pad_b
         chart_top = pad_t
-        chart_h = chart_bottom - chart_top
+        chart_bottom - chart_top
 
         # ── Bandas de tier ──
         for lo, hi, name, color in self.TIER_BANDS:
@@ -107,9 +107,11 @@ class LPGraphWidget(QWidget):
             grad.setColorAt(0.0, QColor(ACCENT_TEAL))
             grad.setColorAt(0.35, QColor(ACCENT_TEAL))
             grad.setColorAt(1.0, QColor(ACCENT_TEAL))
-            gcol = QColor(ACCENT_TEAL)
-            gcol_top = QColor(ACCENT_TEAL); gcol_top.setAlpha(55)
-            gcol_bot = QColor(ACCENT_TEAL); gcol_bot.setAlpha(8)
+            QColor(ACCENT_TEAL)
+            gcol_top = QColor(ACCENT_TEAL)
+            gcol_top.setAlpha(55)
+            gcol_bot = QColor(ACCENT_TEAL)
+            gcol_bot.setAlpha(8)
             grad.setColorAt(0.0, gcol_top)
             grad.setColorAt(1.0, gcol_bot)
             p.setPen(Qt.NoPen)
@@ -124,7 +126,7 @@ class LPGraphWidget(QWidget):
 
         # ── Puntos ──
         p.setPen(Qt.NoPen)
-        for i, (px, py) in enumerate(pts):
+        for (px, py) in pts:
             outer = QColor(ACCENT_TEAL)
             outer.setAlpha(35)
             r = 5

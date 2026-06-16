@@ -3,7 +3,6 @@ campeones, barras comparativas, datos reales de BD, swap de matchup y consejos p
 
 from ui.contexto import *
 
-
 # Mapas de texto -> valor numerico (compartidos por barras y tarjetas)
 _EARLY_VAL = {"weak": 1, "neutral": 2, "strong": 3}
 _SCALE_VAL = {"early": 1, "mid": 2, "late": 3, "hyper": 4}
@@ -108,8 +107,9 @@ class IATabMixin:
         batalla_layout.setSpacing(16)
 
         # Columna 1: Aliado
-        col_aliado, self.img_aliado_1v1, self.lbl_nombre_aliado_1v1, self.stats_aliado = \
-            self._crear_columna_campeon(GREEN_WR, "#0a1a0f")
+        col_aliado, self.img_aliado_1v1, self.lbl_nombre_aliado_1v1, self.stats_aliado = self._crear_columna_campeon(
+            GREEN_WR, "#0a1a0f"
+        )
         batalla_layout.addLayout(col_aliado, 1)
 
         # Columna 2: Centro
@@ -158,8 +158,10 @@ class IATabMixin:
             lbl_a.setAlignment(Qt.AlignCenter)
             row.addWidget(lbl_a)
             bar = QProgressBar()
-            bar.setRange(0, 100); bar.setValue(50)
-            bar.setTextVisible(False); bar.setFixedHeight(12)
+            bar.setRange(0, 100)
+            bar.setValue(50)
+            bar.setTextVisible(False)
+            bar.setFixedHeight(12)
             bar.setStyleSheet(self._estilo_barra_comparativa(50))
             row.addWidget(bar, 1)
             lbl_e = QLabel("-")
@@ -175,8 +177,9 @@ class IATabMixin:
         batalla_layout.addLayout(col_centro, 2)
 
         # Columna 3: Enemigo
-        col_enemigo, self.img_enemigo_1v1, self.lbl_nombre_enemigo_1v1, self.stats_enemigo = \
+        col_enemigo, self.img_enemigo_1v1, self.lbl_nombre_enemigo_1v1, self.stats_enemigo = (
             self._crear_columna_campeon(RED_WR, "#1a0a0f")
+        )
         batalla_layout.addLayout(col_enemigo, 1)
 
         l_hud.addLayout(batalla_layout)
@@ -216,7 +219,9 @@ class IATabMixin:
 
         fr = QFrame()
         fr.setObjectName("BuildCard")
-        fr.setStyleSheet(f"QFrame#BuildCard {{ border: 1px solid {color_acento}; border-radius: 10px; padding: 8px; background-color: {bg_card}; }}")
+        fr.setStyleSheet(
+            f"QFrame#BuildCard {{ border: 1px solid {color_acento}; border-radius: 10px; padding: 8px; background-color: {bg_card}; }}"
+        )
         fr.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         l_fr = QVBoxLayout(fr)
         l_fr.setAlignment(Qt.AlignTop)
@@ -292,7 +297,8 @@ class IATabMixin:
         self.cb_ia_enemigo.clear()
         self.cb_ia_aliado.addItems(champs)
         self.cb_ia_enemigo.addItems(champs)
-        if len(champs) >= 2: self.cb_ia_enemigo.setCurrentText(champs[1])
+        if len(champs) >= 2:
+            self.cb_ia_enemigo.setCurrentText(champs[1])
         # Precalentar cache WR en hilo secundario para evitar freeze en el primer Simular
         threading.Thread(target=self._precalentar_cache_ia, args=(champs, rol_api), daemon=True).start()
 
@@ -365,13 +371,16 @@ class IATabMixin:
         aliado = self.cb_ia_aliado.currentText()
         enemigo = self.cb_ia_enemigo.currentText()
 
-        if not aliado or not enemigo or not modelo_1v1.get(rol_api): return
+        if not aliado or not enemigo or not modelo_1v1.get(rol_api):
+            return
 
         # ─── Imagenes y nombres ───
         ruta_al = self.descargar_imagen(aliado, "champ")
         ruta_en = self.descargar_imagen(enemigo, "champ")
-        if ruta_al: self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        if ruta_en: self.img_enemigo_1v1.setPixmap(QPixmap(ruta_en).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        if ruta_al:
+            self.img_aliado_1v1.setPixmap(QPixmap(ruta_al).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        if ruta_en:
+            self.img_enemigo_1v1.setPixmap(QPixmap(ruta_en).scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.lbl_nombre_aliado_1v1.setText(self._nombre_display(aliado))
         self.lbl_nombre_enemigo_1v1.setText(self._nombre_display(enemigo))
 
@@ -389,8 +398,9 @@ class IATabMixin:
             X[n + self.nombres_campeones_global.index(enemigo)] = 1
         try:
             feats = extraer_features_comparativas(aliado, enemigo)
-            X[n * 2:] = feats
-        except Exception: pass
+            X[n * 2 :] = feats
+        except Exception:
+            pass
 
         # Prediccion IA cruda
         prob = modelo_1v1[rol_api].predict_proba(X.reshape(1, -1))[0][1] * 100

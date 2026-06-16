@@ -16,20 +16,29 @@ UI_TO_API = {"TOP": "TOP", "JUNGLA": "JUNGLE", "MID": "MIDDLE", "ADC": "BOTTOM",
 API_TO_UI = {"TOP": "TOP", "JUNGLE": "JUNGLA", "MIDDLE": "MID", "BOTTOM": "ADC", "UTILITY": "SUPPORT"}
 
 POS_EQUIVALENTES = {
-    "TOP": "TOP", "JUNGLE": "JUNGLE", "JUNGLA": "JUNGLE",
-    "MIDDLE": "MIDDLE", "MID": "MIDDLE",
-    "BOTTOM": "BOTTOM", "ADC": "BOTTOM",
-    "UTILITY": "UTILITY", "SUPPORT": "UTILITY",
+    "TOP": "TOP",
+    "JUNGLE": "JUNGLE",
+    "JUNGLA": "JUNGLE",
+    "MIDDLE": "MIDDLE",
+    "MID": "MIDDLE",
+    "BOTTOM": "BOTTOM",
+    "ADC": "BOTTOM",
+    "UTILITY": "UTILITY",
+    "SUPPORT": "UTILITY",
 }
+
 
 def a_api(rol_ui: str) -> str:
     return UI_TO_API.get(rol_ui.upper(), rol_ui.upper())
 
+
 def a_ui(rol_api: str) -> str:
     return API_TO_UI.get(rol_api.upper(), rol_api.upper())
 
+
 def normalizar_posicion(rol: str) -> str:
     return POS_EQUIVALENTES.get(rol.upper(), rol.upper())
+
 
 def posiciones_equivalentes(pos_a: str, pos_b: str) -> bool:
     return normalizar_posicion(pos_a) == normalizar_posicion(pos_b)

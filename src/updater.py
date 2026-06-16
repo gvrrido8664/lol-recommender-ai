@@ -1,5 +1,6 @@
-import requests
 import os
+
+import requests
 
 GITHUB_REPO = "anomalyco/lol-recommender-v2"
 CURRENT_VERSION = "1.0.0"
@@ -7,6 +8,7 @@ CURRENT_VERSION = "1.0.0"
 
 def _get_version_file():
     from src.logger import _get_log_dir
+
     return os.path.join(_get_log_dir(), "app_version.txt")
 
 

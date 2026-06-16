@@ -13,6 +13,7 @@ solucion robusta seria un backend proxy. Ver el plan de distribucion segura.
 `scripts/cifrar_secretos.py` (build-time) importa `_derivar_clave()` de aqui para
 cifrar con exactamente la misma clave que se usa al descifrar.
 """
+
 import base64
 import json
 import os
@@ -38,9 +39,7 @@ def _derivar_clave() -> bytes:
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-    material = bytes(a ^ b for a, b in zip(
-        _PIEZA_A, (_PIEZA_B * 2)[:len(_PIEZA_A)]
-    ))
+    material = bytes(a ^ b for a, b in zip(_PIEZA_A, (_PIEZA_B * 2)[: len(_PIEZA_A)]))
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,

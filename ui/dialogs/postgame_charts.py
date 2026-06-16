@@ -1,9 +1,9 @@
 """Widgets de grafico para la revision post-partida (QPainter nativo, sin
 dependencias externas). Mismo patron que ui/dialogs/lp_graph.py."""
 
-from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtWidgets import QWidget
 
 from ui.design import *
 
@@ -14,6 +14,7 @@ class BarComparisonWidget(QWidget):
     set_data recibe una lista de dicts: {label, valor (texto), ratio (valor/benchmark)}.
     La barra se llena segun el ratio (1.0 = benchmark) y se colorea verde/ambar/rojo.
     """
+
     _ROW_H = 30
 
     def __init__(self, parent=None):
@@ -38,11 +39,11 @@ class BarComparisonWidget(QWidget):
             p.end()
             return
 
-        lbl_w = 96            # ancho de la etiqueta
-        val_w = 92            # ancho del valor a la derecha
+        lbl_w = 96  # ancho de la etiqueta
+        val_w = 92  # ancho del valor a la derecha
         bar_x = lbl_w + 6
         bar_w = max(40, w - bar_x - val_w - 8)
-        max_ratio = 1.5       # tope visual de la barra (150% del benchmark)
+        max_ratio = 1.5  # tope visual de la barra (150% del benchmark)
         bench_x = bar_x + int(bar_w * (1.0 / max_ratio))
 
         for i, m in enumerate(self._metrics):
@@ -81,8 +82,7 @@ class BarComparisonWidget(QWidget):
             # Valor a la derecha
             p.setFont(QFont("Segoe UI", 8, QFont.Bold))
             p.setPen(QColor(col))
-            p.drawText(bar_x + bar_w + 6, y, val_w, self._ROW_H,
-                       Qt.AlignRight | Qt.AlignVCenter, m.get("valor", ""))
+            p.drawText(bar_x + bar_w + 6, y, val_w, self._ROW_H, Qt.AlignRight | Qt.AlignVCenter, m.get("valor", ""))
 
         p.end()
 
@@ -139,7 +139,7 @@ class TimelineChartWidget(QWidget):
         # Linea
         p.setPen(QPen(QColor(self._color), 2))
         for i in range(1, len(points)):
-            p.drawLine(points[i-1][0], points[i-1][1], points[i][0], points[i][1])
+            p.drawLine(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1])
 
         # Valor final
         p.setFont(QFont("Segoe UI", 8, QFont.Bold))

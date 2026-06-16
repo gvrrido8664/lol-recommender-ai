@@ -13,7 +13,7 @@ import os
 import sys
 
 # PyInstaller: cuando es .exe, los datos estan en _MEIPASS.
-if getattr(sys, 'frozen', False):
+if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
 else:
     # En dev BASE_DIR es la raiz del proyecto (carpeta padre de src/).
@@ -24,8 +24,8 @@ def _get_writable_dir():
     """Devuelve un directorio escribible para config/user data.
     En desarrollo: raiz del proyecto.
     En .exe frozen: %APPDATA%/LoLRecommender."""
-    if getattr(sys, 'frozen', False):
-        d = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
+    if getattr(sys, "frozen", False):
+        d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "LoLRecommender")
     else:
         d = BASE_DIR
     os.makedirs(d, exist_ok=True)
@@ -35,8 +35,8 @@ def _get_writable_dir():
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # Cuando es .exe, los directorios de cache van a %APPDATA% (Program Files es solo lectura).
-if getattr(sys, 'frozen', False):
-    _CACHE_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender', 'assets')
+if getattr(sys, "frozen", False):
+    _CACHE_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "LoLRecommender", "assets")
 else:
     _CACHE_DIR = ASSETS_DIR
 

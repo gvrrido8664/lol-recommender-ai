@@ -9,6 +9,7 @@ Uso (lo invoca build_exe.ps1 -Installer):
 
 `salida` por defecto = build_onedir/secretos.bin
 """
+
 import json
 import os
 import sys
@@ -20,7 +21,7 @@ if _RAIZ not in sys.path:
 
 from cryptography.fernet import Fernet
 
-from src.secretos import _derivar_clave, NOMBRE_BLOB
+from src.secretos import NOMBRE_BLOB, _derivar_clave
 
 CLAVES_SECRETAS = ("API_KEY", "DATABASE_URL")
 
@@ -44,9 +45,7 @@ def main():
         print("ERROR: config.json no tiene ningun secreto que cifrar.")
         return 1
 
-    blob = Fernet(_derivar_clave()).encrypt(
-        json.dumps(secretos, separators=(",", ":")).encode("utf-8")
-    )
+    blob = Fernet(_derivar_clave()).encrypt(json.dumps(secretos, separators=(",", ":")).encode("utf-8"))
 
     os.makedirs(os.path.dirname(os.path.abspath(salida)), exist_ok=True)
     with open(salida, "wb") as f:

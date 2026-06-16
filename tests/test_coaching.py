@@ -6,29 +6,33 @@ def _fake_games(n=20, champion_ids=None):
         champion_ids = [str((i % 15) + 1) for i in range(n)]
     games = []
     for i in range(n):
-        games.append({
-            "gameId": str(i),
-            "gameMode": "CLASSIC",
-            "gameDuration": 1800,
-            "gameCreation": 1781139650.0 + i * 86400,
-            "participants": [{
-                "championId": int(champion_ids[i]),
-                "teamPosition": "TOP",
-                "stats": {
-                    "win": i % 2 == 0,
-                    "kills": 5,
-                    "deaths": 3,
-                    "assists": 7,
-                    "totalMinionsKilled": 150,
-                    "neutralMinionsKilled": 20,
-                    "totalDamageDealtToChampions": 20000,
-                    "totalDamageTaken": 18000,
-                    "goldEarned": 11000,
-                    "visionScore": 20,
-                    "visionWardsBoughtInGame": 1,
-                }
-            }]
-        })
+        games.append(
+            {
+                "gameId": str(i),
+                "gameMode": "CLASSIC",
+                "gameDuration": 1800,
+                "gameCreation": 1781139650.0 + i * 86400,
+                "participants": [
+                    {
+                        "championId": int(champion_ids[i]),
+                        "teamPosition": "TOP",
+                        "stats": {
+                            "win": i % 2 == 0,
+                            "kills": 5,
+                            "deaths": 3,
+                            "assists": 7,
+                            "totalMinionsKilled": 150,
+                            "neutralMinionsKilled": 20,
+                            "totalDamageDealtToChampions": 20000,
+                            "totalDamageTaken": 18000,
+                            "goldEarned": 11000,
+                            "visionScore": 20,
+                            "visionWardsBoughtInGame": 1,
+                        },
+                    }
+                ],
+            }
+        )
     return games
 
 
@@ -71,12 +75,37 @@ def test_anti_contradiction_wide_pool():
     html_full = ""
     for sec in r["secciones"]:
         html_full += sec["html"]
-    assert "demasiados" in html_full.lower() or "enfoc" in html_full.lower() or "reduc" in html_full.lower() or "2 campeones" in html_full.lower()
+    assert (
+        "demasiados" in html_full.lower()
+        or "enfoc" in html_full.lower()
+        or "reduc" in html_full.lower()
+        or "2 campeones" in html_full.lower()
+    )
 
 
 def test_anti_contradiction_narrow_pool():
-    few_ids = ["266", "266", "266", "266", "266", "266", "103", "103", "103", "103",
-               "103", "103", "103", "84", "84", "84", "84", "84", "84", "84"]
+    few_ids = [
+        "266",
+        "266",
+        "266",
+        "266",
+        "266",
+        "266",
+        "103",
+        "103",
+        "103",
+        "103",
+        "103",
+        "103",
+        "103",
+        "84",
+        "84",
+        "84",
+        "84",
+        "84",
+        "84",
+        "84",
+    ]
     r = generar_reporte_coach(_fake_games(20, champion_ids=few_ids))
     html_full = ""
     for sec in r["secciones"]:

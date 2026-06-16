@@ -1,19 +1,19 @@
-import os
-import sys
 import json
-import time
+import os
 import threading
+import time
 
 import psycopg2
 import psycopg2.errors
 import psycopg2.pool
 from psycopg2.extras import DictCursor
 
-from .config import cargar_config, DATA_DIR, BASE_DIR
+from .config import BASE_DIR, DATA_DIR, cargar_config  # noqa: F401  (re-exportados)
 
 
 class ConexionDBError(Exception):
     """Error al conectar o consultar la base de datos PostgreSQL."""
+
     pass
 
 
@@ -61,17 +61,22 @@ def _init_pool():
         if not url:
             raise ConexionDBError("DATABASE_URL no configurado.")
         _PG_POOL = psycopg2.pool.ThreadedConnectionPool(
-            _PG_MINCONN, _PG_MAXCONN, url,
+            _PG_MINCONN,
+            _PG_MAXCONN,
+            url,
             cursor_factory=DictCursor,
             connect_timeout=30,
-            keepalives=1, keepalives_idle=60,
-            keepalives_interval=10, keepalives_count=3,
-            options='-c statement_timeout=30000',
+            keepalives=1,
+            keepalives_idle=60,
+            keepalives_interval=10,
+            keepalives_count=3,
+            options="-c statement_timeout=30000",
         )
 
 
 class _ConexionPooled:
     """Proxy: close() devuelve al pool en vez de cerrar el socket."""
+
     def __init__(self, real_conn):
         self._conn = real_conn
 
@@ -149,7 +154,7 @@ def inicializar_db():
         ("items_order", "TEXT"),  # secuencia de compra real (del timeline)
         ("item_timeline", "JSONB"),  # [{iid, ts}, ...] con timestamps reales de compra
     ]:
-        tabla = 'participantes' if col != 'patch' else 'matches'
+        tabla = "participantes" if col != "patch" else "matches"
         cur.execute(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {col} {tipo}")
 
     cur.execute("""
@@ -238,11 +243,14 @@ def purgar_parches_antiguos(parche_actual: str):
     cur.execute("SELECT COUNT(*) FROM matches")
     total_antes = cur.fetchone()[0]
 
-    cur.execute("""
+    cur.execute(
+        """
         DELETE FROM matches
         WHERE game_version NOT LIKE %s
            OR game_version IS NULL
-    """, (f"{parche_actual}.%",))
+    """,
+        (f"{parche_actual}.%",),
+    )
     eliminadas = cur.rowcount
     conn.commit()
     conn.close()
@@ -276,14 +284,17 @@ def compactar_base_de_datos():
     cur.execute("SELECT COUNT(*) FROM matches")
     total = cur.fetchone()[0]
     if total > 5000:
-        cur.execute("""
+        cur.execute(
+            """
             DELETE FROM matches WHERE match_id IN (
                 SELECT match_id FROM matches
                 WHERE fecha_descarga < NOW() - INTERVAL '6 months'
                 ORDER BY fecha_descarga ASC
                 LIMIT %s
             )
-        """, (total - 5000,))
+        """,
+            (total - 5000,),
+        )
         antiguas = cur.rowcount
     else:
         antiguas = 0
@@ -292,7 +303,7 @@ def compactar_base_de_datos():
 
     print(f"  Huérfanas eliminadas: {huerfanas}")
     print(f"  Antiguas eliminadas: {antiguas}")
-    print(f"  Compactando archivo...")
+    print("  Compactando archivo...")
     cur.execute("VACUUM")
     conn.close()
 
@@ -301,14 +312,18 @@ def compactar_base_de_datos():
 
 # ─── MOTOR EMOCIONAL (NEXUS) ───
 
+
 def etiquetar_estado_emocional(game_id: str, estado: str, puuid: str = "", champion: str = ""):
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO estado_emocional (game_id, puuid, champion, estado)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT(game_id) DO UPDATE SET estado=EXCLUDED.estado, fecha_tag=CURRENT_TIMESTAMP
-    """, (str(game_id), puuid, champion, estado))
+    """,
+        (str(game_id), puuid, champion, estado),
+    )
     conn.commit()
     conn.close()
 
@@ -340,7 +355,7 @@ def obtener_estadisticas_emocionales() -> dict:
         stats[estado] = {
             "partidas": partidas,
             "wins": wins,
-            "wr": round(wins / partidas * 100, 1) if partidas > 0 else 0
+            "wr": round(wins / partidas * 100, 1) if partidas > 0 else 0,
         }
     conn.close()
     return stats
@@ -348,42 +363,61 @@ def obtener_estadisticas_emocionales() -> dict:
 
 # ─── TRACKING DE LP / MMR ───
 
-def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int = 0,
-                 queue_type: str = "RANKED_SOLO_5x5"):
+
+def registrar_lp(
+    tier: str, division: str, lp: int, wins: int = 0, losses: int = 0, queue_type: str = "RANKED_SOLO_5x5"
+):
     if not tier or tier.upper() in ("UNRANKED", "NONE", ""):
         return
     from datetime import date
+
     fecha = str(date.today())
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO lp_history (fecha, queue_type, tier, division, lp, wins, losses)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (fecha, queue_type) DO NOTHING
-    """, (fecha, queue_type, tier.upper(), division.upper(), int(lp), int(wins), int(losses)))
-    cur.execute("""
+    """,
+        (fecha, queue_type, tier.upper(), division.upper(), int(lp), int(wins), int(losses)),
+    )
+    cur.execute(
+        """
         UPDATE lp_history SET tier=%s, division=%s, lp=%s, wins=%s, losses=%s
         WHERE fecha=%s AND queue_type=%s
-    """, (tier.upper(), division.upper(), int(lp), int(wins), int(losses), fecha, queue_type))
+    """,
+        (tier.upper(), division.upper(), int(lp), int(wins), int(losses), fecha, queue_type),
+    )
     conn.commit()
     conn.close()
 
 
 def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5") -> list:
     TIER_BASE = {
-        "IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
-        "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
-        "MASTER": 2800, "GRANDMASTER": 2800, "CHALLENGER": 2800,
+        "IRON": 0,
+        "BRONZE": 400,
+        "SILVER": 800,
+        "GOLD": 1200,
+        "PLATINUM": 1600,
+        "EMERALD": 2000,
+        "DIAMOND": 2400,
+        "MASTER": 2800,
+        "GRANDMASTER": 2800,
+        "CHALLENGER": 2800,
     }
     DIV_OFFSET = {"I": 300, "II": 200, "III": 100, "IV": 0, "": 0}
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT fecha, tier, division, lp, wins, losses
         FROM lp_history
         WHERE queue_type=%s
         ORDER BY fecha ASC
-    """, (queue_type,))
+    """,
+        (queue_type,),
+    )
     rows = cur.fetchall()
     conn.close()
     resultado = []
@@ -391,15 +425,17 @@ def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5") -> list:
         base = TIER_BASE.get(r["tier"], 0)
         offset = DIV_OFFSET.get(r["division"], 0)
         lp_total = base + offset + r["lp"]
-        resultado.append({
-            "fecha": r["fecha"],
-            "tier": r["tier"],
-            "division": r["division"],
-            "lp": r["lp"],
-            "lp_total": lp_total,
-            "wins": r["wins"],
-            "losses": r["losses"],
-        })
+        resultado.append(
+            {
+                "fecha": r["fecha"],
+                "tier": r["tier"],
+                "division": r["division"],
+                "lp": r["lp"],
+                "lp_total": lp_total,
+                "wins": r["wins"],
+                "losses": r["losses"],
+            }
+        )
     return resultado
 
 
@@ -427,13 +463,17 @@ def _crear_tabla_drafts():
 def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
     _garantizar_tabla_drafts()
     from datetime import date
+
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO drafts_history (fecha, campeon, rol, bans, aliados, enemigos, wr_predicho)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING id
-    """, (str(date.today()), campeon, rol, json.dumps(bans), json.dumps(aliados), json.dumps(enemigos), wr_predicho))
+    """,
+        (str(date.today()), campeon, rol, json.dumps(bans), json.dumps(aliados), json.dumps(enemigos), wr_predicho),
+    )
     draft_id = cur.fetchone()["id"]
     conn.commit()
     conn.close()
@@ -445,14 +485,11 @@ def completar_draft_resultado(draft_id, ganada):
     conn = obtener_conexion()
     cur = conn.cursor()
     if ganada is None:
-        cur.execute(
-            "UPDATE drafts_history SET resultado = 'completada' WHERE id = %s",
-            (draft_id,)
-        )
+        cur.execute("UPDATE drafts_history SET resultado = 'completada' WHERE id = %s", (draft_id,))
     else:
         cur.execute(
             "UPDATE drafts_history SET resultado = %s, ganada = %s WHERE id = %s",
-            ("victoria" if ganada else "derrota", 1 if ganada else 0, draft_id)
+            ("victoria" if ganada else "derrota", 1 if ganada else 0, draft_id),
         )
     conn.commit()
     conn.close()
@@ -462,10 +499,13 @@ def obtener_historial_drafts(limite=20):
     _garantizar_tabla_drafts()
     conn = obtener_conexion()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT fecha, campeon, rol, bans, aliados, enemigos, wr_predicho, resultado, ganada
         FROM drafts_history ORDER BY id DESC LIMIT %s
-    """, (limite,))
+    """,
+        (limite,),
+    )
     rows = cur.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -477,13 +517,16 @@ def guardar_season_cache(puuid, games):
     try:
         conn = obtener_conexion()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO player_cache (puuid, season_games, season_ts)
             VALUES (%s, %s::jsonb, CURRENT_TIMESTAMP)
             ON CONFLICT (puuid) DO UPDATE SET
                 season_games = EXCLUDED.season_games,
                 season_ts = CURRENT_TIMESTAMP
-        """, (puuid, json.dumps(games, default=str)))
+        """,
+            (puuid, json.dumps(games, default=str)),
+        )
         conn.commit()
         conn.close()
     except Exception as e:
@@ -496,9 +539,12 @@ def cargar_season_cache(puuid):
     try:
         conn = obtener_conexion()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT season_games, season_ts FROM player_cache WHERE puuid = %s
-        """, (puuid,))
+        """,
+            (puuid,),
+        )
         row = cur.fetchone()
         conn.close()
         if not row or not row["season_games"]:
@@ -528,13 +574,16 @@ def guardar_coaching_cache(puuid, reporte, datos_extra=None):
                 "objetivos": datos_extra.get("objetivos"),
                 "emocional": datos_extra.get("emocional"),
             }
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO player_cache (puuid, coaching_report, coaching_ts)
             VALUES (%s, %s::jsonb, CURRENT_TIMESTAMP)
             ON CONFLICT (puuid) DO UPDATE SET
                 coaching_report = EXCLUDED.coaching_report,
                 coaching_ts = CURRENT_TIMESTAMP
-        """, (puuid, json.dumps(payload, default=str)))
+        """,
+            (puuid, json.dumps(payload, default=str)),
+        )
         conn.commit()
         conn.close()
     except Exception as e:
@@ -547,9 +596,12 @@ def cargar_coaching_cache(puuid):
     try:
         conn = obtener_conexion()
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT coaching_report, coaching_ts FROM player_cache WHERE puuid = %s
-        """, (puuid,))
+        """,
+            (puuid,),
+        )
         row = cur.fetchone()
         conn.close()
         if not row or not row["coaching_report"]:
@@ -559,7 +611,9 @@ def cargar_coaching_cache(puuid):
             age_h = (time.time() - ts.timestamp()) / 3600
             if age_h > 24:
                 return None
-        return row["coaching_report"] if isinstance(row["coaching_report"], dict) else json.loads(row["coaching_report"])
+        return (
+            row["coaching_report"] if isinstance(row["coaching_report"], dict) else json.loads(row["coaching_report"])
+        )
     except Exception as e:
         print(f"[CoachingCache] Error cargando de BD: {e}")
         return None

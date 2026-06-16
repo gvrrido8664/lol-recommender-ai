@@ -10,11 +10,11 @@ class CountersTabMixin:
         layout = QVBoxLayout(cont)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
-        
+
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(8)
         ctrl_layout.addWidget(QLabel("Línea:"))
-        
+
         self.cb_rol_counter = QComboBox()
         self.cb_enemigo = QComboBox()
         ctrl_layout.addWidget(self.cb_rol_counter)
@@ -22,7 +22,7 @@ class CountersTabMixin:
         ctrl_layout.addWidget(self.cb_enemigo)
         self.cb_rol_counter.addItems(UI_ROLES)
         self.cb_rol_counter.currentTextChanged.connect(self.actualizar_listas_counter)
-        
+
         btn_analizar = QPushButton("ANALIZAR")
         btn_analizar.setStyleSheet(f"""
             QPushButton {{ background-color: {ACCENT_RED}; color: white; border: none; border-radius: 6px;
@@ -32,13 +32,13 @@ class CountersTabMixin:
         btn_analizar.clicked.connect(self.buscar_counters)
         ctrl_layout.addWidget(btn_analizar)
         ctrl_layout.addStretch()
-        
+
         layout.addLayout(ctrl_layout)
-        
+
         # Split horizontal: tabla en izquierda, build visual en derecha
         split_layout = QHBoxLayout()
         split_layout.setSpacing(8)
-        
+
         self.tree_counters = QTableWidget()
         self.tree_counters.setColumnCount(3)
         self.tree_counters.setHorizontalHeaderLabels(["Campeón Aliado", "Winrate %", "Partidas"])
@@ -56,13 +56,13 @@ class CountersTabMixin:
             QTableWidget::item:selected { background-color: #251d2b; }
         """)
         split_layout.addWidget(self.tree_counters, 1)
-        
+
         self.panel_visual, self.l_visual = self.crear_panel("SETUP & BUILD ÓPTIMAS")
         self.frame_setup_visual = QVBoxLayout()
         self.frame_setup_visual.setAlignment(Qt.AlignTop)
         self.l_visual.addLayout(self.frame_setup_visual)
         split_layout.addWidget(self.panel_visual, 1)
-        
+
         layout.addLayout(split_layout, 1)
 
         outer = QVBoxLayout(self.tab_counters)
@@ -86,7 +86,7 @@ class CountersTabMixin:
             resultados = obtener_counters(rol_api, enemigo, min_partidas=20)
             builds_data = {}
             conn = obtener_conexion()
-            for champ, winrate, partidas in resultados:
+            for champ, winrate, _partidas in resultados:
                 if winrate <= 50:
                     continue
                 ids_start, ids_fin = obtener_top_items(champ, rol_api, enemigos=[enemigo], conn=conn)
@@ -94,7 +94,7 @@ class CountersTabMixin:
                     "starters": ids_start,
                     "finales": ids_fin,
                     "runas": obtener_top_runas(champ, rol_api, conn=conn),
-                    "spells": obtener_top_hechizos(champ, rol_api, conn=conn)
+                    "spells": obtener_top_hechizos(champ, rol_api, conn=conn),
                 }
             conn.close()
             self.meta_builds_listo.emit(resultados, builds_data, rol_api, enemigo)
@@ -137,10 +137,18 @@ class CountersTabMixin:
 
     def mostrar_build_visual(self):
         filas = self.tree_counters.selectedItems()
-        if not filas: return
+        if not filas:
+            return
         champ = self.tree_counters.item(filas[0].row(), 0).text().strip()
         data = self.builds_actuales.get(champ, {})
-        
-        if data.get("runas"): 
-            self.renderizar_setup_completo(champ, data["runas"], data.get("spells", []), data.get("starters", []), data.get("finales", []), self.frame_setup_visual, mostrar_botones=False)
 
+        if data.get("runas"):
+            self.renderizar_setup_completo(
+                champ,
+                data["runas"],
+                data.get("spells", []),
+                data.get("starters", []),
+                data.get("finales", []),
+                self.frame_setup_visual,
+                mostrar_botones=False,
+            )

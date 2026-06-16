@@ -2,6 +2,7 @@
 Diagnóstico de la base de datos local de NEXUS Recommender.
 Uso: python -m src.estado_db
 """
+
 import json
 
 from .db_manager import obtener_conexion
@@ -18,9 +19,11 @@ def _pct_icon(pct: float) -> str:
 
 def _fetchone(col: int = 0):
     """Devuelve una función que ejecuta SQL y retorna el valor de una columna."""
+
     def _inner(cur, sql, params=None):
         cur.execute(sql, params)
         return cur.fetchone()[col]
+
     return _inner
 
 
@@ -49,7 +52,7 @@ def generar_reporte_completo():
     cur.execute("SELECT pg_database_size(current_database())")
     db_mb = cur.fetchone()[0] / (1024 * 1024)
 
-    print(f"\n💾 RESUMEN GENERAL")
+    print("\n💾 RESUMEN GENERAL")
     print(f"  Tamaño  : {db_mb:.1f} MB")
     print(f"  Partidas: {total_matches:,}  |  Registros: {total_parts:,}  |  Campeones: {total_champs}/{CHAMP_COUNT}")
 
@@ -66,7 +69,7 @@ def generar_reporte_completo():
     parches = cur.fetchall()
 
     if parches:
-        print(f"\n📦 DISTRIBUCIÓN POR PARCHE")
+        print("\n📦 DISTRIBUCIÓN POR PARCHE")
         max_p = parches[0]["n"] if parches else 1
         for row in parches:
             pct = row["n"] / max(total_parts, 1) * 100
@@ -75,32 +78,25 @@ def generar_reporte_completo():
 
     # ── 3. CALIDAD DE DATOS ─────────────────────────────────────
     cur.execute(
-        "SELECT COUNT(*) FROM participantes "
-        "WHERE items IS NOT NULL AND items != '' AND items != '0,0,0,0,0,0,0'"
+        "SELECT COUNT(*) FROM participantes WHERE items IS NOT NULL AND items != '' AND items != '0,0,0,0,0,0,0'"
     )
     con_items = cur.fetchone()[0]
-    cur.execute(
-        "SELECT COUNT(*) FROM participantes "
-        "WHERE runes IS NOT NULL AND runes != '' AND runes != 'null'"
-    )
+    cur.execute("SELECT COUNT(*) FROM participantes WHERE runes IS NOT NULL AND runes != '' AND runes != 'null'")
     con_runes = cur.fetchone()[0]
-    cur.execute(
-        "SELECT COUNT(*) FROM participantes "
-        "WHERE spells IS NOT NULL AND spells != '' AND spells != 'null'"
-    )
+    cur.execute("SELECT COUNT(*) FROM participantes WHERE spells IS NOT NULL AND spells != '' AND spells != 'null'")
     con_spells = cur.fetchone()[0]
     cur.execute("SELECT ROUND(AVG(win) * 100, 1) FROM participantes")
     avg_wr = float(cur.fetchone()[0] or 0)
     cur.execute("SELECT COUNT(*) FROM matches WHERE game_duration > 1500")
     largas = cur.fetchone()[0]
 
-    pi = con_items  / max(total_parts, 1) * 100
-    pr = con_runes  / max(total_parts, 1) * 100
+    pi = con_items / max(total_parts, 1) * 100
+    pr = con_runes / max(total_parts, 1) * 100
     ps = con_spells / max(total_parts, 1) * 100
-    pl = largas     / max(total_matches, 1) * 100
+    pl = largas / max(total_matches, 1) * 100
     wr_ok = "✅" if 45 <= avg_wr <= 55 else "⚠️ "
 
-    print(f"\n🎯 CALIDAD DE DATOS")
+    print("\n🎯 CALIDAD DE DATOS")
     print(f"  Ítems registrados   : {pi:5.1f}%  {_pct_icon(pi)}  ({con_items:,} registros)")
     print(f"  Runas registradas   : {pr:5.1f}%  {_pct_icon(pr)}")
     print(f"  Hechizos registrados: {ps:5.1f}%  {_pct_icon(ps)}")
@@ -118,7 +114,7 @@ def generar_reporte_completo():
     posiciones = cur.fetchall()
 
     if posiciones:
-        print(f"\n📍 COBERTURA POR POSICIÓN")
+        print("\n📍 COBERTURA POR POSICIÓN")
         max_pos = max(r["n"] for r in posiciones)
         for row in posiciones:
             bar = _barra(row["n"], max_pos)
@@ -134,9 +130,9 @@ def generar_reporte_completo():
     readiness = cur.fetchall()
 
     excelente = sum(1 for r in readiness if r["n"] >= 100)
-    bueno     = sum(1 for r in readiness if 50 <= r["n"] < 100)
-    basico    = sum(1 for r in readiness if 20 <= r["n"] < 50)
-    insuf     = max(0, CHAMP_COUNT - excelente - bueno - basico)
+    bueno = sum(1 for r in readiness if 50 <= r["n"] < 100)
+    basico = sum(1 for r in readiness if 20 <= r["n"] < 50)
+    insuf = max(0, CHAMP_COUNT - excelente - bueno - basico)
 
     print(f"\n🤖 RECOMENDADOR — READINESS ({total_champs}/{CHAMP_COUNT} campeones con datos)")
     print(f"  🟢 Excelente  (100+ partidas): {excelente:3} campeones")
@@ -145,7 +141,7 @@ def generar_reporte_completo():
     print(f"  🔴 Insuficiente (<20/sin data): {insuf:3} campeones")
 
     if readiness:
-        print(f"\n  TOP 10 MEJOR CUBIERTOS:")
+        print("\n  TOP 10 MEJOR CUBIERTOS:")
         top_n = readiness[0]["n"]
         for i, r in enumerate(readiness[:10], 1):
             bar = _barra(r["n"], top_n, 15)
@@ -155,7 +151,7 @@ def generar_reporte_completo():
     pocos = [r for r in readiness if r["n"] < 20]
     if pocos:
         nombres = ", ".join(r["champion"] for r in pocos[:20])
-        extra   = f" (+{len(pocos) - 20} más)" if len(pocos) > 20 else ""
+        extra = f" (+{len(pocos) - 20} más)" if len(pocos) > 20 else ""
         print(f"\n⚠️  CAMPEONES CON <20 PARTIDAS: {len(pocos)}")
         print(f"  {nombres}{extra}")
 

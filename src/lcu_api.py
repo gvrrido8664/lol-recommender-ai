@@ -1,13 +1,13 @@
 import os
-import json
-import requests
-import urllib3
-import sys
 import time
 import winreg
 from base64 import b64encode
 
+import requests
+import urllib3
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 class LCUConnector:
     def __init__(self, lol_path=None):
@@ -53,13 +53,13 @@ class LCUConnector:
             if not os.path.exists(self.lockfile_path):
                 return False
         try:
-            with open(self.lockfile_path, 'r') as file:
-                data = file.read().split(':')
+            with open(self.lockfile_path, "r") as file:
+                data = file.read().split(":")
                 self.port = data[2]
                 self.password = data[3]
                 self.protocol = data[4]
                 auth_string = f"riot:{self.password}"
-                auth_base64 = b64encode(auth_string.encode('ascii')).decode('ascii')
+                auth_base64 = b64encode(auth_string.encode("ascii")).decode("ascii")
                 self.headers = {"Authorization": f"Basic {auth_base64}", "Accept": "application/json"}
                 return True
         except (OSError, IndexError, ValueError):
@@ -79,7 +79,7 @@ class LCUConnector:
             if not self.port:
                 if not self.conectar():
                     if intento < _RETRIES - 1:
-                        time.sleep(_BACKOFF * (2 ** intento))
+                        time.sleep(_BACKOFF * (2**intento))
                     continue
             url = f"{self.protocol}://127.0.0.1:{self.port}{endpoint}"
             kwargs.setdefault("headers", self.headers)
@@ -95,29 +95,32 @@ class LCUConnector:
             except requests.RequestException:
                 return None
             if intento < _RETRIES - 1:
-                time.sleep(_BACKOFF * (2 ** intento))
+                time.sleep(_BACKOFF * (2**intento))
         return None
 
     def obtener_sesion_draft(self):
-        res = self.request('GET', '/lol-champ-select/v1/session')
+        res = self.request("GET", "/lol-champ-select/v1/session")
         if res and res.status_code == 200:
             return res.json()
         return None
 
     def obtener_mi_rol(self, draft_data):
-        if not draft_data: return "MIDDLE"
-        mi_celda = draft_data.get('localPlayerCellId')
-        for jugador in draft_data.get('myTeam', []):
-            if jugador.get('cellId') == mi_celda:
-                rol_lcu = jugador.get('assignedPosition', 'MIDDLE').upper()
-                return {'UTILITY': 'UTILITY', 'BOTTOM': 'BOTTOM', 'JUNGLE': 'JUNGLE', 'TOP': 'TOP'}.get(rol_lcu, 'MIDDLE')
+        if not draft_data:
+            return "MIDDLE"
+        mi_celda = draft_data.get("localPlayerCellId")
+        for jugador in draft_data.get("myTeam", []):
+            if jugador.get("cellId") == mi_celda:
+                rol_lcu = jugador.get("assignedPosition", "MIDDLE").upper()
+                return {"UTILITY": "UTILITY", "BOTTOM": "BOTTOM", "JUNGLE": "JUNGLE", "TOP": "TOP"}.get(
+                    rol_lcu, "MIDDLE"
+                )
         return "MIDDLE"
 
     # ================= JUEGO EN VIVO =================
 
     def obtener_fase_juego(self):
         """Devuelve la fase actual: None, Lobby, Matchmaking, ReadyCheck, ChampSelect, GameStart, InProgress, WaitingForStats, PreEndOfGame, EndOfGame"""
-        res = self.request('GET', '/lol-gameflow/v1/session')
+        res = self.request("GET", "/lol-gameflow/v1/session")
         if res and res.status_code == 200:
             return res.json().get("phase")
         return None
@@ -126,7 +129,7 @@ class LCUConnector:
         """Obtiene la lista de summoners en la partida activa con championId, spellIds y summonerName.
         Usa playerChampionSelections (champ select) o teamOne/teamTwo (in-game).
         Durante InProgress tambien busca en el objeto 'gameData' completo como fallback."""
-        res = self.request('GET', '/lol-gameflow/v1/session')
+        res = self.request("GET", "/lol-gameflow/v1/session")
         if not res or res.status_code != 200:
             return []
         data = res.json()
@@ -137,15 +140,17 @@ class LCUConnector:
         selections = game_data.get("playerChampionSelections", [])
         if selections:
             for sel in selections:
-                players.append({
-                    "summonerId": sel.get("summonerInternalName", ""),
-                    "championId": sel.get("championId", 0),
-                    "spell1Id": sel.get("spell1Id", 0),
-                    "spell2Id": sel.get("spell2Id", 0),
-                    "team": sel.get("team", ""),
-                    "skinIndex": sel.get("skinIndex", 0),
-                    "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
-                })
+                players.append(
+                    {
+                        "summonerId": sel.get("summonerInternalName", ""),
+                        "championId": sel.get("championId", 0),
+                        "spell1Id": sel.get("spell1Id", 0),
+                        "spell2Id": sel.get("spell2Id", 0),
+                        "team": sel.get("team", ""),
+                        "skinIndex": sel.get("skinIndex", 0),
+                        "summonerName": sel.get("summonerName", sel.get("summonerInternalName", "")),
+                    }
+                )
             if players:
                 print(f"[LCU] {len(players)} jugadores via playerChampionSelections")
                 return players
@@ -153,7 +158,7 @@ class LCUConnector:
         # Metodo 2: teamOne/teamTwo (funciona durante la partida en vivo)
         players = self._extraer_de_team(game_data, "teamOne", "ORDER")
         players += self._extraer_de_team(game_data, "teamTwo", "CHAOS")
-        
+
         if len(players) >= 2:
             print(f"[LCU] {len(players)} jugadores via teamOne/teamTwo")
             return players
@@ -174,27 +179,31 @@ class LCUConnector:
         if isinstance(team, dict):
             for summoner in team.get("summoners", team.get("players", [])):
                 if isinstance(summoner, dict):
-                    players.append({
-                        "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
-                        "championId": summoner.get("championId", 0),
-                        "spell1Id": summoner.get("spell1Id", 0),
-                        "spell2Id": summoner.get("spell2Id", 0),
-                        "team": team_name,
-                        "skinIndex": 0,
-                        "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
-                    })
+                    players.append(
+                        {
+                            "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                            "championId": summoner.get("championId", 0),
+                            "spell1Id": summoner.get("spell1Id", 0),
+                            "spell2Id": summoner.get("spell2Id", 0),
+                            "team": team_name,
+                            "skinIndex": 0,
+                            "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                        }
+                    )
         elif isinstance(team, list):
             for summoner in team:
                 if isinstance(summoner, dict):
-                    players.append({
-                        "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
-                        "championId": summoner.get("championId", 0),
-                        "spell1Id": summoner.get("spell1Id", 0),
-                        "spell2Id": summoner.get("spell2Id", 0),
-                        "team": team_name,
-                        "skinIndex": 0,
-                        "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
-                    })
+                    players.append(
+                        {
+                            "summonerId": summoner.get("summonerInternalName", summoner.get("summonerName", "")),
+                            "championId": summoner.get("championId", 0),
+                            "spell1Id": summoner.get("spell1Id", 0),
+                            "spell2Id": summoner.get("spell2Id", 0),
+                            "team": team_name,
+                            "skinIndex": 0,
+                            "summonerName": summoner.get("summonerName", summoner.get("summonerInternalName", "")),
+                        }
+                    )
         return players
 
     def _buscar_jugadores_en_dict(self, d, profundidad=0):
@@ -214,15 +223,17 @@ class LCUConnector:
                         if "CHAOS" in val or "RED" in val or "TWO" in val.upper():
                             team_guess = "CHAOS"
                         break
-                resultados.append({
-                    "summonerId": d.get("summonerInternalName", d.get("summonerName", "")),
-                    "championId": d.get("championId", 0),
-                    "spell1Id": d.get("spell1Id", 0),
-                    "spell2Id": d.get("spell2Id", 0),
-                    "team": team_guess,
-                    "skinIndex": 0,
-                    "summonerName": d.get("summonerName", d.get("summonerInternalName", "")),
-                })
+                resultados.append(
+                    {
+                        "summonerId": d.get("summonerInternalName", d.get("summonerName", "")),
+                        "championId": d.get("championId", 0),
+                        "spell1Id": d.get("spell1Id", 0),
+                        "spell2Id": d.get("spell2Id", 0),
+                        "team": team_guess,
+                        "skinIndex": 0,
+                        "summonerName": d.get("summonerName", d.get("summonerInternalName", "")),
+                    }
+                )
             # Buscar en hijos
             for v in d.values():
                 resultados += self._buscar_jugadores_en_dict(v, profundidad + 1)
@@ -233,7 +244,7 @@ class LCUConnector:
 
     def obtener_maestria_champ(self, champion_id):
         """Obtiene la maestria del jugador actual con un campeon especifico."""
-        res = self.request('GET', '/lol-champions/v1/inventories/CHAMPION/champions-minimal')
+        res = self.request("GET", "/lol-champions/v1/inventories/CHAMPION/champions-minimal")
         if res and res.status_code == 200:
             for champ in res.json():
                 if champ.get("id") == champion_id:
@@ -242,16 +253,16 @@ class LCUConnector:
 
     def obtener_nombre_invocador(self):
         """Obtiene el nombre del invocador actual."""
-        res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        res = self.request("GET", "/lol-summoner/v1/current-summoner")
         if res and res.status_code == 200:
             return res.json().get("displayName", res.json().get("gameName", ""))
         return ""
 
     # ================= FUNCIONES DE PERFIL Y LIGAS =================
-    
+
     def obtener_perfil(self):
         # Endpoint clásico (funciona en clientes más viejos)
-        res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        res = self.request("GET", "/lol-summoner/v1/current-summoner")
         if res and res.status_code == 200:
             return res.json()
 
@@ -260,23 +271,25 @@ class LCUConnector:
 
         # Paso 1: /lol-chat/v1/me — tiene gameName, gameTag, icon
         # (puuid puede estar vacío si el cliente no terminó de cargar)
-        res = self.request('GET', '/lol-chat/v1/me')
+        res = self.request("GET", "/lol-chat/v1/me")
         if res and res.status_code == 200:
             d = res.json()
             lol = d.get("lol") or {}
-            perfil.update({
-                "puuid":         d.get("puuid") or lol.get("puuid", ""),
-                "displayName":   d.get("gameName", ""),
-                "gameName":      d.get("gameName", ""),
-                "tagLine":       d.get("gameTag", ""),
-                "profileIconId": d.get("icon", 0),
-                "summonerLevel": int(lol.get("summonerLevel") or lol.get("level") or 0),
-                "summonerId":    str(lol.get("summonerId", "")),
-                "summonerName":  lol.get("summonerName", d.get("gameName", "")),
-            })
+            perfil.update(
+                {
+                    "puuid": d.get("puuid") or lol.get("puuid", ""),
+                    "displayName": d.get("gameName", ""),
+                    "gameName": d.get("gameName", ""),
+                    "tagLine": d.get("gameTag", ""),
+                    "profileIconId": d.get("icon", 0),
+                    "summonerLevel": int(lol.get("summonerLevel") or lol.get("level") or 0),
+                    "summonerId": str(lol.get("summonerId", "")),
+                    "summonerName": lol.get("summonerName", d.get("gameName", "")),
+                }
+            )
 
         # Paso 2: /lol-login/v1/session — tiene puuid y summonerId fiables
-        res = self.request('GET', '/lol-login/v1/session')
+        res = self.request("GET", "/lol-login/v1/session")
         if res and res.status_code == 200:
             d = res.json()
             if d.get("state") == "SUCCEEDED":
@@ -288,7 +301,7 @@ class LCUConnector:
         # Paso 3: /lol-summoner/v1/summoners/{id} — nivel + icono
         summ_id = perfil.get("summonerId")
         if summ_id and str(summ_id) not in ("0", ""):
-            res = self.request('GET', f'/lol-summoner/v1/summoners/{summ_id}')
+            res = self.request("GET", f"/lol-summoner/v1/summoners/{summ_id}")
             if res and res.status_code == 200:
                 d = res.json()
                 if not perfil.get("puuid"):
@@ -299,21 +312,26 @@ class LCUConnector:
                     perfil["summonerLevel"] = d.get("summonerLevel", 0)
                 display = d.get("displayName") or d.get("gameName", "")
                 if display and not perfil.get("gameName"):
-                    perfil["displayName"]  = display
-                    perfil["gameName"]     = display
+                    perfil["displayName"] = display
+                    perfil["gameName"] = display
                     perfil["summonerName"] = display
 
         # Paso 4: Riot API — gameName + tagLine + profileIconId + summonerLevel por puuid
         puuid = perfil.get("puuid")
         needs_name = not perfil.get("gameName")
         needs_icon = not perfil.get("profileIconId")
-        needs_lvl  = not perfil.get("summonerLevel")
+        needs_lvl = not perfil.get("summonerLevel")
         if puuid and (needs_name or needs_icon or needs_lvl):
             try:
                 api_key = self.obtener_api_key_local()
-                region  = self.obtener_region_local() or "la2"
-                routing = "americas" if region in ("la1","la2","na1","br1","oc1") else \
-                          "europe"   if region in ("euw1","eun1","tr1","ru")      else "asia"
+                region = self.obtener_region_local() or "la2"
+                routing = (
+                    "americas"
+                    if region in ("la1", "la2", "na1", "br1", "oc1")
+                    else "europe"
+                    if region in ("euw1", "eun1", "tr1", "ru")
+                    else "asia"
+                )
                 hdrs = {"X-Riot-Token": api_key}
 
                 # Summoner API — icono + nivel + summonerId
@@ -322,14 +340,16 @@ class LCUConnector:
                     r = requests.get(url, headers=hdrs, timeout=5, verify=True)
                     if r.status_code == 200:
                         sd = r.json()
-                        if needs_icon: perfil["profileIconId"] = sd.get("profileIconId", 0)
-                        if needs_lvl:  perfil["summonerLevel"] = sd.get("summonerLevel", 0)
+                        if needs_icon:
+                            perfil["profileIconId"] = sd.get("profileIconId", 0)
+                        if needs_lvl:
+                            perfil["summonerLevel"] = sd.get("summonerLevel", 0)
                         if not perfil.get("summonerId"):
                             perfil["summonerId"] = sd.get("id", "")
                         if needs_name and sd.get("name"):
-                            perfil["gameName"]    = sd["name"]
+                            perfil["gameName"] = sd["name"]
                             perfil["displayName"] = sd["name"]
-                            perfil["summonerName"]= sd["name"]
+                            perfil["summonerName"] = sd["name"]
                             needs_name = False
 
                 # Account API — gameName#tagLine (Riot ID)
@@ -338,22 +358,25 @@ class LCUConnector:
                     r = requests.get(url, headers=hdrs, timeout=5, verify=True)
                     if r.status_code == 200:
                         ad = r.json()
-                        perfil["gameName"]    = ad.get("gameName", "")
-                        perfil["tagLine"]     = ad.get("tagLine", "")
+                        perfil["gameName"] = ad.get("gameName", "")
+                        perfil["tagLine"] = ad.get("tagLine", "")
                         perfil["displayName"] = ad.get("gameName", "")
-                        perfil["summonerName"]= ad.get("gameName", "")
+                        perfil["summonerName"] = ad.get("gameName", "")
             except Exception:
                 pass
 
         if perfil.get("puuid") or perfil.get("displayName") or perfil.get("gameName"):
             fuentes = []
-            if perfil.get("gameName"):      fuentes.append("chat/riot")
-            if perfil.get("puuid"):         fuentes.append("session")
-            if perfil.get("summonerLevel"): fuentes.append("summoner")
+            if perfil.get("gameName"):
+                fuentes.append("chat/riot")
+            if perfil.get("puuid"):
+                fuentes.append("session")
+            if perfil.get("summonerLevel"):
+                fuentes.append("summoner")
             print(f"[LCU] obtener_perfil: combinado [{', '.join(fuentes)}]")
             return perfil
 
-        print(f"[LCU] obtener_perfil: todos los endpoints fallaron")
+        print("[LCU] obtener_perfil: todos los endpoints fallaron")
         return None
 
     def obtener_region_local(self):
@@ -365,7 +388,8 @@ class LCUConnector:
                 for line in f:
                     if line.strip().startswith("region:"):
                         return line.split(":", 1)[1].strip().strip('"').strip("'")
-        except: pass
+        except Exception:
+            pass
         return None
 
     def obtener_api_key_local(self):
@@ -373,6 +397,7 @@ class LCUConnector:
         # embebido (distribuido) o desde config.json plano (dev). No leer el archivo
         # directo aqui para que el descifrado en memoria aplique tambien a la LCU.
         from src.config import cargar_config
+
         return (cargar_config() or {}).get("API_KEY")
 
     def obtener_encrypted_summoner_id(self, puuid, region):
@@ -384,7 +409,8 @@ class LCUConnector:
             res = requests.get(url, headers={"X-Riot-Token": api_key}, timeout=5)
             if res.status_code == 200:
                 return res.json().get("id")
-        except: pass
+        except Exception:
+            pass
         return None
 
     def obtener_ligas(self):
@@ -396,7 +422,7 @@ class LCUConnector:
             "/lol-ranked/v1/current-ranks",
         ]:
             try:
-                res = self.request('GET', endpoint, timeout=3)
+                res = self.request("GET", endpoint, timeout=3)
                 if not res or res.status_code != 200:
                     continue
                 data = res.json()
@@ -433,7 +459,9 @@ class LCUConnector:
                         d = q.get("division") or q.get("rank") or ""
                         if d and d.upper() == "NA":
                             q["division"] = ""
-                    print(f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType','?'), q.get('tier','?')) for q in queues]}")
+                    print(
+                        f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType', '?'), q.get('tier', '?')) for q in queues]}"
+                    )
                     return {"queues": queues}
             except Exception as e:
                 print(f"[LCU] Error en {endpoint}: {e}")
@@ -460,7 +488,9 @@ class LCUConnector:
                                 e["division"] = e.get("rank", "")
                                 if e["division"] and e["division"].upper() == "NA":
                                     e["division"] = ""
-                            print(f"[RiotAPI] Ligas encontradas: {[(e.get('queueType','?'), e.get('tier','?')) for e in entries]}")
+                            print(
+                                f"[RiotAPI] Ligas encontradas: {[(e.get('queueType', '?'), e.get('tier', '?')) for e in entries]}"
+                            )
                             return {"queues": entries}
                     except Exception as e:
                         print(f"[RiotAPI] Error: {e}")
@@ -468,7 +498,7 @@ class LCUConnector:
 
     def obtener_maestrias(self, count=3):
         # FIX: Este endpoint de Local-Player NUNCA falla si estás logueado en LoL
-        res = self.request('GET', '/lol-champion-mastery/v1/local-player/champion-mastery')
+        res = self.request("GET", "/lol-champion-mastery/v1/local-player/champion-mastery")
         if res and res.status_code == 200:
             return res.json()[:count]
         return []
@@ -476,7 +506,7 @@ class LCUConnector:
     def obtener_historial(self, puuid, count=20):
         if not puuid:
             return None
-        res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex={count}')
+        res = self.request("GET", f"/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex={count}")
         if res and res.status_code == 200:
             return res.json()
         return None
@@ -499,48 +529,58 @@ class LCUConnector:
                         team_norm = "ORDER" if team_raw.upper() in ("ORDER", "BLUE", "ALLY", "ALLIES") else "CHAOS"
                     else:
                         team_norm = "ORDER"
-                    
+
                     # Sanitizar items: evitar IndexError si la lista es corta
                     items_raw = p.get("items", [])
                     safe_items = []
                     if isinstance(items_raw, list):
                         for i in range(min(7, len(items_raw))):
                             safe_items.append(items_raw[i] if isinstance(items_raw[i], dict) else {})
-                    
+
                     # Sanitizar summoner spells
                     spells = p.get("summonerSpells", {})
-                    spell_one = (spells.get("summonerSpellOne") or {}).get("rawDisplayName", "") if isinstance(spells, dict) else ""
-                    spell_two = (spells.get("summonerSpellsTwo") or {}).get("rawDisplayName", "") if isinstance(spells, dict) else ""
-                    
-                    players.append({
-                        "summonerName": p.get("summonerName", p.get("riotId", "")),
-                        "riotId": p.get("riotId", ""),
-                        "riotIdGameName": p.get("riotIdGameName", ""),
-                        "riotIdTagLine": p.get("riotIdTagLine", ""),
-                        "championName": p.get("championName", ""),
-                        "team": team_norm,
-                        "level": p.get("level", 1),
-                        "kills": (p.get("scores") or {}).get("kills", 0),
-                        "deaths": (p.get("scores") or {}).get("deaths", 0),
-                        "assists": (p.get("scores") or {}).get("assists", 0),
-                        "creepScore": (p.get("scores") or {}).get("creepScore", 0),
-                        "items": safe_items,
-                        "summonerSpells": [spell_one, spell_two],
-                        "runes": p.get("runes", {}),
-                        "isDead": p.get("isDead", False),
-                        "championId": 0,
-                    })
+                    spell_one = (
+                        (spells.get("summonerSpellOne") or {}).get("rawDisplayName", "")
+                        if isinstance(spells, dict)
+                        else ""
+                    )
+                    spell_two = (
+                        (spells.get("summonerSpellsTwo") or {}).get("rawDisplayName", "")
+                        if isinstance(spells, dict)
+                        else ""
+                    )
+
+                    players.append(
+                        {
+                            "summonerName": p.get("summonerName", p.get("riotId", "")),
+                            "riotId": p.get("riotId", ""),
+                            "riotIdGameName": p.get("riotIdGameName", ""),
+                            "riotIdTagLine": p.get("riotIdTagLine", ""),
+                            "championName": p.get("championName", ""),
+                            "team": team_norm,
+                            "level": p.get("level", 1),
+                            "kills": (p.get("scores") or {}).get("kills", 0),
+                            "deaths": (p.get("scores") or {}).get("deaths", 0),
+                            "assists": (p.get("scores") or {}).get("assists", 0),
+                            "creepScore": (p.get("scores") or {}).get("creepScore", 0),
+                            "items": safe_items,
+                            "summonerSpells": [spell_one, spell_two],
+                            "runes": p.get("runes", {}),
+                            "isDead": p.get("isDead", False),
+                            "championId": 0,
+                        }
+                    )
                 return players, data.get("gameData", {})
             else:
                 # Rate-limit logs
                 now = time.time()
-                if not hasattr(self, '_last_liveclient_warn') or now - self._last_liveclient_warn > 60:
+                if not hasattr(self, "_last_liveclient_warn") or now - self._last_liveclient_warn > 60:
                     print(f"[LiveClient] Puerto 2999 respondió con status={res.status_code}")
                     self._last_liveclient_warn = now
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             # Normal: el juego todavía está en pantalla de carga o acaba de empezar
             now = time.time()
-            if not hasattr(self, '_last_liveclient_warn') or now - self._last_liveclient_warn > 60:
+            if not hasattr(self, "_last_liveclient_warn") or now - self._last_liveclient_warn > 60:
                 print("[LiveClient] Puerto 2999 no disponible aún (pantalla de carga). Reintentando...")
                 self._last_liveclient_warn = now
             return [], {"status": "loading"}
@@ -550,7 +590,7 @@ class LCUConnector:
 
     def obtener_ranked_stats(self):
         """Obtiene estadisticas completas de ranked (season actual) desde LCU."""
-        res = self.request('GET', '/lol-ranked/v1/current-ranked-stats')
+        res = self.request("GET", "/lol-ranked/v1/current-ranked-stats")
         if res and res.status_code == 200:
             data = res.json()
             result = {"queues": {}, "seasons": data.get("seasons", {})}
@@ -563,7 +603,7 @@ class LCUConnector:
 
     def obtener_region(self):
         """Devuelve el codigo de region del cliente (p. ej. 'LA2', 'EUW'). None si falla."""
-        res = self.request('GET', '/riotclient/region-locale')
+        res = self.request("GET", "/riotclient/region-locale")
         if res and res.status_code == 200:
             try:
                 return (res.json() or {}).get("region")
@@ -587,7 +627,9 @@ class LCUConnector:
         restante = min(cantidad, 200)
         while restante > 0:
             lote = min(MAX_POR_LOTE, restante)
-            res = self.request('GET', f'/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={offset}&endIndex={offset + lote}')
+            res = self.request(
+                "GET", f"/lol-match-history/v1/products/lol/{puuid}/matches?begIndex={offset}&endIndex={offset + lote}"
+            )
             if not res or res.status_code != 200:
                 break
             data = res.json()
@@ -603,8 +645,12 @@ class LCUConnector:
 
     # ================= FUNCIONES DE AUTO-IMPORTACIÓN =================
     def importar_hechizos(self, spell1, spell2):
-        res = self.request('PATCH', '/lol-champ-select/v1/session/my-selection',
-                          json={"spell1Id": int(spell1), "spell2Id": int(spell2)}, timeout=3)
+        res = self.request(
+            "PATCH",
+            "/lol-champ-select/v1/session/my-selection",
+            json={"spell1Id": int(spell1), "spell2Id": int(spell2)},
+            timeout=3,
+        )
         return res is not None and res.status_code in [200, 204]
 
     def importar_skill_order(self, skill_order_str):
@@ -632,7 +678,7 @@ class LCUConnector:
 
         # Intento 1: PATCH my-selection con diversos formatos
         for payload in payloads:
-            res = self.request('PATCH', '/lol-champ-select/v1/session/my-selection', json=payload, timeout=3)
+            res = self.request("PATCH", "/lol-champ-select/v1/session/my-selection", json=payload, timeout=3)
             if res and res.status_code in [200, 204]:
                 return True
 
@@ -647,8 +693,12 @@ class LCUConnector:
                         action_id = action.get("id")
                         if action_id:
                             for fmt in [skills, skills_str, skills_int]:
-                                res2 = self.request('PATCH', f'/lol-champ-select/v1/session/actions/{action_id}',
-                                                  json={"championSkillOrder": fmt}, timeout=3)
+                                res2 = self.request(
+                                    "PATCH",
+                                    f"/lol-champ-select/v1/session/actions/{action_id}",
+                                    json={"championSkillOrder": fmt},
+                                    timeout=3,
+                                )
                                 if res2 and res2.status_code in [200, 204]:
                                     return True
         return False
@@ -657,47 +707,52 @@ class LCUConnector:
         if not ids_runas or len(ids_runas) < 11:
             return False
 
-        res = self.request('GET', '/lol-perks/v1/pages')
+        res = self.request("GET", "/lol-perks/v1/pages")
         if res and res.status_code == 200:
-            editables = [p for p in res.json() if p.get('isEditable', True)]
+            editables = [p for p in res.json() if p.get("isEditable", True)]
             if editables:
-                self.request('DELETE', f'/lol-perks/v1/pages/{editables[0]["id"]}')
+                self.request("DELETE", f"/lol-perks/v1/pages/{editables[0]['id']}")
 
         data = {
-            "name": nombre, "primaryStyleId": int(ids_runas[0]), "subStyleId": int(ids_runas[5]),
-            "selectedPerkIds": [int(x) for x in ids_runas[1:5] + ids_runas[6:8] + ids_runas[8:11]], "current": True
+            "name": nombre,
+            "primaryStyleId": int(ids_runas[0]),
+            "subStyleId": int(ids_runas[5]),
+            "selectedPerkIds": [int(x) for x in ids_runas[1:5] + ids_runas[6:8] + ids_runas[8:11]],
+            "current": True,
         }
-        res_post = self.request('POST', '/lol-perks/v1/pages', json=data, timeout=3)
+        res_post = self.request("POST", "/lol-perks/v1/pages", json=data, timeout=3)
         return res_post is not None and res_post.status_code == 200
 
     def importar_item_set(self, campeon, champ_id_int, ids_start, ids_core, ids_sit=None):
         """Fix definitivo: Requiere champ_id_int (el id numérico) para asociarlo correctamente en la tienda de LoL.
         ids_sit: lista opcional de situacionales (ids o dicts con clave 'id') -> bloque extra "Situacionales"."""
-        sum_res = self.request('GET', '/lol-summoner/v1/current-summoner')
+        sum_res = self.request("GET", "/lol-summoner/v1/current-summoner")
         if not sum_res or sum_res.status_code != 200:
             return "No se pudo obtener el invocador"
-        summoner_id = sum_res.json().get('summonerId')
+        summoner_id = sum_res.json().get("summonerId")
         if not summoner_id:
             return False
 
-        url_sets_base = f'/lol-item-sets/v1/item-sets'
-        url_sets_with_id = f'{url_sets_base}/{summoner_id}/sets'
+        url_sets_base = "/lol-item-sets/v1/item-sets"
+        url_sets_with_id = f"{url_sets_base}/{summoner_id}/sets"
 
         item_sets_data = {"accountId": summoner_id, "itemSets": []}
-        items_res = self.request('GET', url_sets_base)
+        items_res = self.request("GET", url_sets_base)
         if items_res and items_res.status_code == 200:
             item_sets_data = items_res.json()
         else:
-            items_res2 = self.request('GET', url_sets_with_id)
+            items_res2 = self.request("GET", url_sets_with_id)
             if items_res2 and items_res2.status_code == 200:
                 item_sets_data = items_res2.json()
 
-        clean_start = [{"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"]
+        clean_start = [
+            {"id": str(i).strip(), "count": 1} for i in ids_start if str(i).strip() and str(i).strip() != "0"
+        ]
         clean_core = [{"id": str(i).strip(), "count": 1} for i in ids_core if str(i).strip() and str(i).strip() != "0"]
 
         # Situacionales: aceptar lista de ids o de dicts {'id': ...}
         clean_sit = []
-        for it in (ids_sit or []):
+        for it in ids_sit or []:
             iid = it.get("id") if isinstance(it, dict) else it
             iid = str(iid).strip()
             if iid and iid != "0":
@@ -721,7 +776,7 @@ class LCUConnector:
             "mode": "any",
             "preferredItemSlots": [],
             "sortrank": 0,
-            "startedFrom": "blank"
+            "startedFrom": "blank",
         }
 
         lista_sets = item_sets_data.get("itemSets", [])
@@ -735,16 +790,20 @@ class LCUConnector:
             lista_sets.append(nuevo_set)
 
         try:
-            put_res = self.request('PUT', url_sets_base, json={"accountId": summoner_id, "itemSets": lista_sets}, timeout=30)
+            put_res = self.request(
+                "PUT", url_sets_base, json={"accountId": summoner_id, "itemSets": lista_sets}, timeout=30
+            )
             if put_res and put_res.status_code in [200, 201, 204]:
                 return True
-            put_res2 = self.request('PUT', url_sets_with_id, json={"itemSets": lista_sets}, timeout=30)
+            put_res2 = self.request("PUT", url_sets_with_id, json={"itemSets": lista_sets}, timeout=30)
             if put_res2 and put_res2.status_code in [200, 201, 204]:
                 return True
             if (put_res and put_res.status_code == 404) or (put_res2 and put_res2.status_code == 404):
                 return "Endpoint inválido. No se pudo guardar el item set en el cliente de LoL."
             return f"Error al guardar item set: {put_res.status_code if put_res else 'N/A'} / {put_res2.status_code if put_res2 else 'N/A'}"
         except requests.exceptions.ReadTimeout:
-            return "Tiempo de espera agotado al guardar el item set. El set puede haberse creado; verifica en el cliente."
+            return (
+                "Tiempo de espera agotado al guardar el item set. El set puede haberse creado; verifica en el cliente."
+            )
         except requests.exceptions.RequestException as exc:
             return f"Error de conexión al guardar item set: {exc}"

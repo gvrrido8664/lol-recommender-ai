@@ -5,7 +5,11 @@ diccionarios de datos) vive en ui/contexto.py. Las pestanias se definen como
 mixins en ui/tabs/ y se combinan en LoLRecommenderApp.
 """
 
+import os
+import sys
+
 from src.logger import init_logging
+
 init_logging()
 
 from ui.contexto import *
@@ -14,24 +18,32 @@ log = get_logger(__name__)
 
 # Safe stdout/stderr para modo GUI (--windowed, sin consola) y encoding cp1252 en Windows
 if sys.stdout is None:
-    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
-    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 
 # Pestanias como mixins (extraidas de app.py) -> ui/tabs/
-from ui.theme_qss import hoja_estilos_global
-from ui.tabs.tab_perfil import PerfilTabMixin
+from ui.tabs.tab_bans import BansTabMixin
 from ui.tabs.tab_coaching import CoachingTabMixin
-from ui.tabs.tab_vivo import VivoTabMixin
-from ui.tabs.tab_partida import PartidaTabMixin
 from ui.tabs.tab_counters import CountersTabMixin
 from ui.tabs.tab_ia import IATabMixin
-from ui.tabs.tab_bans import BansTabMixin
+from ui.tabs.tab_partida import PartidaTabMixin
+from ui.tabs.tab_perfil import PerfilTabMixin
+from ui.tabs.tab_vivo import VivoTabMixin
+from ui.theme_qss import hoja_estilos_global
 
 
-class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaTabMixin,
-                        CountersTabMixin, IATabMixin, BansTabMixin, QMainWindow):
+class LoLRecommenderApp(
+    PerfilTabMixin,
+    CoachingTabMixin,
+    VivoTabMixin,
+    PartidaTabMixin,
+    CountersTabMixin,
+    IATabMixin,
+    BansTabMixin,
+    QMainWindow,
+):
     lcu_task_finished = Signal(object, object, str, str)
     perfil_listo = Signal(dict)
     radar_listo = Signal(object)
@@ -67,8 +79,8 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             if nombre and nombre not in self.nombre_a_id_img:
                 self.nombre_a_id_img[nombre] = k  # "Bardo" -> "Bard"
                 if nombre != k:
-                    self.nombre_display[k] = nombre   # "Bard" -> "Bardo"
-                    self.nombre_interno[nombre] = k   # "Bardo" -> "Bard"
+                    self.nombre_display[k] = nombre  # "Bard" -> "Bardo"
+                    self.nombre_interno[nombre] = k  # "Bardo" -> "Bard"
         # Overrides manuales
         self.nombre_a_id_img["Wukong"] = "MonkeyKing"
         self.nombre_a_id_img["MaestroYi"] = "MasterYi"
@@ -92,7 +104,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.season_partial.connect(self._on_season_partial)
         self.season_progress.connect(self._on_season_progress)
         self.riot_error.connect(self._on_riot_error)
-        
+
         self.last_aliados = []
         self.last_enemigos = []
         self.last_my_champ = None
@@ -100,7 +112,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.last_enemigo_lane = None
         self.current_skill_order = None
         self.perfil_cargado = False
-        
+
         # Cache de imágenes descargadas para evitar HTTP repetidos
         self._cache_imagenes = {}
         self._cache_imagenes_lock = threading.Lock()
@@ -109,7 +121,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self._last_game_stats = {}
         self._postgame_shown = False
         self._last_fase = None
-        
+
         # Flags anti-freeze
         self._cargando_perfil = False
         self._actualizando_radar = False
@@ -127,21 +139,21 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self._limpiar_cache_antiguo()
 
         self.crear_interfaz()
-        
+
         self.timer_lcu = QTimer(self)
         self.timer_lcu.timeout.connect(self.auto_detectar_lcu)
         self.timer_lcu.start(1500)
-        
+
         # Timer para partida en vivo (configurable en settings)
         self.timer_partida = QTimer(self)
         self.timer_partida.timeout.connect(self.actualizar_partida_vivo)
         self.timer_partida.start(self.user_settings.get("frecuencia_partida", 4000))
-        
+
         # In-game timer and hotkeys removed — feature was too buggy
-        
+
         # ─── SYSTEM TRAY + GLOBAL HOTKEYS ───
         self._setup_tray()
-        
+
         # Cache para post-game (eliminado — feature de in-game removida)
 
         # Discord Rich Presence
@@ -157,12 +169,12 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             return
         try:
             import ctypes
+
             hwnd = int(self.winId())
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             valor = ctypes.c_int(1)
             ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                ctypes.byref(valor), ctypes.sizeof(valor)
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(valor), ctypes.sizeof(valor)
             )
         except Exception as e:
             log.debug("No se pudo aplicar barra de título oscura: %s", e)
@@ -170,13 +182,14 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     def _check_app_update(self):
         try:
             update = check_for_update()
-            if update and hasattr(self, 'tray_icon') and self.tray_icon:
+            if update and hasattr(self, "tray_icon") and self.tray_icon:
                 self.tray_icon.showMessage(
                     "NEXUS - Nueva version disponible",
                     f"v{update['latest']} (actual: v{update['current']})\nVe a GitHub para descargarla.",
-                    QIcon(), 8000
+                    QIcon(),
+                    8000,
                 )
-                log.info("Nueva version disponible: v%s", update['latest'])
+                log.info("Nueva version disponible: v%s", update["latest"])
         except Exception as e:
             log.warning("Error verificando actualizacion de app: %s", e)
 
@@ -184,9 +197,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         try:
             iniciar_discord_rpc()
             actualizar_discord_rpc(
-                details="En el cliente de LoL",
-                state="Menu principal",
-                large_text="League of Legends"
+                details="En el cliente de LoL", state="Menu principal", large_text="League of Legends"
             )
         except Exception as e:
             print(f"[DiscordRPC] Error iniciando: {e}")
@@ -203,14 +214,13 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             if version_actual != version_local:
                 log.info("Nuevo parche detectado: %s -> %s", version_local, version_actual)
                 from src.riot_api import actualizar_datos_riot
+
                 actualizar_datos_riot()
                 with open(version_path, "w", encoding="utf-8") as f:
                     f.write(version_actual)
-                if hasattr(self, 'tray_icon') and self.tray_icon:
+                if hasattr(self, "tray_icon") and self.tray_icon:
                     self.tray_icon.showMessage(
-                        "NEXUS - Datos actualizados",
-                        f"Parche {version_actual} descargado.",
-                        QIcon(), 3000
+                        "NEXUS - Datos actualizados", f"Parche {version_actual} descargado.", QIcon(), 3000
                     )
         except Exception as e:
             log.warning("Error verificando actualizaciones: %s", e)
@@ -218,15 +228,20 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     # ═══════════════════════════════════════════════════════════
     # SYSTEM TRAY
     # ═══════════════════════════════════════════════════════════
-    
+
     def _setup_tray(self):
         """Configura el icono en la bandeja del sistema."""
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setToolTip("NEXUS // LoL Performance Engine")
-        pm = QPixmap(32, 32); pm.fill(QColor(BORDER_ACCENT))
-        from PySide6.QtGui import QPainter, QFont
-        p = QPainter(pm); p.setFont(QFont("Segoe UI", 16, QFont.Bold))
-        p.setPen(QColor("#ffffff")); p.drawText(pm.rect(), Qt.AlignCenter, "N"); p.end()
+        pm = QPixmap(32, 32)
+        pm.fill(QColor(BORDER_ACCENT))
+        from PySide6.QtGui import QFont, QPainter
+
+        p = QPainter(pm)
+        p.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        p.setPen(QColor("#ffffff"))
+        p.drawText(pm.rect(), Qt.AlignCenter, "N")
+        p.end()
         self.tray_icon.setIcon(QIcon(pm))
         # Crear menú contextual
         tray_menu = QMenu()
@@ -243,7 +258,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
-    
+
     def _tray_toggle(self):
         """Alterna visibilidad de la ventana desde el tray."""
         if self.isVisible():
@@ -252,12 +267,12 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             self.show()
             self.raise_()
             self.activateWindow()
-    
+
     def _on_tray_activated(self, reason):
         """Doble click en el icono del tray muestra/oculta."""
         if reason == QSystemTrayIcon.DoubleClick:
             self._tray_toggle()
-    
+
     def _salir_app(self):
         """Cierra la app."""
         self.tray_icon.hide()
@@ -288,7 +303,9 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         layout.setSpacing(8)
         if text:
             lbl = QLabel(text.upper())
-            lbl.setStyleSheet(f"color: {ACCENT_RED}; font-weight: 700; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 4px;")
+            lbl.setStyleSheet(
+                f"color: {ACCENT_RED}; font-weight: 700; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 4px;"
+            )
             layout.addWidget(lbl)
             fr.label_title = lbl
         return fr, layout
@@ -323,7 +340,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         header_row.addStretch()
         header_row.addWidget(header_lbl)
         header_row.addStretch()
-        
+
         btn_settings = QPushButton()
         btn_settings.setFixedSize(34, 34)
         btn_settings.setCursor(Qt.PointingHandCursor)
@@ -363,7 +380,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.armar_tab_counters()
         self.armar_tab_ia()
         self.armar_tab_bans()
-        
+
         self.tabview.setCurrentIndex(0)  # Abrir en MI PERFIL
 
     def descargar_imagen(self, id_elemento, tipo):
@@ -371,23 +388,35 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         with self._cache_imagenes_lock:
             if cache_key in self._cache_imagenes:
                 return self._cache_imagenes[cache_key]
-        
-        carpetas = {"runa": RUNAS_DIR, "champ": CHAMPS_DIR, "item": ITEMS_DIR, "spell": SPELLS_DIR, "profile": PROFILE_ICONS_DIR}
+
+        carpetas = {
+            "runa": RUNAS_DIR,
+            "champ": CHAMPS_DIR,
+            "item": ITEMS_DIR,
+            "spell": SPELLS_DIR,
+            "profile": PROFILE_ICONS_DIR,
+        }
         ruta_local = os.path.join(carpetas.get(tipo, CHAMPS_DIR), f"{id_elemento}.png")
         if os.path.exists(ruta_local):
             with self._cache_imagenes_lock:
                 self._cache_imagenes[cache_key] = ruta_local
             return ruta_local
         try:
-            if tipo == "runa": url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "spell": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
-            elif tipo == "champ": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{self.nombre_a_id_img.get(id_elemento, id_elemento)}.png"
-            elif tipo == "profile": url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/profileicon/{id_elemento}.png"
-            else: url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
-                
+            if tipo == "runa":
+                url = f"https://ddragon.leagueoflegends.com/cdn/img/{RUNAS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "spell":
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/spell/{SPELLS_DICT.get(str(id_elemento), {}).get('icono', '')}"
+            elif tipo == "champ":
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/champion/{self.nombre_a_id_img.get(id_elemento, id_elemento)}.png"
+            elif tipo == "profile":
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/profileicon/{id_elemento}.png"
+            else:
+                url = f"https://ddragon.leagueoflegends.com/cdn/{self.version_juego}/img/item/{id_elemento}.png"
+
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
-            with open(ruta_local, "wb") as f: f.write(resp.content)
+            with open(ruta_local, "wb") as f:
+                f.write(resp.content)
             with self._cache_imagenes_lock:
                 self._cache_imagenes[cache_key] = ruta_local
             return ruta_local
@@ -396,7 +425,8 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     def renderizar_icono(self, id_elemento, tipo, grid_layout, fila=0, columna=0, info_extra="", size=40, numero=None):
         ruta = self.descargar_imagen(id_elemento, tipo)
-        if not ruta: return
+        if not ruta:
+            return
 
         pixmap = QPixmap(ruta).scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
@@ -410,7 +440,9 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                     painter.setPen(QPen(QColor("#ffffff")))
                     painter.setBrush(QBrush(QColor(ACCENT_RED)))
                     painter.drawEllipse(0, 0, d, d)
-                    f = QFont(); f.setBold(True); f.setPixelSize(int(d * 0.62))
+                    f = QFont()
+                    f.setBold(True)
+                    f.setPixelSize(int(d * 0.62))
                     painter.setFont(f)
                     painter.setPen(QColor("#ffffff"))
                     fm = painter.fontMetrics()
@@ -422,17 +454,23 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                     painter.end()
 
         info_texto = info_extra
-        if tipo == "runa": info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "item": info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
-        elif tipo == "spell": info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        if tipo == "runa":
+            info_texto = f"{RUNAS_DICT.get(str(id_elemento), {}).get('nombre', 'Runa')}\n{RUNAS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "item":
+            info_texto = f"{ITEMS_DICT.get(str(id_elemento), {}).get('nombre', 'Objeto')}\n{ITEMS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
+        elif tipo == "spell":
+            info_texto = f"{SPELLS_DICT.get(str(id_elemento), {}).get('nombre', 'Hechizo')}\n{SPELLS_DICT.get(str(id_elemento), {}).get('descripcion', '')}"
 
         lbl_img = QLabel()
         lbl_img.setPixmap(pixmap)
         lbl_img.setAlignment(Qt.AlignCenter)
-        if info_texto: lbl_img.setToolTip(info_texto)
+        if info_texto:
+            lbl_img.setToolTip(info_texto)
 
-        if isinstance(grid_layout, QGridLayout): grid_layout.addWidget(lbl_img, fila, columna)
-        else: grid_layout.addWidget(lbl_img)
+        if isinstance(grid_layout, QGridLayout):
+            grid_layout.addWidget(lbl_img, fila, columna)
+        else:
+            grid_layout.addWidget(lbl_img)
 
     def inicializar_panel_setup(self, layout):
         clear_layout(layout)
@@ -455,7 +493,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                 QPushButton:disabled {{ color: {BG_BORDER}; border-color: {BG_CARD_HOVER}; }}
             """)
         else:
-            btn.setStyleSheet("") 
+            btn.setStyleSheet("")
 
     # ================= FUNCIONES DE BOTONES =================
     def _run_lcu_task(self, task, btn, success_text, error_message):
@@ -467,7 +505,9 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         if "read timed out" in texto.lower():
             return "Tiempo de espera agotado al guardar el item set. Es posible que el item set ya se haya creado en el cliente."
         if "404" in texto:
-            return "Endpoint de item sets no disponible en esta versión del cliente. Actualiza LoL o prueba otro método."
+            return (
+                "Endpoint de item sets no disponible en esta versión del cliente. Actualiza LoL o prueba otro método."
+            )
         if len(texto) > 240:
             return texto.splitlines()[0][:240] + "..."
         return texto
@@ -482,48 +522,62 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     def _on_riot_error(self, msg):
         """Muestra error de Riot API en la etiqueta del perfil."""
-        if hasattr(self, 'lbl_riot_error'):
+        if hasattr(self, "lbl_riot_error"):
             self.lbl_riot_error.setText(f"⚠️ {msg}")
             self.lbl_riot_error.setVisible(True)
             QTimer.singleShot(15000, lambda: self.lbl_riot_error.setVisible(False))
 
     # ── Auto-import wrappers (sin botón, para modo automático) ──
     def _auto_importar_runas(self, ids_runas, campeon):
-        if not ids_runas: return
-        threading.Thread(target=lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), daemon=True).start()
+        if not ids_runas:
+            return
+        threading.Thread(
+            target=lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), daemon=True
+        ).start()
 
     def _auto_importar_hechizos(self, ids_spells):
-        if not ids_spells or len(ids_spells) < 2: return
+        if not ids_spells or len(ids_spells) < 2:
+            return
         s1, s2 = str(ids_spells[0]), str(ids_spells[1])
         flash_en_d = self.user_settings.get("flash_en_d", True)
         if not flash_en_d:
-            if s1 == "4" and s2 != "4": s1, s2 = s2, s1
+            if s1 == "4" and s2 != "4":
+                s1, s2 = s2, s1
         else:
-            if s2 == "4" and s1 != "4": s1, s2 = s2, s1
+            if s2 == "4" and s1 != "4":
+                s1, s2 = s2, s1
         threading.Thread(target=lambda: self.lcu.importar_hechizos(s1, s2), daemon=True).start()
 
     def _auto_importar_items(self, campeon, ids_start, ids_core, ids_sit=None):
-        if not ids_core: return
+        if not ids_core:
+            return
         threading.Thread(
             target=lambda: self.lcu.importar_item_set(
                 campeon,
                 next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
                 ids_start or [],
                 ids_core,
-                ids_sit or []
-            ), daemon=True
+                ids_sit or [],
+            ),
+            daemon=True,
         ).start()
 
     def _auto_importar_skill_order(self):
-        if not hasattr(self, 'current_skill_order') or not self.current_skill_order: return
+        if not hasattr(self, "current_skill_order") or not self.current_skill_order:
+            return
         threading.Thread(target=lambda: self.lcu.importar_skill_order(self.current_skill_order), daemon=True).start()
 
     def accion_importar_runas(self, ids_runas, campeon, btn):
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"), btn, "Exportar a LoL", "Asegúrate de tener el cliente abierto."),
-            daemon=True
+            args=(
+                lambda: self.lcu.importar_runas(ids_runas, nombre=f"LEA {campeon}"),
+                btn,
+                "Exportar a LoL",
+                "Asegúrate de tener el cliente abierto.",
+            ),
+            daemon=True,
         ).start()
 
     def accion_importar_spells(self, ids_spells, btn):
@@ -533,14 +587,21 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         s1, s2 = str(ids_spells[0]), str(ids_spells[1])
         flash_en_d = self.user_settings.get("flash_en_d", True)
         if not flash_en_d:
-            if s1 == "4" and s2 != "4": s1, s2 = s2, s1
+            if s1 == "4" and s2 != "4":
+                s1, s2 = s2, s1
         else:
-            if s2 == "4" and s1 != "4": s1, s2 = s2, s1
+            if s2 == "4" and s1 != "4":
+                s1, s2 = s2, s1
         btn.setEnabled(False)
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_hechizos(s1, s2), btn, "Exportar a LoL", "Asegúrate de estar en una sala de Draft."),
-            daemon=True
+            args=(
+                lambda: self.lcu.importar_hechizos(s1, s2),
+                btn,
+                "Exportar a LoL",
+                "Asegúrate de estar en una sala de Draft.",
+            ),
+            daemon=True,
         ).start()
 
     def accion_importar_items(self, campeon, ids_start, ids_core, btn, ids_sit=None):
@@ -553,18 +614,20 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
                     next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
                     ids_start or [],
                     ids_core,
-                    ids_sit or []
+                    ids_sit or [],
                 ),
                 btn,
                 "Crear Item Set en LoL",
-                "No se pudo inyectar el Item Set."
+                "No se pudo inyectar el Item Set.",
             ),
-            daemon=True
+            daemon=True,
         ).start()
 
     def accion_importar_skill_order(self, btn):
-        if not hasattr(self, 'current_skill_order') or not self.current_skill_order:
-            QMessageBox.critical(self, "Error", "No hay ruta de habilidades para exportar.\nSelecciona un campeón primero.")
+        if not hasattr(self, "current_skill_order") or not self.current_skill_order:
+            QMessageBox.critical(
+                self, "Error", "No hay ruta de habilidades para exportar.\nSelecciona un campeón primero."
+            )
             return
         if not self.lcu or not self.lcu.port:
             QMessageBox.critical(self, "Error", "Cliente de LoL no detectado.\nAsegúrate de tener el cliente abierto.")
@@ -574,14 +637,19 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         skill = self.current_skill_order
         threading.Thread(
             target=self._run_lcu_task,
-            args=(lambda: self.lcu.importar_skill_order(skill), btn,
-                  "✅ Subido al Cliente",
-                  "No se pudo subir la ruta de habilidades.\nAsegúrate de estar en selección de campeón."),
-            daemon=True
+            args=(
+                lambda: self.lcu.importar_skill_order(skill),
+                btn,
+                "✅ Subido al Cliente",
+                "No se pudo subir la ruta de habilidades.\nAsegúrate de estar en selección de campeón.",
+            ),
+            daemon=True,
         ).start()
 
     # ================= REDISEÑO DE SETUP & BUILD ANTI-ESTIRAMIENTO =================
-    def renderizar_setup_completo(self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout, mostrar_botones=True, ids_sit=None):
+    def renderizar_setup_completo(
+        self, campeon, ids_runas, ids_spells, ids_start, ids_core, parent_layout, mostrar_botones=True, ids_sit=None
+    ):
         clear_layout(parent_layout)
 
         main_wrap = QWidget()
@@ -619,16 +687,18 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         layout_shards = QHBoxLayout(fr_shards)
         layout_shards.setContentsMargins(0, 5, 0, 5)
         layout_shards.setAlignment(Qt.AlignCenter)
-        
+
         shards_list = [str(i) for i in ids_runas[8:11]] if len(ids_runas) >= 11 else ["5008", "5008", "5011"]
         for stat_id in shards_list:
-            texto, color = STAT_SHARDS.get(stat_id, (f"Shard", "#ffffff"))
+            texto, color = STAT_SHARDS.get(stat_id, ("Shard", "#ffffff"))
             lbl_shard = QLabel(texto)
-            lbl_shard.setFixedSize(80, 25) 
-            lbl_shard.setStyleSheet(f"color: {TEXT_WHITE}; border: 1px solid {color}; border-radius: 4px; font-size: 9px; font-weight: bold;")
+            lbl_shard.setFixedSize(80, 25)
+            lbl_shard.setStyleSheet(
+                f"color: {TEXT_WHITE}; border: 1px solid {color}; border-radius: 4px; font-size: 9px; font-weight: bold;"
+            )
             lbl_shard.setAlignment(Qt.AlignCenter)
             layout_shards.addWidget(lbl_shard)
-            
+
         l_runas.addWidget(fr_shards)
 
         # Botones solo en Radar en Vivo
@@ -647,8 +717,9 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         lbl_s.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 11px;")
         l_spells.addWidget(lbl_s, alignment=Qt.AlignCenter)
 
-        for sp in ids_spells: self.renderizar_icono(str(sp), "spell", l_spells, size=45)
-        
+        for sp in ids_spells:
+            self.renderizar_icono(str(sp), "spell", l_spells, size=45)
+
         if mostrar_botones:
             l_spells.addStretch()
             btn_spells = QPushButton("Exportar")
@@ -660,47 +731,55 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         card_items = QFrame()
         card_items.setObjectName("BuildCard")
         l_items = QVBoxLayout(card_items)
-        
+
         lbl_i1 = QLabel("INICIO")
         lbl_i1.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px;")
         l_items.addWidget(lbl_i1, alignment=Qt.AlignCenter)
-        
+
         w_start = QWidget()
         grid_start = QHBoxLayout(w_start)
-        grid_start.setContentsMargins(0,0,0,0)
+        grid_start.setContentsMargins(0, 0, 0, 0)
         grid_start.setAlignment(Qt.AlignCenter)
         if ids_start:
-            for i_id in ids_start: self.renderizar_icono(i_id, "item", grid_start, 0, 0, size=40)
+            for i_id in ids_start:
+                self.renderizar_icono(i_id, "item", grid_start, 0, 0, size=40)
         l_items.addWidget(w_start)
-        
+
         lbl_i2 = QLabel("CORE BUILD (orden de compra)")
         lbl_i2.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px; padding-top: 10px;")
         l_items.addWidget(lbl_i2, alignment=Qt.AlignCenter)
-        
+
         w_core = QWidget()
         grid_core = QGridLayout(w_core)
-        grid_core.setContentsMargins(0,0,0,0)
+        grid_core.setContentsMargins(0, 0, 0, 0)
         grid_core.setAlignment(Qt.AlignCenter)
         if ids_core:
-            for idx, i_id in enumerate(ids_core): self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45, numero=idx + 1)
+            for idx, i_id in enumerate(ids_core):
+                self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45, numero=idx + 1)
         l_items.addWidget(w_core)
 
         if mostrar_botones:
             l_items.addStretch()
             btn_items = QPushButton("Crear Item Set")
-            btn_items.clicked.connect(lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items, ids_sit))
+            btn_items.clicked.connect(
+                lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items, ids_sit)
+            )
             l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
         wrap_layout.addWidget(card_items)
 
         # ── CARD SITUACIONALES (fila completa, 2 columnas) ───────────────
         if ids_sit:
-            _PRIO_COLOR   = {1: "#ef4444", 2: "#f59e0b", 3: "#7a6f68"}
-            _PRIO_LABEL   = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
-            _CAT_LABEL    = {
-                "anti_heal": "🩸 Anti-curación",   "anti_cc": "⛓ Anti-CC",
-                "anti_ap": "🔮 Anti-AP",           "anti_ad": "⚔ Anti-AD",
-                "anti_tank": "🛡 Anti-tanques",    "penetracion": "🗡 Penetración",
-                "anti_shield": "💠 Anti-escudo",   "supervivencia": "❤ Supervivencia",
+            _PRIO_COLOR = {1: "#ef4444", 2: "#f59e0b", 3: "#7a6f68"}
+            _PRIO_LABEL = {1: "CRÍTICO", 2: "RECOMENDADO", 3: "OPCIONAL"}
+            _CAT_LABEL = {
+                "anti_heal": "🩸 Anti-curación",
+                "anti_cc": "⛓ Anti-CC",
+                "anti_ap": "🔮 Anti-AP",
+                "anti_ad": "⚔ Anti-AD",
+                "anti_tank": "🛡 Anti-tanques",
+                "penetracion": "🗡 Penetración",
+                "anti_shield": "💠 Anti-escudo",
+                "supervivencia": "❤ Supervivencia",
             }
 
             card_sit = QFrame()
@@ -736,17 +815,19 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
                 # Linea 1: badge de prioridad (pildora) + categoria
                 prio_col = _PRIO_COLOR.get(sit["prioridad"], "#7a6f68")
-                cat_txt  = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
+                cat_txt = _CAT_LABEL.get(sit["categoria"], sit["categoria"])
                 lbl_cat = QLabel(
                     f"<span style='background:{prio_col};color:#fff;font-weight:bold;"
-                    f"font-size:8px;'>&nbsp;{_PRIO_LABEL.get(sit['prioridad'],'')}&nbsp;</span>"
-                    f"<span style='color:{TEXT_MUTED};font-size:9px;'>&nbsp; {cat_txt}</span>")
+                    f"font-size:8px;'>&nbsp;{_PRIO_LABEL.get(sit['prioridad'], '')}&nbsp;</span>"
+                    f"<span style='color:{TEXT_MUTED};font-size:9px;'>&nbsp; {cat_txt}</span>"
+                )
                 lbl_cat.setTextFormat(Qt.RichText)
                 txt_l.addWidget(lbl_cat)
 
                 # Linea 2: nombre + coste
                 lbl_name = QLabel(
-                    f"{sit['nombre']}  <span style='color:{TEXT_SUBTLE};font-size:9px;'>{sit['coste']}g</span>")
+                    f"{sit['nombre']}  <span style='color:{TEXT_SUBTLE};font-size:9px;'>{sit['coste']}g</span>"
+                )
                 lbl_name.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: bold;")
                 lbl_name.setTextFormat(Qt.RichText)
                 lbl_name.setWordWrap(True)
@@ -826,6 +907,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     def _crear_icono_engranaje(self, size=20, color="#4a5070"):
         """Crea un icono de engranaje gear con QPainter."""
         import math
+
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
@@ -844,8 +926,6 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
             rad = math.radians(angle)
             x1 = cx + (r_outer + size * 0.08) * math.cos(rad)
             y1 = cy + (r_outer + size * 0.08) * math.sin(rad)
-            x2 = cx + (r_outer - size * 0.08) * math.cos(rad)
-            y2 = cy + (r_outer - size * 0.08) * math.sin(rad)
             painter.setBrush(QColor(color))
             painter.setPen(Qt.NoPen)
             painter.drawRect(x1 - size * 0.04, y1 - size * 0.04, size * 0.08, size * 0.08)
@@ -861,7 +941,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         l.setSpacing(2)
         l.setAlignment(Qt.AlignCenter)
         lbl_titulo = QLabel(titulo)
-        lbl_titulo.setStyleSheet(f"color: #8fa3b8; font-size: 10px; font-weight: bold;")
+        lbl_titulo.setStyleSheet("color: #8fa3b8; font-size: 10px; font-weight: bold;")
         lbl_titulo.setAlignment(Qt.AlignCenter)
         l.addWidget(lbl_titulo)
         lbl_valor = QLabel(valor)
@@ -872,22 +952,38 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
 
     def _rank_to_color(self, tier):
         colors = {
-            "IRON": "#5c5550", "BRONZE": "#8b5e3c", "SILVER": "#9dafbf",
-            "GOLD": "#f0c75e", "PLATINUM": "#4e9999", "EMERALD": "#50c878",
-            "DIAMOND": "#b9a0ff", "MASTER": "#b44cc6", "GRANDMASTER": "#c62828",
-            "CHALLENGER": "#f4c542"
+            "IRON": "#5c5550",
+            "BRONZE": "#8b5e3c",
+            "SILVER": "#9dafbf",
+            "GOLD": "#f0c75e",
+            "PLATINUM": "#4e9999",
+            "EMERALD": "#50c878",
+            "DIAMOND": "#b9a0ff",
+            "MASTER": "#b44cc6",
+            "GRANDMASTER": "#c62828",
+            "CHALLENGER": "#f4c542",
         }
         return colors.get(tier.upper(), TEXT_WHITE)
 
     def _rank_icon(self, tier):
-        icons = {"IRON": "🔩", "BRONZE": "🥉", "SILVER": "🥈", "GOLD": "🥇",
-                 "PLATINUM": "💠", "EMERALD": "💚", "DIAMOND": "💎",
-                 "MASTER": "👑", "GRANDMASTER": "🔥", "CHALLENGER": "🏆"}
+        icons = {
+            "IRON": "🔩",
+            "BRONZE": "🥉",
+            "SILVER": "🥈",
+            "GOLD": "🥇",
+            "PLATINUM": "💠",
+            "EMERALD": "💚",
+            "DIAMOND": "💎",
+            "MASTER": "👑",
+            "GRANDMASTER": "🔥",
+            "CHALLENGER": "🏆",
+        }
         return icons.get(tier.upper(), "❓")
 
     def _inicializar_db_background(self):
         """Inicializa la BD en un hilo de fondo. No toca la UI: solo emite la senal."""
         from src.db_manager import ConexionDBError
+
         try:
             inicializar_db()
             self.db_listo.emit(True)
@@ -942,4 +1038,3 @@ if __name__ == "__main__":
     window = LoLRecommenderApp()
     window.show()
     sys.exit(app.exec())
-

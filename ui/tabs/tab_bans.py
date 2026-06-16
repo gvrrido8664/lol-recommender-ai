@@ -7,10 +7,10 @@ class BansTabMixin:
     def armar_tab_bans(self):
         layout = QVBoxLayout(self.tab_bans)
         layout.setContentsMargins(10, 10, 10, 10)
-        
+
         ctrls = QHBoxLayout()
         ctrls.addWidget(QLabel("Selecciona la Línea a Proteger:"))
-        
+
         self.cbbanrol = QComboBox()
         self.cbbanrol.addItems(UI_ROLES)
         ctrls.addWidget(self.cbbanrol)
@@ -39,26 +39,27 @@ class BansTabMixin:
         if not results:
             QMessageBox.information(self, "Aviso", "No hay datos suficientes para ese rol.")
             return
-            
-        for champ, banrate, partidas in results[:15]: 
+
+        for champ, banrate, partidas in results[:15]:
             row = self.treebans.rowCount()
             self.treebans.insertRow(row)
-            
+
             item_champ = QTableWidgetItem(f"  {champ}")
             icon_path = self.descargar_imagen(champ, "champ")
-            if icon_path: item_champ.setIcon(QIcon(icon_path))
+            if icon_path:
+                item_champ.setIcon(QIcon(icon_path))
             item_champ.setToolTip(f"{champ}\nFrecuencia de pick: {banrate}%\n{partidas} partidas analizadas")
-            
+
             item_ban = QTableWidgetItem(f"{banrate}%")
             item_ban.setForeground(QColor(RED_WR))
-            
+
             self.treebans.setItem(row, 0, item_champ)
             self.treebans.setItem(row, 1, item_ban)
             self.treebans.setItem(row, 2, QTableWidgetItem(str(partidas)))
 
     def _cargar_logros(self):
         try:
-            if not hasattr(self, 'historial_games') or not self.historial_games:
+            if not hasattr(self, "historial_games") or not self.historial_games:
                 return
 
             while self.fr_logros.count():
@@ -96,4 +97,3 @@ class BansTabMixin:
 
         except Exception as e:
             print(f"[Logros] Error: {e}")
-

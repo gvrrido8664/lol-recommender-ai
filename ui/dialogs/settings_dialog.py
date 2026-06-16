@@ -1,9 +1,20 @@
 """Dialogo de configuracion de usuario — 3 pestañas + boton Aplicar."""
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                                QCheckBox, QComboBox, QGroupBox, QTabWidget,
-                                QWidget, QPushButton, QDialogButtonBox, QSlider)
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.design import *
 
@@ -108,8 +119,10 @@ class SettingsDialog(QDialog):
         l = QVBoxLayout(w)
         l.setSpacing(6)
 
-        desc = QLabel("Al elegir un campeon en Champ Select, NEXUS puede\n"
-                       "importar automaticamente estas opciones al cliente de LoL.")
+        desc = QLabel(
+            "Al elegir un campeon en Champ Select, NEXUS puede\n"
+            "importar automaticamente estas opciones al cliente de LoL."
+        )
         desc.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px; padding: 2px 0 8px 0;")
         desc.setWordWrap(True)
         l.addWidget(desc)
@@ -171,12 +184,22 @@ class SettingsDialog(QDialog):
         gl2.setSpacing(2)
 
         gl2.addWidget(QLabel("Durante el draft (Radar):"))
-        self._slider_row(gl2, "radar", "frecuencia_radar", 1500,
-                         [(1000, "Rapida (1s)"), (1500, "Normal (1.5s)"), (3000, "Lenta (3s)")])
+        self._slider_row(
+            gl2,
+            "radar",
+            "frecuencia_radar",
+            1500,
+            [(1000, "Rapida (1s)"), (1500, "Normal (1.5s)"), (3000, "Lenta (3s)")],
+        )
 
         gl2.addWidget(QLabel("Durante la partida:"))
-        self._slider_row(gl2, "partida", "frecuencia_partida", 4000,
-                         [(2000, "Rapida (2s)"), (4000, "Normal (4s)"), (6000, "Lenta (6s)")])
+        self._slider_row(
+            gl2,
+            "partida",
+            "frecuencia_partida",
+            4000,
+            [(2000, "Rapida (2s)"), (4000, "Normal (4s)"), (6000, "Lenta (6s)")],
+        )
 
         l.addWidget(gb2)
         l.addStretch()
@@ -223,9 +246,10 @@ class SettingsDialog(QDialog):
         self.settings = s
         self._applied = True
         # Notificar al parent para que aplique inmediatamente
-        if self.parent() and hasattr(self.parent(), '_aplicar_settings'):
+        if self.parent() and hasattr(self.parent(), "_aplicar_settings"):
             self.parent().user_settings = s
             from ui.helpers import guardar_settings
+
             guardar_settings(s)
             self.parent()._aplicar_settings()
 
@@ -234,8 +258,9 @@ class SettingsDialog(QDialog):
         self.settings = s
         self._applied = True
         from ui.helpers import guardar_settings
+
         guardar_settings(s)
-        if self.parent() and hasattr(self.parent(), '_aplicar_settings'):
+        if self.parent() and hasattr(self.parent(), "_aplicar_settings"):
             self.parent().user_settings = s
             self.parent()._aplicar_settings()
         super().accept()

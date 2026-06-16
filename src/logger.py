@@ -8,8 +8,8 @@ _initialized = False
 
 
 def _get_log_dir():
-    if getattr(sys, 'frozen', False):
-        return os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "LoLRecommender")
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -26,13 +26,9 @@ def init_logging(level=logging.INFO):
     root = logging.getLogger()
     root.setLevel(level)
 
-    fmt = logging.Formatter(
-        '%(asctime)s [%(levelname)-7s] %(name)s: %(message)s',
-        datefmt='%H:%M:%S'
-    )
+    fmt = logging.Formatter("%(asctime)s [%(levelname)-7s] %(name)s: %(message)s", datefmt="%H:%M:%S")
 
-    fh = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3,
-                             encoding='utf-8', delay=True)
+    fh = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8", delay=True)
     fh.setLevel(level)
     fh.setFormatter(fmt)
     root.addHandler(fh)

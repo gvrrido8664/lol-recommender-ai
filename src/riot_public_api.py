@@ -8,8 +8,10 @@ Diseno barato en rate-limit: 3 requests por jugador (puuid + liga + maestria),
 sin el bucle caro de detalles de match-v5. Degrada con elegancia: ante errores,
 key invalida o 429 devuelve None / activa un cooldown, y la UI muestra "—".
 """
-import time
+
 import threading
+import time
+
 import requests
 
 from src.config import cargar_config
@@ -19,17 +21,31 @@ log = get_logger(__name__)
 
 # Codigo de region de la LCU -> (plataforma para league/mastery, routing regional para account)
 _REGION_MAP = {
-    "NA": ("na1", "americas"), "NA1": ("na1", "americas"),
-    "BR": ("br1", "americas"), "BR1": ("br1", "americas"),
-    "LAN": ("la1", "americas"), "LA1": ("la1", "americas"),
-    "LAS": ("la2", "americas"), "LA2": ("la2", "americas"),
-    "OCE": ("oc1", "sea"), "OC1": ("oc1", "sea"),
-    "EUW": ("euw1", "europe"), "EUW1": ("euw1", "europe"),
-    "EUNE": ("eun1", "europe"), "EUN1": ("eun1", "europe"),
-    "TR": ("tr1", "europe"), "TR1": ("tr1", "europe"), "RU": ("ru", "europe"),
-    "KR": ("kr", "asia"), "JP": ("jp1", "asia"), "JP1": ("jp1", "asia"),
-    "PH": ("ph2", "sea"), "SG": ("sg2", "sea"), "TH": ("th2", "sea"),
-    "TW": ("tw2", "sea"), "VN": ("vn2", "sea"),
+    "NA": ("na1", "americas"),
+    "NA1": ("na1", "americas"),
+    "BR": ("br1", "americas"),
+    "BR1": ("br1", "americas"),
+    "LAN": ("la1", "americas"),
+    "LA1": ("la1", "americas"),
+    "LAS": ("la2", "americas"),
+    "LA2": ("la2", "americas"),
+    "OCE": ("oc1", "sea"),
+    "OC1": ("oc1", "sea"),
+    "EUW": ("euw1", "europe"),
+    "EUW1": ("euw1", "europe"),
+    "EUNE": ("eun1", "europe"),
+    "EUN1": ("eun1", "europe"),
+    "TR": ("tr1", "europe"),
+    "TR1": ("tr1", "europe"),
+    "RU": ("ru", "europe"),
+    "KR": ("kr", "asia"),
+    "JP": ("jp1", "asia"),
+    "JP1": ("jp1", "asia"),
+    "PH": ("ph2", "sea"),
+    "SG": ("sg2", "sea"),
+    "TH": ("th2", "sea"),
+    "TW": ("tw2", "sea"),
+    "VN": ("vn2", "sea"),
 }
 
 
@@ -43,8 +59,8 @@ class RiotPublicAPI:
         plat, routing = _REGION_MAP.get((region_code or "").upper(), ("la2", "americas"))
         self.platform = plat
         self.routing = routing
-        self._cache = {}          # puuid -> perfil dict
-        self._puuid_cache = {}    # "name#tag" -> puuid
+        self._cache = {}  # puuid -> perfil dict
+        self._puuid_cache = {}  # "name#tag" -> puuid
         self._lock = threading.Lock()
         self._cooldown_until = 0  # si la API nos limita (429/403), pausamos hasta aqui
 
@@ -83,8 +99,10 @@ class RiotPublicAPI:
         with self._lock:
             if key in self._puuid_cache:
                 return self._puuid_cache[key]
-        url = (f"https://{self.routing}.api.riotgames.com/riot/account/v1/accounts/"
-               f"by-riot-id/{requests.utils.quote(game_name)}/{requests.utils.quote(tag_line)}")
+        url = (
+            f"https://{self.routing}.api.riotgames.com/riot/account/v1/accounts/"
+            f"by-riot-id/{requests.utils.quote(game_name)}/{requests.utils.quote(tag_line)}"
+        )
         data = self._get(url)
         puuid = data.get("puuid") if data else None
         with self._lock:
@@ -107,15 +125,18 @@ class RiotPublicAPI:
             "tier": (entry.get("tier") or "").capitalize(),
             "rank": entry.get("rank", ""),
             "lp": entry.get("leaguePoints", 0),
-            "wins": wins, "losses": losses,
+            "wins": wins,
+            "losses": losses,
             "wr": round(wins * 100.0 / total) if total else None,
             "soloq": entry.get("queueType") == "RANKED_SOLO_5x5",
         }
 
     def obtener_maestria(self, puuid):
         """Campeon de mayor maestria (main): {champion_id, puntos, nivel} o None."""
-        url = (f"https://{self.platform}.api.riotgames.com/lol/champion-mastery/v4/"
-               f"champion-masteries/by-puuid/{puuid}/top?count=1")
+        url = (
+            f"https://{self.platform}.api.riotgames.com/lol/champion-mastery/v4/"
+            f"champion-masteries/by-puuid/{puuid}/top?count=1"
+        )
         data = self._get(url)
         if not data:
             return None

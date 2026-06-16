@@ -10,40 +10,40 @@ from ui.design import *
 def hoja_estilos_global() -> str:
     return f"""
             QMainWindow {{ background-color: {BG_DARK}; }}
-            QWidget {{ 
-                color: {TEXT_WHITE}; 
-                font-family: {FONT_FAMILY}; 
-                font-size: 13px; 
+            QWidget {{
+                color: {TEXT_WHITE};
+                font-family: {FONT_FAMILY};
+                font-size: 13px;
             }}
-            
+
             /* ═══ PANELES / TARJETAS ═══ */
-            QFrame#Panel {{ 
-                background-color: {BG_PANEL}; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 10px; 
-                padding: 14px; 
+            QFrame#Panel {{
+                background-color: {BG_PANEL};
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 10px;
+                padding: 14px;
             }}
             QFrame#Panel:hover {{ border: 1px solid {BORDER_ACCENT}; }}
-            QFrame#CardAlly {{ 
-                background-color: {ALLY_BG}; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 8px; 
+            QFrame#CardAlly {{
+                background-color: {ALLY_BG};
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 8px;
             }}
             QFrame#CardAlly:hover {{ border: 1px solid {ACCENT_TEAL}; }}
-            QFrame#CardEnemy {{ 
-                background-color: {ENEMY_BG}; 
-                border: 1px solid #3b1018; 
-                border-radius: 8px; 
+            QFrame#CardEnemy {{
+                background-color: {ENEMY_BG};
+                border: 1px solid #3b1018;
+                border-radius: 8px;
             }}
             QFrame#CardEnemy:hover {{ border: 1px solid {RED_WR}; }}
-            QFrame#BuildCard {{ 
-                background-color: {BG_CARD}; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 8px; 
+            QFrame#BuildCard {{
+                background-color: {BG_CARD};
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 8px;
             }}
-            QFrame#BuildCard:hover {{ 
-                border: 1px solid {BORDER_ACCENT}; 
-                background-color: #1a1520; 
+            QFrame#BuildCard:hover {{
+                border: 1px solid {BORDER_ACCENT};
+                background-color: #1a1520;
             }}
             QFrame#StatCard {{
                 background-color: {BG_CARD};
@@ -54,142 +54,142 @@ def hoja_estilos_global() -> str:
             QFrame#StatCard:hover {{
                 border: 1px solid {BORDER_ACCENT};
             }}
-            
+
             QLabel {{ border: none; background: transparent; }}
-            
+
             /* ═══ BOTONES ═══ */
-            QPushButton {{ 
-                background-color: {BG_CARD}; 
-                color: {TEXT_WHITE}; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 6px; 
-                padding: 8px 18px; 
-                font-weight: 600; 
-                font-size: 12px; 
+            QPushButton {{
+                background-color: {BG_CARD};
+                color: {TEXT_WHITE};
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-weight: 600;
+                font-size: 12px;
                 letter-spacing: 0.3px;
             }}
-            QPushButton:hover {{ 
-                background-color: {ACCENT_RED}; 
-                color: #ffffff; 
-                border: 1px solid {ACCENT_RED}; 
+            QPushButton:hover {{
+                background-color: {ACCENT_RED};
+                color: #ffffff;
+                border: 1px solid {ACCENT_RED};
             }}
-            QPushButton:pressed {{ 
-                background-color: #be123c; 
+            QPushButton:pressed {{
+                background-color: #be123c;
             }}
-            QPushButton:disabled {{ 
-                background-color: {BG_CARD_HOVER}; 
-                color: {BG_BORDER}; 
-                border: 1px solid #2f2535; 
+            QPushButton:disabled {{
+                background-color: {BG_CARD_HOVER};
+                color: {BG_BORDER};
+                border: 1px solid #2f2535;
             }}
-            
+
             /* ═══ PESTAÑAS ═══ */
-            QTabWidget::pane {{ 
-                border: none; 
-                background-color: {BG_PANEL}; 
-                border-radius: 10px; 
-                border-top-left-radius: 0px; 
+            QTabWidget::pane {{
+                border: none;
+                background-color: {BG_PANEL};
+                border-radius: 10px;
+                border-top-left-radius: 0px;
                 padding: 4px;
             }}
-            QTabBar::tab {{ 
-                background: transparent; 
-                color: {TEXT_MUTED}; 
-                padding: 10px 24px; 
-                border: none; 
-                border-bottom: 2px solid transparent; 
-                margin-right: 2px; 
-                font-weight: 500; 
-                font-size: 12px; 
+            QTabBar::tab {{
+                background: transparent;
+                color: {TEXT_MUTED};
+                padding: 10px 24px;
+                border: none;
+                border-bottom: 2px solid transparent;
+                margin-right: 2px;
+                font-weight: 500;
+                font-size: 12px;
                 letter-spacing: 0.5px;
                 text-transform: uppercase;
             }}
-            QTabBar::tab:selected {{ 
-                color: {ACCENT_RED}; 
+            QTabBar::tab:selected {{
+                color: {ACCENT_RED};
                 border-bottom: 2px solid {ACCENT_RED};
                 font-weight: 700;
             }}
-            QTabBar::tab:hover:!selected {{ 
-                color: {TEXT_WHITE}; 
+            QTabBar::tab:hover:!selected {{
+                color: {TEXT_WHITE};
                 border-bottom: 2px solid {TEXT_MUTED};
             }}
-            
+
             /* ═══ COMBOBOX ═══ */
-            QComboBox {{ 
-                background-color: {BG_CARD}; 
-                color: {TEXT_WHITE}; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                padding: 7px 12px; 
-                border-radius: 6px; 
-                font-size: 12px; 
+            QComboBox {{
+                background-color: {BG_CARD};
+                color: {TEXT_WHITE};
+                border: 1px solid {BORDER_SUBTLE};
+                padding: 7px 12px;
+                border-radius: 6px;
+                font-size: 12px;
                 min-height: 20px;
             }}
             QComboBox:hover {{ border: 1px solid {BORDER_ACCENT}; }}
             QComboBox:focus {{ border: 1px solid {ACCENT_RED}; }}
-            QComboBox::drop-down {{ 
-                border: none; 
-                width: 24px; 
+            QComboBox::drop-down {{
+                border: none;
+                width: 24px;
             }}
-            QComboBox QAbstractItemView {{ 
-                background-color: {BG_PANEL}; 
-                color: {TEXT_WHITE}; 
-                selection-background-color: {ACCENT_RED}; 
-                selection-color: #ffffff; 
+            QComboBox QAbstractItemView {{
+                background-color: {BG_PANEL};
+                color: {TEXT_WHITE};
+                selection-background-color: {ACCENT_RED};
+                selection-color: #ffffff;
                 border: 1px solid {BORDER_SUBTLE};
                 border-radius: 4px;
                 outline: 0;
                 padding: 4px;
             }}
-            
+
             /* ═══ TABLAS ═══ */
-            QTableWidget {{ 
-                background-color: {BG_PANEL}; 
-                alternate-background-color: {BG_CARD}; 
-                color: {TEXT_WHITE}; 
-                gridline-color: transparent; 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 10px; 
-                font-size: 12px; 
-                outline: 0; 
+            QTableWidget {{
+                background-color: {BG_PANEL};
+                alternate-background-color: {BG_CARD};
+                color: {TEXT_WHITE};
+                gridline-color: transparent;
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 10px;
+                font-size: 12px;
+                outline: 0;
             }}
-            QTableWidget::item {{ 
-                padding: 8px 12px; 
-                border-bottom: 1px solid #1a2236; 
+            QTableWidget::item {{
+                padding: 8px 12px;
+                border-bottom: 1px solid #1a2236;
             }}
-            QTableWidget::item:selected {{ 
-                background-color: {ACCENT_RED}; 
-                color: #ffffff; 
+            QTableWidget::item:selected {{
+                background-color: {ACCENT_RED};
+                color: #ffffff;
             }}
-            QTableWidget::item:hover {{ 
-                background-color: #211a28; 
+            QTableWidget::item:hover {{
+                background-color: #211a28;
             }}
-            QHeaderView::section {{ 
-                background-color: {BG_CARD}; 
-                color: {TEXT_MUTED}; 
-                font-weight: 700; 
-                padding: 12px 12px; 
-                border: none; 
-                border-bottom: 2px solid {BORDER_ACCENT}; 
-                font-size: 11px; 
+            QHeaderView::section {{
+                background-color: {BG_CARD};
+                color: {TEXT_MUTED};
+                font-weight: 700;
+                padding: 12px 12px;
+                border: none;
+                border-bottom: 2px solid {BORDER_ACCENT};
+                font-size: 11px;
                 letter-spacing: 0.8px;
                 text-transform: uppercase;
             }}
-            
+
             /* ═══ BARRA DE PROGRESO ═══ */
-            QProgressBar {{ 
-                border: 1px solid {BORDER_SUBTLE}; 
-                border-radius: 6px; 
-                text-align: center; 
-                background-color: {BG_CARD}; 
-                color: {TEXT_WHITE}; 
-                font-weight: 700; 
-                font-size: 11px; 
+            QProgressBar {{
+                border: 1px solid {BORDER_SUBTLE};
+                border-radius: 6px;
+                text-align: center;
+                background-color: {BG_CARD};
+                color: {TEXT_WHITE};
+                font-weight: 700;
+                font-size: 11px;
                 height: 18px;
             }}
-            QProgressBar::chunk {{ 
+            QProgressBar::chunk {{
                 background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {ACCENT_RED}, stop:1 {HOVER_GLOW});
-                border-radius: 5px; 
+                border-radius: 5px;
             }}
-            
+
             /* ═══ SCROLLBAR ═══ */
             QScrollBar:vertical {{
                 background: transparent;
@@ -238,7 +238,7 @@ def hoja_estilos_global() -> str:
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
                 width: 0px;
             }}
-            
+
             /* ═══ TOOLTIP ═══ */
             QToolTip {{
                 background-color: {BG_PANEL};
@@ -248,7 +248,7 @@ def hoja_estilos_global() -> str:
                 border-radius: 6px;
                 font-size: 11px;
             }}
-            
+
             /* ═══ CHECKBOX ═══ */
             QCheckBox {{
                 color: {TEXT_WHITE};
@@ -269,7 +269,7 @@ def hoja_estilos_global() -> str:
             QCheckBox::indicator:hover {{
                 border: 1px solid {BORDER_ACCENT};
             }}
-            
+
             /* ═══ SPINBOX / SLIDER ═══ */
             QSpinBox {{
                 background-color: {BG_CARD};

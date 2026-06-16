@@ -14,36 +14,41 @@ def _resolver_champ(cid):
 
 
 LOGROS_DEFINICIONES = [
-    {"id": "hot_streak", "nombre": "En Rachaaa", "emoji": "\U0001f525",
-     "desc": "5 victorias seguidas"},
-    {"id": "solido", "nombre": "Solido", "emoji": "\U0001f451",
-     "desc": "KDA > 4 en 5 de las ultimas 10 partidas"},
-    {"id": "pentakiller", "nombre": "Pentakiller", "emoji": "\u2694\ufe0f",
-     "desc": "Consigue un pentakill"},
-    {"id": "inmortal", "nombre": "Inmortal", "emoji": "\U0001f6e1\ufe0f",
-     "desc": "0 muertes en una partida"},
-    {"id": "farmer", "nombre": "Granjero", "emoji": "\U0001f33e",
-     "desc": "10 CS por minuto en una partida (+20 min)"},
-    {"id": "versatil", "nombre": "Versatil", "emoji": "\U0001f4da",
-     "desc": "7 campeones distintos con 2 o mas partidas cada uno"},
-    {"id": "otp", "nombre": "One Trick Pony", "emoji": "\U0001f984",
-     "desc": "Mismo campeon en 10 de las ultimas 15 partidas"},
-    {"id": "sin_fronteras", "nombre": "Sin Fronteras", "emoji": "\U0001f30d",
-     "desc": "Jugar en los 5 roles"},
-    {"id": "sanguinario", "nombre": "Sanguinario", "emoji": "\U0001f480",
-     "desc": "15 o mas kills en una partida"},
-    {"id": "rey_grieta", "nombre": "Rey de la Grieta", "emoji": "\U0001f3c6",
-     "desc": "60%+ winrate en 15+ partidas"},
-    {"id": "relampago", "nombre": "Relampago", "emoji": "\u26a1",
-     "desc": "Victoria en menos de 20 minutos"},
-    {"id": "precision", "nombre": "Precision", "emoji": "\U0001f3af",
-     "desc": "10+ kills y 0 muertes en una partida"},
-    {"id": "resiliente", "nombre": "Resiliente", "emoji": "\U0001f504",
-     "desc": "Ganar justo despues de 3 derrotas seguidas"},
-    {"id": "en_crecimiento", "nombre": "En Crecimiento", "emoji": "\U0001f331",
-     "desc": "Mejorar tu KDA promedio: 10 recientes vs 10 anteriores"},
-    {"id": "triple_oro", "nombre": "Triple Oro", "emoji": "\U0001f3c5",
-     "desc": "Consigue un triple kill"},
+    {"id": "hot_streak", "nombre": "En Rachaaa", "emoji": "\U0001f525", "desc": "5 victorias seguidas"},
+    {"id": "solido", "nombre": "Solido", "emoji": "\U0001f451", "desc": "KDA > 4 en 5 de las ultimas 10 partidas"},
+    {"id": "pentakiller", "nombre": "Pentakiller", "emoji": "\u2694\ufe0f", "desc": "Consigue un pentakill"},
+    {"id": "inmortal", "nombre": "Inmortal", "emoji": "\U0001f6e1\ufe0f", "desc": "0 muertes en una partida"},
+    {"id": "farmer", "nombre": "Granjero", "emoji": "\U0001f33e", "desc": "10 CS por minuto en una partida (+20 min)"},
+    {
+        "id": "versatil",
+        "nombre": "Versatil",
+        "emoji": "\U0001f4da",
+        "desc": "7 campeones distintos con 2 o mas partidas cada uno",
+    },
+    {
+        "id": "otp",
+        "nombre": "One Trick Pony",
+        "emoji": "\U0001f984",
+        "desc": "Mismo campeon en 10 de las ultimas 15 partidas",
+    },
+    {"id": "sin_fronteras", "nombre": "Sin Fronteras", "emoji": "\U0001f30d", "desc": "Jugar en los 5 roles"},
+    {"id": "sanguinario", "nombre": "Sanguinario", "emoji": "\U0001f480", "desc": "15 o mas kills en una partida"},
+    {"id": "rey_grieta", "nombre": "Rey de la Grieta", "emoji": "\U0001f3c6", "desc": "60%+ winrate en 15+ partidas"},
+    {"id": "relampago", "nombre": "Relampago", "emoji": "\u26a1", "desc": "Victoria en menos de 20 minutos"},
+    {"id": "precision", "nombre": "Precision", "emoji": "\U0001f3af", "desc": "10+ kills y 0 muertes en una partida"},
+    {
+        "id": "resiliente",
+        "nombre": "Resiliente",
+        "emoji": "\U0001f504",
+        "desc": "Ganar justo despues de 3 derrotas seguidas",
+    },
+    {
+        "id": "en_crecimiento",
+        "nombre": "En Crecimiento",
+        "emoji": "\U0001f331",
+        "desc": "Mejorar tu KDA promedio: 10 recientes vs 10 anteriores",
+    },
+    {"id": "triple_oro", "nombre": "Triple Oro", "emoji": "\U0001f3c5", "desc": "Consigue un triple kill"},
 ]
 
 
@@ -147,11 +152,16 @@ def evaluar_logros(games, daily_counts=None):
             roles.add(r)
     role_groups = set()
     for r in roles:
-        if r in ("TOP",): role_groups.add("TOP")
-        elif r in ("JUNGLE", "JUNGLA"): role_groups.add("JUNGLE")
-        elif r in ("MIDDLE", "MID"): role_groups.add("MIDDLE")
-        elif r in ("BOTTOM", "BOT", "ADC"): role_groups.add("BOTTOM")
-        elif r in ("UTILITY", "SUPPORT"): role_groups.add("UTILITY")
+        if r in ("TOP",):
+            role_groups.add("TOP")
+        elif r in ("JUNGLE", "JUNGLA"):
+            role_groups.add("JUNGLE")
+        elif r in ("MIDDLE", "MID"):
+            role_groups.add("MIDDLE")
+        elif r in ("BOTTOM", "BOT", "ADC"):
+            role_groups.add("BOTTOM")
+        elif r in ("UTILITY", "SUPPORT"):
+            role_groups.add("UTILITY")
     logros["sin_fronteras"] = len(role_groups) >= 5
 
     # 9. Sanguinario: 15+ kills in a game
@@ -164,29 +174,26 @@ def evaluar_logros(games, daily_counts=None):
         logros["rey_grieta"] = (wins / total_wr_games) >= 0.6
 
     # 11. Relámpago: win in < 20 min
-    logros["relampago"] = any(
-        g.get("win") and (g.get("gameDuration", 9999) or 9999) < 1200
-        for g in recent
-    )
+    logros["relampago"] = any(g.get("win") and (g.get("gameDuration", 9999) or 9999) < 1200 for g in recent)
 
     # 12. Precisión: 10+ kills and 0 deaths
-    logros["precision"] = any(
-        (g.get("kills", 0) or 0) >= 10 and (g.get("deaths", 1) or 0) == 0
-        for g in recent
-    )
+    logros["precision"] = any((g.get("kills", 0) or 0) >= 10 and (g.get("deaths", 1) or 0) == 0 for g in recent)
 
     # 13. Resiliente: win right after 3 consecutive losses (chronological: L,L,L,W)
     if len(flat_games) >= 4:
         for i in range(3, len(flat_games)):
-            if (not flat_games[i - 3].get("win", True) and
-                not flat_games[i - 2].get("win", True) and
-                not flat_games[i - 1].get("win", True) and
-                flat_games[i].get("win", False)):
+            if (
+                not flat_games[i - 3].get("win", True)
+                and not flat_games[i - 2].get("win", True)
+                and not flat_games[i - 1].get("win", True)
+                and flat_games[i].get("win", False)
+            ):
                 logros["resiliente"] = True
                 break
 
     # 14. En Crecimiento: better KDA in last 10 vs previous 10
     if len(recent) >= 20:
+
         def _avg_kda(gs):
             total = 0
             count = 0
@@ -197,6 +204,7 @@ def evaluar_logros(games, daily_counts=None):
                 total += (k + a) / d
                 count += 1
             return total / max(1, count)
+
         new_kda = _avg_kda(recent[:10])
         old_kda = _avg_kda(recent[10:20])
         logros["en_crecimiento"] = new_kda > old_kda
@@ -287,10 +295,14 @@ def generar_insights_jugador(games):
     role_stats = {}
     for g in flat:
         r = (g.get("role") or g.get("lane") or "").upper()
-        if r in ("JUNGLA",): r = "JUNGLE"
-        if r in ("MID",): r = "MIDDLE"
-        if r in ("BOT", "ADC"): r = "BOTTOM"
-        if r in ("SUPPORT",): r = "UTILITY"
+        if r in ("JUNGLA",):
+            r = "JUNGLE"
+        if r in ("MID",):
+            r = "MIDDLE"
+        if r in ("BOT", "ADC"):
+            r = "BOTTOM"
+        if r in ("SUPPORT",):
+            r = "UTILITY"
         if r not in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"):
             continue
         if r not in role_stats:
@@ -317,30 +329,65 @@ def generar_insights_jugador(games):
         otros_wr = round(otros_w / otros_p * 100, 1) if otros_p else 0
         gap = round(mc_wr - otros_wr, 1)
         if gap > 15 and otros_p >= 5:
-            _add({"icono": "🎯", "texto": f"Tu pool: {mc_name} {mc_wr}% vs resto {otros_wr}%",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": abs(gap)})
+            _add(
+                {
+                    "icono": "🎯",
+                    "texto": f"Tu pool: {mc_name} {mc_wr}% vs resto {otros_wr}%",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": abs(gap),
+                }
+            )
         elif gap < -10 and mc_data["p"] > otros_p / max(len(otros), 1):
-            _add({"icono": "🎯", "texto": f"Tu main {mc_name} rinde menos que tu pool",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": abs(gap)})
+            _add(
+                {
+                    "icono": "🎯",
+                    "texto": f"Tu main {mc_name} rinde menos que tu pool",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": abs(gap),
+                }
+            )
         elif len(champ_stats) <= 2 and mc_data["p"] >= total * 0.7:
-            _add({"icono": "🎯", "texto": f"{mc_name} OTP — {mc_wr}% en {mc_data['p']} partidas",
-                   "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-                   "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 10})
+            _add(
+                {
+                    "icono": "🎯",
+                    "texto": f"{mc_name} OTP — {mc_wr}% en {mc_data['p']} partidas",
+                    "tipo": "neutral",
+                    "color": _TIPOS_COLOR["neutral"][0],
+                    "fondo": _TIPOS_COLOR["neutral"][1],
+                    "relevancia": 10,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 2. PROFUNDIDAD DE POOL
     # ────────────────────────────────────────────────
     buenos = sum(1 for d in champ_stats.values() if d["p"] >= 3 and d["w"] / d["p"] >= 0.5)
     if len(champ_stats) >= 4 and buenos >= 3:
-        _add({"icono": "📚", "texto": f"Pool sólido: {buenos} campeones con WR ≥50%",
-               "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-               "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": buenos * 3})
+        _add(
+            {
+                "icono": "📚",
+                "texto": f"Pool sólido: {buenos} campeones con WR ≥50%",
+                "tipo": "positivo",
+                "color": _TIPOS_COLOR["positivo"][0],
+                "fondo": _TIPOS_COLOR["positivo"][1],
+                "relevancia": buenos * 3,
+            }
+        )
     elif len(champ_stats) >= 4 and buenos <= 1 and mc_data["p"] >= 5:
-        _add({"icono": "📚", "texto": f"Pool débil: solo {mc_name} tiene WR positivo",
-               "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-               "fondo": _TIPOS_COLOR["warning"][1], "relevancia": 8})
+        _add(
+            {
+                "icono": "📚",
+                "texto": f"Pool débil: solo {mc_name} tiene WR positivo",
+                "tipo": "warning",
+                "color": _TIPOS_COLOR["warning"][0],
+                "fondo": _TIPOS_COLOR["warning"][1],
+                "relevancia": 8,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 3. CS → WR
@@ -354,9 +401,16 @@ def generar_insights_jugador(games):
         wr_lo = round(sum(1 for _, w in lo if w) / len(lo) * 100, 1) if lo else 0
         diff = round(wr_hi - wr_lo, 1)
         if diff > 15:
-            _add({"icono": "🌾", "texto": f"+{median_cs:.0f} CS/min → {wr_hi}% WR, bajo → {wr_lo}%",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": diff})
+            _add(
+                {
+                    "icono": "🌾",
+                    "texto": f"+{median_cs:.0f} CS/min → {wr_hi}% WR, bajo → {wr_lo}%",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": diff,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 4. TILT CASCADE: WR tras derrotas
@@ -365,8 +419,10 @@ def generar_insights_jugador(games):
     loss_run = 0
     for i, g in enumerate(recent):
         if i == 0:
-            if not g.get("win"): loss_run = 1
-            else: loss_run = 0
+            if not g.get("win"):
+                loss_run = 1
+            else:
+                loss_run = 0
             continue
         if loss_run >= 2:
             after_2loss.append(g.get("win", False))
@@ -378,9 +434,16 @@ def generar_insights_jugador(games):
         wr_tilt = round(sum(1 for w in after_2loss if w) / len(after_2loss) * 100, 1)
         diff_tilt = round(wr_total - wr_tilt, 1)
         if diff_tilt > 12:
-            _add({"icono": "🧘", "texto": f"Tras 2 derrotas tu WR baja a {wr_tilt}% (−{diff_tilt}%)",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": diff_tilt})
+            _add(
+                {
+                    "icono": "🧘",
+                    "texto": f"Tras 2 derrotas tu WR baja a {wr_tilt}% (−{diff_tilt}%)",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": diff_tilt,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 5. DEATH GAP: muertes en W vs L
@@ -392,13 +455,27 @@ def generar_insights_jugador(games):
         avg_dl = round(sum(d_loss) / len(d_loss), 1)
         gap_death = round(avg_dl - avg_dw, 1)
         if gap_death >= 5:
-            _add({"icono": "💀",                    "texto": f"Mueres {avg_dl}x en L vs {avg_dw}x en W — juega seguro al perder",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": gap_death * 2})
+            _add(
+                {
+                    "icono": "💀",
+                    "texto": f"Mueres {avg_dl}x en L vs {avg_dw}x en W — juega seguro al perder",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": gap_death * 2,
+                }
+            )
         elif avg_dw <= 3 and gap_death <= 2:
-            _add({"icono": "🛡️", "texto": f"Solo {avg_dw} muertes/partida en victorias",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": 6})
+            _add(
+                {
+                    "icono": "🛡️",
+                    "texto": f"Solo {avg_dw} muertes/partida en victorias",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": 6,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 6. COMEBACK
@@ -408,13 +485,27 @@ def generar_insights_jugador(games):
         cb_w = sum(1 for g in behind if g.get("win"))
         cb_wr = round(cb_w / len(behind) * 100, 1)
         if cb_wr >= 40:
-            _add({"icono": "🔄", "texto": f"Buen comeback: {cb_wr}% WR partiendo de KDA <1.5",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": cb_wr})
+            _add(
+                {
+                    "icono": "🔄",
+                    "texto": f"Buen comeback: {cb_wr}% WR partiendo de KDA <1.5",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": cb_wr,
+                }
+            )
         elif cb_wr <= 20:
-            _add({"icono": "🔄", "texto": f"Mal comeback: solo {cb_wr}% WR cuando vas mal",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": 20 - cb_wr})
+            _add(
+                {
+                    "icono": "🔄",
+                    "texto": f"Mal comeback: solo {cb_wr}% WR cuando vas mal",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": 20 - cb_wr,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 7. CLOSER
@@ -424,13 +515,27 @@ def generar_insights_jugador(games):
         cl_w = sum(1 for g in ahead if g.get("win"))
         cl_wr = round(cl_w / len(ahead) * 100, 1)
         if cl_wr >= 85:
-            _add({"icono": "🏆", "texto": f"Buen closer: {cl_wr}% WR con KDA >3.0",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": cl_wr})
+            _add(
+                {
+                    "icono": "🏆",
+                    "texto": f"Buen closer: {cl_wr}% WR con KDA >3.0",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": cl_wr,
+                }
+            )
         elif cl_wr <= 65:
-            _add({"icono": "🏆", "texto": f"Mal closer: solo {cl_wr}% WR cuando vas bien",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": 65 - cl_wr})
+            _add(
+                {
+                    "icono": "🏆",
+                    "texto": f"Mal closer: solo {cl_wr}% WR cuando vas bien",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": 65 - cl_wr,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 8. MEJOR ROL
@@ -442,9 +547,16 @@ def generar_insights_jugador(games):
         best_wr = round(best_d["w"] / best_d["p"] * 100, 1) if best_d["p"] else 0
         worst_wr = round(worst_d["w"] / worst_d["p"] * 100, 1) if worst_d["p"] else 0
         if best_wr - worst_wr > 15 and best_d["p"] >= 3:
-            _add({"icono": "📍", "texto": f"Mejor rol: {best_r} ({best_wr}%) vs {worst_r} ({worst_wr}%)",
-                   "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-                   "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": best_wr - worst_wr})
+            _add(
+                {
+                    "icono": "📍",
+                    "texto": f"Mejor rol: {best_r} ({best_wr}%) vs {worst_r} ({worst_wr}%)",
+                    "tipo": "neutral",
+                    "color": _TIPOS_COLOR["neutral"][0],
+                    "fondo": _TIPOS_COLOR["neutral"][1],
+                    "relevancia": best_wr - worst_wr,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 9. RACHA ACTUAL
@@ -457,13 +569,27 @@ def generar_insights_jugador(games):
         else:
             break
     if streak >= 5 and streak_w:
-        _add({"icono": "🔥", "texto": f"¡En racha! {streak} victorias seguidas",
-               "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-               "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": streak * 3})
+        _add(
+            {
+                "icono": "🔥",
+                "texto": f"¡En racha! {streak} victorias seguidas",
+                "tipo": "positivo",
+                "color": _TIPOS_COLOR["positivo"][0],
+                "fondo": _TIPOS_COLOR["positivo"][1],
+                "relevancia": streak * 3,
+            }
+        )
     elif streak >= 3 and not streak_w:
-        _add({"icono": "❄️",                    "texto": f"{streak} derrotas seguidas — toma un descanso",
-               "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-               "fondo": _TIPOS_COLOR["warning"][1], "relevancia": streak * 3})
+        _add(
+            {
+                "icono": "❄️",
+                "texto": f"{streak} derrotas seguidas — toma un descanso",
+                "tipo": "warning",
+                "color": _TIPOS_COLOR["warning"][0],
+                "fondo": _TIPOS_COLOR["warning"][1],
+                "relevancia": streak * 3,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 10. INCONSISTENCIA KDA
@@ -471,16 +597,30 @@ def generar_insights_jugador(games):
     kdas = [_kda(g) for g in flat]
     avg_kda = sum(kdas) / len(kdas)
     var_kda = sum((k - avg_kda) ** 2 for k in kdas) / len(kdas)
-    std_kda = round(var_kda ** 0.5, 1)
+    std_kda = round(var_kda**0.5, 1)
     if len(flat) >= 10:
         if std_kda > avg_kda * 0.9:
-            _add({"icono": "🎢", "texto": f"KDA muy irregular (σ={std_kda}) — días buenos y malos",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": std_kda})
+            _add(
+                {
+                    "icono": "🎢",
+                    "texto": f"KDA muy irregular (σ={std_kda}) — días buenos y malos",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": std_kda,
+                }
+            )
         elif std_kda < avg_kda * 0.4 and avg_kda >= 2.5:
-            _add({"icono": "📏", "texto": f"KDA muy consistente (σ={std_kda}) — rendimiento parejo",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": 7})
+            _add(
+                {
+                    "icono": "📏",
+                    "texto": f"KDA muy consistente (σ={std_kda}) — rendimiento parejo",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": 7,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 11. WR TRAS VICTORIA (momentum)
@@ -492,9 +632,16 @@ def generar_insights_jugador(games):
     if len(after_win) >= 5:
         wr_aw = round(sum(1 for w in after_win if w) / len(after_win) * 100, 1)
         if wr_aw >= 65:
-            _add({"icono": "⚡", "texto": f"Momentum: {wr_aw}% WR tras una victoria",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_aw - 50})
+            _add(
+                {
+                    "icono": "⚡",
+                    "texto": f"Momentum: {wr_aw}% WR tras una victoria",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": wr_aw - 50,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 12. PENTAKILL / TRIPLE
@@ -502,13 +649,27 @@ def generar_insights_jugador(games):
     penta = sum(1 for g in flat if g.get("pentaKills", 0))
     triple = sum(1 for g in flat if g.get("tripleKills", 0))
     if penta > 0:
-        _add({"icono": "⭐", "texto": f"¡{penta} pentakill{'s' if penta > 1 else ''}! — capacidad de carry",
-               "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-               "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": penta * 5 + 5})
+        _add(
+            {
+                "icono": "⭐",
+                "texto": f"¡{penta} pentakill{'s' if penta > 1 else ''}! — capacidad de carry",
+                "tipo": "positivo",
+                "color": _TIPOS_COLOR["positivo"][0],
+                "fondo": _TIPOS_COLOR["positivo"][1],
+                "relevancia": penta * 5 + 5,
+            }
+        )
     elif triple >= len(flat) * 0.3 and len(flat) >= 10:
-        _add({"icono": "⚔️", "texto": f"{triple} triple kills — buen teamfighter",
-               "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-               "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": 6})
+        _add(
+            {
+                "icono": "⚔️",
+                "texto": f"{triple} triple kills — buen teamfighter",
+                "tipo": "positivo",
+                "color": _TIPOS_COLOR["positivo"][0],
+                "fondo": _TIPOS_COLOR["positivo"][1],
+                "relevancia": 6,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 13. DEPENDENCIA: ¿carry o facilitador?
@@ -517,13 +678,27 @@ def generar_insights_jugador(games):
     if len(flat) >= 10:
         pct_carry = round(high_kp / len(flat) * 100, 1)
         if pct_carry >= 50:
-            _add({"icono": "👑",                    "texto": f"Eres el carry en {pct_carry}% de tus partidas",
-                   "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-                   "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 7})
+            _add(
+                {
+                    "icono": "👑",
+                    "texto": f"Eres el carry en {pct_carry}% de tus partidas",
+                    "tipo": "neutral",
+                    "color": _TIPOS_COLOR["neutral"][0],
+                    "fondo": _TIPOS_COLOR["neutral"][1],
+                    "relevancia": 7,
+                }
+            )
         elif pct_carry <= 25 and wr_total >= 50:
-            _add({"icono": "🤝",                    "texto": f"Juegas para el equipo — carry solo en {pct_carry}% de games",
-                   "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-                   "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 5})
+            _add(
+                {
+                    "icono": "🤝",
+                    "texto": f"Juegas para el equipo — carry solo en {pct_carry}% de games",
+                    "tipo": "neutral",
+                    "color": _TIPOS_COLOR["neutral"][0],
+                    "fondo": _TIPOS_COLOR["neutral"][1],
+                    "relevancia": 5,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 14. EARLY GAME vs LATE GAME
@@ -534,13 +709,27 @@ def generar_insights_jugador(games):
         wr_short = round(sum(1 for g in short if g.get("win")) / len(short) * 100, 1)
         wr_long = round(sum(1 for g in long_g if g.get("win")) / len(long_g) * 100, 1)
         if wr_short - wr_long > 20:
-            _add({"icono": "⚡",                    "texto": f"Early game: {wr_short}% vs late: {wr_long}% — cierra rápido",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_short - wr_long})
+            _add(
+                {
+                    "icono": "⚡",
+                    "texto": f"Early game: {wr_short}% vs late: {wr_long}% — cierra rápido",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": wr_short - wr_long,
+                }
+            )
         elif wr_long - wr_short > 20:
-            _add({"icono": "🐢",                    "texto": f"Late game: {wr_long}% vs early: {wr_short}% — juega seguro al inicio",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_long - wr_short})
+            _add(
+                {
+                    "icono": "🐢",
+                    "texto": f"Late game: {wr_long}% vs early: {wr_short}% — juega seguro al inicio",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": wr_long - wr_short,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 15. CHAMPION MASTERY GAP
@@ -554,9 +743,16 @@ def generar_insights_jugador(games):
                 wr1 = round(c1d["w"] / c1d["p"] * 100, 1)
                 wr2 = round(c2d["w"] / c2d["p"] * 100, 1)
                 if abs(wr1 - wr2) > 20:
-                    _add({"icono": "📉", "texto": f"{c1} ({wr1}%) vs {c2} ({wr2}%) — gap de {abs(wr1 - wr2)}%",
-                           "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                           "fondo": _TIPOS_COLOR["warning"][1], "relevancia": abs(wr1 - wr2)})
+                    _add(
+                        {
+                            "icono": "📉",
+                            "texto": f"{c1} ({wr1}%) vs {c2} ({wr2}%) — gap de {abs(wr1 - wr2)}%",
+                            "tipo": "warning",
+                            "color": _TIPOS_COLOR["warning"][0],
+                            "fondo": _TIPOS_COLOR["warning"][1],
+                            "relevancia": abs(wr1 - wr2),
+                        }
+                    )
 
     # ────────────────────────────────────────────────
     # 16. FLEXIBILIDAD DE ROLES
@@ -564,47 +760,86 @@ def generar_insights_jugador(games):
     roles_set = set()
     for g in flat:
         r = (g.get("role") or g.get("lane") or "").upper()
-        if r in ("JUNGLA",): r = "JUNGLE"
-        if r in ("MID",): r = "MIDDLE"
-        if r in ("BOT", "ADC"): r = "BOTTOM"
-        if r in ("SUPPORT",): r = "UTILITY"
+        if r in ("JUNGLA",):
+            r = "JUNGLE"
+        if r in ("MID",):
+            r = "MIDDLE"
+        if r in ("BOT", "ADC"):
+            r = "BOTTOM"
+        if r in ("SUPPORT",):
+            r = "UTILITY"
         if r in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"):
             roles_set.add(r)
     if len(roles_set) >= 4:
-        _add({"icono": "🎭",                    "texto": f"Juegas {len(roles_set)} roles — flex pick",
-               "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-               "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": len(roles_set) * 2})
+        _add(
+            {
+                "icono": "🎭",
+                "texto": f"Juegas {len(roles_set)} roles — flex pick",
+                "tipo": "neutral",
+                "color": _TIPOS_COLOR["neutral"][0],
+                "fondo": _TIPOS_COLOR["neutral"][1],
+                "relevancia": len(roles_set) * 2,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 17. INMORTALIDAD
     # ────────────────────────────────────────────────
     immortal = sum(1 for g in flat if (g.get("deaths", 1) or 0) == 0)
     if immortal >= 2 and len(flat) >= 10:
-        _add({"icono": "😇", "texto": f"{immortal} partidas sin morir — buen posicionamiento",
-               "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-               "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": immortal * 2 + 5})
+        _add(
+            {
+                "icono": "😇",
+                "texto": f"{immortal} partidas sin morir — buen posicionamiento",
+                "tipo": "positivo",
+                "color": _TIPOS_COLOR["positivo"][0],
+                "fondo": _TIPOS_COLOR["positivo"][1],
+                "relevancia": immortal * 2 + 5,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 18. SED DE SANGRE
     # ────────────────────────────────────────────────
     high_kill = sum(1 for g in flat if (g.get("kills", 0) or 0) >= 12)
     if high_kill >= len(flat) * 0.2 and len(flat) >= 10:
-        _add({"icono": "💢", "texto": f"{high_kill} partidas con 12+ kills — agresivo",
-               "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
-               "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 6})
+        _add(
+            {
+                "icono": "💢",
+                "texto": f"{high_kill} partidas con 12+ kills — agresivo",
+                "tipo": "neutral",
+                "color": _TIPOS_COLOR["neutral"][0],
+                "fondo": _TIPOS_COLOR["neutral"][1],
+                "relevancia": 6,
+            }
+        )
 
     # ────────────────────────────────────────────────
     # 19. WR GENERAL BAJO / ALTO
     # ────────────────────────────────────────────────
     if total >= 15:
         if wr_total >= 65:
-            _add({"icono": "🚀", "texto": f"WR global: {wr_total}% — estás por encima del elo",
-                   "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
-                   "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_total})
+            _add(
+                {
+                    "icono": "🚀",
+                    "texto": f"WR global: {wr_total}% — estás por encima del elo",
+                    "tipo": "positivo",
+                    "color": _TIPOS_COLOR["positivo"][0],
+                    "fondo": _TIPOS_COLOR["positivo"][1],
+                    "relevancia": wr_total,
+                }
+            )
         elif wr_total <= 40:
-            _add({"icono": "📉",                    "texto": f"WR global: {wr_total}% — necesitas ajustar algo",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": 40 - wr_total + 10})
+            _add(
+                {
+                    "icono": "📉",
+                    "texto": f"WR global: {wr_total}% — necesitas ajustar algo",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": 40 - wr_total + 10,
+                }
+            )
 
     # ────────────────────────────────────────────────
     # 20. FARM EN DERROTAS
@@ -616,9 +851,16 @@ def generar_insights_jugador(games):
         avg_cs_w = sum(cs_win) / len(cs_win)
         gap_cs = round(avg_cs_w - avg_cs_l, 1)
         if gap_cs > 2:
-            _add({"icono": "🌾", "texto": f"CS cae {gap_cs}/min al perder — no abandones el farm",
-                   "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
-                   "fondo": _TIPOS_COLOR["warning"][1], "relevancia": gap_cs * 3})
+            _add(
+                {
+                    "icono": "🌾",
+                    "texto": f"CS cae {gap_cs}/min al perder — no abandones el farm",
+                    "tipo": "warning",
+                    "color": _TIPOS_COLOR["warning"][0],
+                    "fondo": _TIPOS_COLOR["warning"][1],
+                    "relevancia": gap_cs * 3,
+                }
+            )
 
     # ── Ordenar por relevancia y tomar top 5 ──
     all_insights.sort(key=lambda x: x.get("relevancia", 0), reverse=True)

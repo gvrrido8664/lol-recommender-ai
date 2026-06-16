@@ -1,12 +1,25 @@
 # -*- coding: utf-8 -*-
-from .theme import (TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_SUBTLE, GREEN_SUCCESS, RED_DANGER, YELLOW_WARNING, PURPLE_LIGHT, PURPLE_VIOLET, TEAL_EMERALD, PURPLE_ACCENT)
+
 from .riot_api import cargar_mapeo_ids
-import json
+from .theme import (
+    GREEN_SUCCESS,
+    PURPLE_ACCENT,
+    PURPLE_LIGHT,
+    PURPLE_VIOLET,
+    RED_DANGER,
+    TEAL_EMERALD,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TEXT_SUBTLE,
+    YELLOW_WARNING,
+)
 
 TEXT_GOLD = "#f8fafc"
 ACCENT_TEAL = "#2dd4bf"
 
 _CHAMP_ID_TO_NAME = None
+
 
 def _id_to_champ(cid):
     global _CHAMP_ID_TO_NAME
@@ -17,9 +30,10 @@ def _id_to_champ(cid):
         return "Wukong"
     return name or f"Champ{cid}"
 
+
 def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     """Genera la sección de filosofía de juego basada en los 6 principios del coach.
-    
+
     Principios del curso:
     1. Eres el único factor constante — tu progreso depende de ti
     2. La mala suerte es real — enfócate en lo que puedes controlar
@@ -30,39 +44,39 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     """
     # Personalizar cada principio según el nivel del jugador
     principios = []
-    
+
     # Principio 1: Factor constante
     if nivel == "inicial":
-        p1 = f"<b>🧠 Tú eres el único factor constante.</b> De 10 personas en cada ranked, 9 cambian. El único que siempre está eres tú. A largo plazo, <b>tu progreso depende de lo que tú haces</b>, no de tus compañeros."
+        p1 = "<b>🧠 Tú eres el único factor constante.</b> De 10 personas en cada ranked, 9 cambian. El único que siempre está eres tú. A largo plazo, <b>tu progreso depende de lo que tú haces</b>, no de tus compañeros."
     elif nivel == "medio":
-        p1 = f"<b>🧠 Tú eres la constante.</b> Ya tienes fundamentos sólidos. Ahora la diferencia la marca tu consistencia: mismo enfoque, mismas decisiones, misma mentalidad partida tras partida."
+        p1 = "<b>🧠 Tú eres la constante.</b> Ya tienes fundamentos sólidos. Ahora la diferencia la marca tu consistencia: mismo enfoque, mismas decisiones, misma mentalidad partida tras partida."
     else:
-        p1 = f"<b>🧠 Eres el factor diferencial.</b> A tu nivel, el impacto individual es enorme. Cada decisión que tomas inclina la balanza. Los mejores jugadores no dependen de la suerte para ganar."
-    
+        p1 = "<b>🧠 Eres el factor diferencial.</b> A tu nivel, el impacto individual es enorme. Cada decisión que tomas inclina la balanza. Los mejores jugadores no dependen de la suerte para ganar."
+
     # Principio 2: Mala suerte
     if wr < 45:
-        p2 = f"<b>🍀 La mala suerte existe, pero no define tu elo.</b> AFKs, trolls, LoserQ... todo eso pasa. Hasta Faker lo vive a diario. La diferencia está en <b>qué haces con lo que sí depende de ti</b> y cómo reaccionas ante las injusticias."
+        p2 = "<b>🍀 La mala suerte existe, pero no define tu elo.</b> AFKs, trolls, LoserQ... todo eso pasa. Hasta Faker lo vive a diario. La diferencia está en <b>qué haces con lo que sí depende de ti</b> y cómo reaccionas ante las injusticias."
     else:
-        p2 = f"<b>🍀 No desperdicies energía en lo incontrolable.</b> Trolleos, AFKs, mala conexión... existen y siempre van a existir. Si te enfocas en eso, pones tu energía en algo que no puedes cambiar. <b>Juega tu juego.</b>"
-    
+        p2 = "<b>🍀 No desperdicies energía en lo incontrolable.</b> Trolleos, AFKs, mala conexión... existen y siempre van a existir. Si te enfocas en eso, pones tu energía en algo que no puedes cambiar. <b>Juega tu juego.</b>"
+
     # Principio 3: Aprender siempre
     if nivel == "inicial":
-        p3 = f"<b>📝 Todas las partidas son útiles.</b> Incluso las peores. Decisiones, posicionamiento, hábitos, muertes: <b>siempre hay algo para revisar y mejorar</b>. Rendirse o jugar mal a propósito NO ahorra tiempo, solo cultiva una mentalidad tóxica."
+        p3 = "<b>📝 Todas las partidas son útiles.</b> Incluso las peores. Decisiones, posicionamiento, hábitos, muertes: <b>siempre hay algo para revisar y mejorar</b>. Rendirse o jugar mal a propósito NO ahorra tiempo, solo cultiva una mentalidad tóxica."
     else:
-        p3 = f"<b>📝 Nunca se deja de aprender.</b> Hasta los mejores jugadores del mundo aprenden en cada partida. Rendirse JAMÁS: solo pierdes oportunidades de mejorar y cultivas una mentalidad que te daña a ti y a tu equipo."
-    
+        p3 = "<b>📝 Nunca se deja de aprender.</b> Hasta los mejores jugadores del mundo aprenden en cada partida. Rendirse JAMÁS: solo pierdes oportunidades de mejorar y cultivas una mentalidad que te daña a ti y a tu equipo."
+
     # Principio 4: Proceso vs Resultado
     if wr < 48:
-        p4 = f"<b>🎯 Disfruta del proceso, no solo del resultado.</b> Si tu disfrute depende solo de ganar, el LoL te va a frustrar. El verdadero placer está en <b>entender, aprender y mejorar de a poco</b>. Las victorias llegan solas cuando mejoras."
+        p4 = "<b>🎯 Disfruta del proceso, no solo del resultado.</b> Si tu disfrute depende solo de ganar, el LoL te va a frustrar. El verdadero placer está en <b>entender, aprender y mejorar de a poco</b>. Las victorias llegan solas cuando mejoras."
     else:
-        p4 = f"<b>🎯 El proceso es el premio.</b> Ganar es consecuencia de mejorar. Cuando tu motivación viene de aprender y perfeccionar tu juego —no solo de los LP—, la frustración desaparece y la mejora se acelera."
-    
+        p4 = "<b>🎯 El proceso es el premio.</b> Ganar es consecuencia de mejorar. Cuando tu motivación viene de aprender y perfeccionar tu juego —no solo de los LP—, la frustración desaparece y la mejora se acelera."
+
     # Principio 5: Entorno competitivo
-    p5 = f"<b>⚔️ Ajusta tus expectativas.</b> Estás en uno de los juegos más competitivos del mundo. No esperes partidas perfectas, compañeros ideales ni cero toxicidad. <b>Ser realista no es ser negativo, es protegerte.</b>"
-    
+    p5 = "<b>⚔️ Ajusta tus expectativas.</b> Estás en uno de los juegos más competitivos del mundo. No esperes partidas perfectas, compañeros ideales ni cero toxicidad. <b>Ser realista no es ser negativo, es protegerte.</b>"
+
     # Principio 6: Escape
-    p6 = f"<b>🧘 Juega con la cabeza limpia.</b> Si entras a jugar para escapar de problemas, vas a rendir peor, frustrarte más fácil y los problemas van a seguir ahí. El LoL no resuelve lo que evitas. <b>Juega porque realmente quieres jugar.</b>"
-    
+    p6 = "<b>🧘 Juega con la cabeza limpia.</b> Si entras a jugar para escapar de problemas, vas a rendir peor, frustrarte más fácil y los problemas van a seguir ahí. El LoL no resuelve lo que evitas. <b>Juega porque realmente quieres jugar.</b>"
+
     # Títulos cortos de cada principio (para subencabezar cada bloque)
     titulos = [
         "1 · Eres la constante",
@@ -94,16 +108,22 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
 
     # Cierre accionable, distinto según el nivel
     if nivel == "inicial":
-        cierre = ("Empieza por uno solo: <b>antes de cada partida, recuérdate que tú eres la constante</b>. "
-                  "Eso ya cambia cómo reaccionas cuando algo sale mal. La mentalidad no se arregla de golpe, "
-                  "se entrena partida a partida, igual que el last-hit.")
+        cierre = (
+            "Empieza por uno solo: <b>antes de cada partida, recuérdate que tú eres la constante</b>. "
+            "Eso ya cambia cómo reaccionas cuando algo sale mal. La mentalidad no se arregla de golpe, "
+            "se entrena partida a partida, igual que el last-hit."
+        )
     elif nivel == "medio":
-        cierre = ("Ya tienes mecánica; el siguiente salto es mental. Elige <b>un</b> principio de arriba para esta semana "
-                  "y obsérvate: ¿lo cumpliste hoy? Llevar la cuenta de tu mentalidad rinde más LP que un counterpick perfecto.")
+        cierre = (
+            "Ya tienes mecánica; el siguiente salto es mental. Elige <b>un</b> principio de arriba para esta semana "
+            "y obsérvate: ¿lo cumpliste hoy? Llevar la cuenta de tu mentalidad rinde más LP que un counterpick perfecto."
+        )
     else:
-        cierre = ("A tu nivel la diferencia es casi toda mental: tilt, fatiga y expectativas. "
-                  "Los mejores no son los que nunca fallan, sino los que <b>vuelven al plan más rápido</b> tras un error. "
-                  "Tu consistencia emocional es tu mayor ventaja competitiva.")
+        cierre = (
+            "A tu nivel la diferencia es casi toda mental: tilt, fatiga y expectativas. "
+            "Los mejores no son los que nunca fallan, sino los que <b>vuelven al plan más rápido</b> tras un error. "
+            "Tu consistencia emocional es tu mayor ventaja competitiva."
+        )
 
     return f"""
     <div style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;">
@@ -126,7 +146,7 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
 def _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision):
     """Genera un ejercicio de práctica deliberada basado en la peor estadística.
     Principio del curso: aislar UNA habilidad, aprender teoría, aplicar, revisar."""
-    
+
     # Determinar qué habilidad practicar según la peor métrica
     if avg_cs < 5:
         habilidad = "Farmear bajo presión"
@@ -153,7 +173,7 @@ def _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision):
     <div style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;">
     <p style="font-size:14px;color:{PURPLE_LIGHT};margin:0 0 8px 0;"><b>🦾 Tu ejercicio de práctica deliberada</b></p>
     <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">
-    {nombre}, la <b>práctica deliberada</b> es aislar UNA habilidad y trabajarla con intención. 
+    {nombre}, la <b>práctica deliberada</b> es aislar UNA habilidad y trabajarla con intención.
     No se trata de jugar más partidas: se trata de que cada una tenga un propósito claro.
     Jugar en automático no enseña. Jugar con foco en algo específico, sí.
     </p>
@@ -167,7 +187,7 @@ def _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision):
     <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0 0 0 0;">{revision}</p>
     </div>
     <p style="font-size:11px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
-    💡 Dato: jugar 3 partidas con foco en UNA habilidad enseña más que 15 partidas en automático. 
+    💡 Dato: jugar 3 partidas con foco en UNA habilidad enseña más que 15 partidas en automático.
     El cerebro aprende cuando prestas atención, no cuando repites sin pensar.
     </p>
     </div>"""
@@ -180,7 +200,7 @@ def _generar_tips_salud():
     <div style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;">
     <p style="font-size:14px;color:{TEAL_EMERALD};margin:0 0 8px 0;"><b>💚 6 hábitos simples que mejoran tu juego</b></p>
     <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">
-    Tu rendimiento no depende solo de cómo juegas, sino de <b>cómo estás</b>. 
+    Tu rendimiento no depende solo de cómo juegas, sino de <b>cómo estás</b>.
     Estos micro-hábitos son fáciles de empezar hoy y tienen impacto real en tu concentración.
     </p>
     <div style="background:#0d1f17;border-radius:6px;padding:10px 14px;margin:8px 0;">
@@ -195,13 +215,15 @@ def _generar_tips_salud():
     <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• En momentos tranquilos: mira a lo lejos unos segundos para descansar la vista.</p>
     </div>
     <p style="font-size:11px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
-    💡 No se trata de hacer todo perfecto. Se trata de <b>pequeños cambios sostenibles</b>. 
+    💡 No se trata de hacer todo perfecto. Se trata de <b>pequeños cambios sostenibles</b>.
     Dormir 7-9 horas con horarios regulares ya mejora tu rendimiento más que muchas otras cosas.
     </p>
     </div>"""
 
 
-def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_perfil=None, datos_fatiga=None, maestrias=None, lp_history=None):
+def generar_reporte_coach(
+    historial_games, nombre_invocador="Invocador", datos_perfil=None, datos_fatiga=None, maestrias=None, lp_history=None
+):
     if not historial_games or len(historial_games) < 3:
         return {
             "secciones": [],
@@ -216,10 +238,21 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     secciones = []
 
     champ_games = {}
-    all_k = []; all_d = []; all_a = []; all_cs = []; all_dur = []
-    all_vision = []; all_dmg = []; all_gold = []; all_turrets = []
-    all_dragons = []; all_barons = []; all_cc = []; all_pink = []
-    wins_count = 0; primer_sangre = 0
+    all_k = []
+    all_d = []
+    all_a = []
+    all_cs = []
+    all_dur = []
+    all_vision = []
+    all_dmg = []
+    all_gold = []
+    all_turrets = []
+    all_dragons = []
+    all_barons = []
+    all_cc = []
+    all_pink = []
+    wins_count = 0
+    primer_sangre = 0
 
     for g in all_games:
         part = g.get("participants", [{}])[0]
@@ -242,27 +275,54 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         pink = stats.get("visionWardsBoughtInGame", 0)
 
         if cid not in champ_games:
-            champ_games[cid] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0, "cs": 0, "dmg": 0, "gold": 0}
+            champ_games[cid] = {
+                "wins": 0,
+                "games": 0,
+                "kills": 0,
+                "deaths": 0,
+                "assists": 0,
+                "cs": 0,
+                "dmg": 0,
+                "gold": 0,
+            }
         cg = champ_games[cid]
         cg["games"] += 1
-        if win: cg["wins"] += 1
-        cg["kills"] += k; cg["deaths"] += d; cg["assists"] += a; cg["cs"] += cs
-        cg["dmg"] += dmg; cg["gold"] += gold
+        if win:
+            cg["wins"] += 1
+        cg["kills"] += k
+        cg["deaths"] += d
+        cg["assists"] += a
+        cg["cs"] += cs
+        cg["dmg"] += dmg
+        cg["gold"] += gold
 
-        all_k.append(k); all_d.append(d); all_a.append(a)
+        all_k.append(k)
+        all_d.append(d)
+        all_a.append(a)
         if dur > 0:
-            if cs > 0: all_cs.append(cs / (dur / 60))
-            if dmg > 0: all_dmg.append(dmg / (dur / 60))
-            if gold > 0: all_gold.append(gold / (dur / 60))
+            if cs > 0:
+                all_cs.append(cs / (dur / 60))
+            if dmg > 0:
+                all_dmg.append(dmg / (dur / 60))
+            if gold > 0:
+                all_gold.append(gold / (dur / 60))
             all_dur.append(dur)
-        if vision > 0: all_vision.append(vision / (dur / 60))
-        if win: wins_count += 1
-        if fb: primer_sangre += 1
-        if turrets > 0: all_turrets.append(turrets)
-        if dragons > 0: all_dragons.append(dragons)
-        if barons > 0: all_barons.append(barons)
-        if cc > 0: all_cc.append(cc / (dur / 60)) if dur > 0 else None
-        if pink > 0: all_pink.append(pink)
+        if vision > 0:
+            all_vision.append(vision / (dur / 60))
+        if win:
+            wins_count += 1
+        if fb:
+            primer_sangre += 1
+        if turrets > 0:
+            all_turrets.append(turrets)
+        if dragons > 0:
+            all_dragons.append(dragons)
+        if barons > 0:
+            all_barons.append(barons)
+        if cc > 0:
+            all_cc.append(cc / (dur / 60)) if dur > 0 else None
+        if pink > 0:
+            all_pink.append(pink)
 
     avg_k = sum(all_k) / total_all if total_all else 0
     avg_d = sum(all_d) / total_all if total_all else 0
@@ -288,42 +348,62 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     total_dmg_raw = sum(cg["dmg"] for cg in champ_games.values())
     total_gold_raw = sum(cg["gold"] for cg in champ_games.values())
     dmg_ratio = (total_dmg_raw / total_gold_raw) if total_gold_raw else 0
-    dmg_vs_taken = sum(stats.get("totalDamageDealtToChampions", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
-    dmg_taken_total = sum(stats.get("totalDamageTaken", 0) for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
+    dmg_vs_taken = sum(
+        stats.get("totalDamageDealtToChampions", 0)
+        for g in all_games
+        for stats in [g.get("participants", [{}])[0].get("stats", {})]
+    )
+    dmg_taken_total = sum(
+        stats.get("totalDamageTaken", 0)
+        for g in all_games
+        for stats in [g.get("participants", [{}])[0].get("stats", {})]
+    )
     dmg_eff = dmg_vs_taken / max(1, dmg_taken_total)
 
     # ── Métricas POR PARTIDA (más concretas que por-minuto para daño/oro/visión) ──
     total_cs_raw = sum(cg["cs"] for cg in champ_games.values())
-    total_vision_raw = sum((stats.get("visionScore", 0) or stats.get("wardsPlaced", 0))
-                           for g in all_games for stats in [g.get("participants", [{}])[0].get("stats", {})])
+    total_vision_raw = sum(
+        (stats.get("visionScore", 0) or stats.get("wardsPlaced", 0))
+        for g in all_games
+        for stats in [g.get("participants", [{}])[0].get("stats", {})]
+    )
     avg_cs_game = total_cs_raw / total_all if total_all else 0
     avg_dmg_game = total_dmg_raw / total_all if total_all else 0
     avg_gold_game = total_gold_raw / total_all if total_all else 0
     avg_vision_game = total_vision_raw / total_all if total_all else 0
-    
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 0: SALUDO Y RESUMEN GENERAL
     # ═══════════════════════════════════════════════════
     estado_mental = ""
     if datos_fatiga:
         estado = datos_fatiga.get("estado", "")
-        if estado == "fresh": estado_mental = "🔥 Estás fresco y enfocado. Es un buen momento para jugar ranked. Aprovecha tu mejor versión."
-        elif estado == "tired": estado_mental = "🥱 Parece que estás un poco cansado. Considera jugar normals o descansar. El LoL no es un escape: juega solo cuando tengas la cabeza limpia."
-        elif estado == "tilted": estado_mental = "💢 Estás en zona de tilt. Mi recomendación sincera: descansa 30 min o cambia de juego un rato. La mala suerte existe, pero jugar tilted la empeora."
-        else: estado_mental = "⚖️ Estado neutral. Vigila cómo te sientes tras cada partida. Recuerda: tú eres el factor constante en tu progreso."
-    
+        if estado == "fresh":
+            estado_mental = (
+                "🔥 Estás fresco y enfocado. Es un buen momento para jugar ranked. Aprovecha tu mejor versión."
+            )
+        elif estado == "tired":
+            estado_mental = "🥱 Parece que estás un poco cansado. Considera jugar normals o descansar. El LoL no es un escape: juega solo cuando tengas la cabeza limpia."
+        elif estado == "tilted":
+            estado_mental = "💢 Estás en zona de tilt. Mi recomendación sincera: descansa 30 min o cambia de juego un rato. La mala suerte existe, pero jugar tilted la empeora."
+        else:
+            estado_mental = "⚖️ Estado neutral. Vigila cómo te sientes tras cada partida. Recuerda: tú eres el factor constante en tu progreso."
+
     # Determinar rango aproximado según KDA y CS para personalizar tono
-    if avg_cs >= 7 and kda >= 3.5: nivel = "alto"
-    elif avg_cs >= 5 and kda >= 2.0: nivel = "medio"
-    else: nivel = "inicial"
-    
+    if avg_cs >= 7 and kda >= 3.5:
+        nivel = "alto"
+    elif avg_cs >= 5 and kda >= 2.0:
+        nivel = "medio"
+    else:
+        nivel = "inicial"
+
     if nivel == "alto":
         tono = f"Eres un jugador sólido, {nombre}. Tus números muestran que entiendes bien el juego."
     elif nivel == "medio":
         tono = f"Vas por buen camino, {nombre}. Tienes fundamentos sólidos y margen de mejora claro."
     else:
         tono = f"{nombre}, veo que estás en fase de aprendizaje. No te preocupes, todo jugador pasó por aquí. Vamos paso a paso."
-    
+
     resumen_html = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;">
     <p style="font-size: 16px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>👋 Hola, {nombre}!</b></p>
@@ -338,19 +418,21 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 0 0;">{estado_mental}</p>
     </div>
     """
-    
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 0.5: FILOSOFÍA DE JUEGO (basado en el curso del coach)
     # ═══════════════════════════════════════════════════
     filo_html = _generar_filosofia_juego(nombre, nivel, wr, avg_d, total)
-    secciones.append({
-        "titulo": "FILOSOFÍA DE JUEGO — Tu Mentalidad",
-        "icono": "🧘",
-        "color": "#c084fc",
-        "html": filo_html,
-        "prioridad": 0,  # Siempre primero
-    })
-    
+    secciones.append(
+        {
+            "titulo": "FILOSOFÍA DE JUEGO — Tu Mentalidad",
+            "icono": "🧘",
+            "color": "#c084fc",
+            "html": filo_html,
+            "prioridad": 0,  # Siempre primero
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 1: CHAMPION POOL
     # ═══════════════════════════════════════════════════
@@ -358,15 +440,15 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     rest = sorted_champs[3:]
     rest_wr = sum(c["wins"] for _, c in rest) / max(1, sum(c["games"] for _, c in rest)) * 100 if rest else 0
     is_too_wide = unique_champs > 5
-    
-    cp_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-    
+
+    cp_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+
     if is_too_wide:
         cp_html += f"""
         <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>⚠️ Estas jugando demasiados campeones ({unique_champs} en {total_all} partidas)</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Esto es lo que pasa: tu cerebro gasta energía adaptándose a cada campeón en vez de enfocarse en el mapa. 
-        <b style="color: {GREEN_SUCCESS};">Tu WR con tu top 3 es {top3_wr:.0f}%</b>, pero con el resto cae a 
+        Esto es lo que pasa: tu cerebro gasta energía adaptándose a cada campeón en vez de enfocarse en el mapa.
+        <b style="color: {GREEN_SUCCESS};">Tu WR con tu top 3 es {top3_wr:.0f}%</b>, pero con el resto cae a
         <b style="color: {RED_DANGER};">{rest_wr:.0f}%</b>. Esa diferencia son partidas que regalas.
         </p>
         <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Plan de acción:</b></p>
@@ -387,37 +469,39 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         y cambiar de campeón se siente natural. Tu WR con tu top 3 es <b style="color: {GREEN_SUCCESS};">{top3_wr:.0f}%</b>. Así se construye el elo.
         </p>
         """
-    
+
     # Mostrar top 3 con stats
     cp_html += '<p style="font-size: 12px; color: #a39a93; margin: 8px 0 4px 0;"><b>Tu top 3:</b></p>'
     for i, (champ_name, cs_data) in enumerate(top3):
         c_wr = (cs_data["wins"] / cs_data["games"] * 100) if cs_data["games"] > 0 else 0
         c_kda = (cs_data["kills"] + cs_data["assists"]) / max(1, cs_data["deaths"])
-        c_cs = cs_data["cs"] / max(1, cs_data["games"])
+        cs_data["cs"] / max(1, cs_data["games"])
         color_wr = "#22c55e" if c_wr >= 50 else "#ef4444"
         display_name = _id_to_champ(champ_name)
-        cp_html += f'<p style="font-size: 11px; color: {color_wr}; margin: 2px 0 2px 12px;">{i+1}. {display_name} — {c_wr:.0f}% WR · KDA {c_kda:.1f} · {cs_data["games"]} partidas</p>'
-    
-    cp_html += '</div>'
-    
-    secciones.append({
-        "titulo": "AUDITORÍA DE CHAMPION POOL",
-        "icono": "📋",
-        "color": "#f59e0b" if is_too_wide else "#22c55e",
-        "html": cp_html,
-        "prioridad": 1 if is_too_wide else 3,
-    })
-    
+        cp_html += f'<p style="font-size: 11px; color: {color_wr}; margin: 2px 0 2px 12px;">{i + 1}. {display_name} — {c_wr:.0f}% WR · KDA {c_kda:.1f} · {cs_data["games"]} partidas</p>'
+
+    cp_html += "</div>"
+
+    secciones.append(
+        {
+            "titulo": "AUDITORÍA DE CHAMPION POOL",
+            "icono": "📋",
+            "color": "#f59e0b" if is_too_wide else "#22c55e",
+            "html": cp_html,
+            "prioridad": 1 if is_too_wide else 3,
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 2: FASE DE LÍNEAS (CS + EARLY)
     # ═══════════════════════════════════════════════════
-    cs_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-    
+    cs_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+
     if avg_cs < 4.5:
         cs_html += f"""
         <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Tu farmeo necesita atención urgente: {avg_cs:.1f} CS/min</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Mira, {nombre}, esto es lo más importante que puedes mejorar ahora mismo. Cada 15-20 CS equivalen a 
+        Mira, {nombre}, esto es lo más importante que puedes mejorar ahora mismo. Cada 15-20 CS equivalen a
         <b>una kill en oro</b>. Si farmeas mejor, llegarás a tus objetos más rápido sin necesidad de arriesgarte en peleas.
         </p>
         <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Ejercicio concreto:</b></p>
@@ -433,7 +517,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         cs_html += f"""
         <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Farmeo decente pero con margen de mejora: {avg_cs:.1f} CS/min</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        No está mal, {nombre}, pero cada CS que pierdes es oro que dejas en la mesa. En partidas igualadas, 
+        No está mal, {nombre}, pero cada CS que pierdes es oro que dejas en la mesa. En partidas igualadas,
         la diferencia entre 6 y 7.5 CS/min puede ser completar un objeto clave 3 minutos antes.
         </p>
         <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Plan:</b></p>
@@ -451,26 +535,28 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         Asegúrate de traducir esa ventaja de oro en presión en el mapa: rotaciones, visión agresiva y objetivos.
         </p>
         """
-    
+
     # First blood
     if total_all and primer_sangre >= total_all * 0.3:
-        cs_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 8px 0 0 0;">⚔️ Además, consigues First Blood en el {primer_sangre/total_all*100:.0f}% de tus partidas. ¡Agresividad bien ejecutada!</p>'
-    
-    cs_html += '</div>'
-    
-    secciones.append({
-        "titulo": "RENDIMIENTO EN FASE DE LÍNEAS",
-        "icono": "⚔️",
-        "color": "#ef4444" if avg_cs < 5 else "#f59e0b" if avg_cs < 6.5 else "#22c55e",
-        "html": cs_html,
-        "prioridad": 0 if avg_cs < 5 else 2,
-    })
-    
+        cs_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 8px 0 0 0;">⚔️ Además, consigues First Blood en el {primer_sangre / total_all * 100:.0f}% de tus partidas. ¡Agresividad bien ejecutada!</p>'
+
+    cs_html += "</div>"
+
+    secciones.append(
+        {
+            "titulo": "RENDIMIENTO EN FASE DE LÍNEAS",
+            "icono": "⚔️",
+            "color": "#ef4444" if avg_cs < 5 else "#f59e0b" if avg_cs < 6.5 else "#22c55e",
+            "html": cs_html,
+            "prioridad": 0 if avg_cs < 5 else 2,
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 3: SUPERVIVENCIA Y DECISIONES
     # ═══════════════════════════════════════════════════
-    sv_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-    
+    sv_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+
     if avg_d > 7:
         sv_html += f"""
         <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Mueres demasiado: {avg_d:.1f} muertes por partida</b></p>
@@ -490,7 +576,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         sv_html += f"""
         <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Tus muertes son mejorables: {avg_d:.1f} por partida (KDA {kda:.1f})</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        No es dramático, {nombre}, pero reducir tus muertes a 4 o menos por partida puede subir tu WR 5-10% 
+        No es dramático, {nombre}, pero reducir tus muertes a 4 o menos por partida puede subir tu WR 5-10%
         sin cambiar nada más de tu juego.
         </p>
         <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Claves:</b></p>
@@ -504,26 +590,28 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         sv_html += f"""
         <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Buen control de muertes: {avg_d:.1f} por partida (KDA {kda:.1f})</b></p>
         <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Muy bien, {nombre}. Mantener baja tu tasa de muertes es señal de buen juicio. 
+        Muy bien, {nombre}. Mantener baja tu tasa de muertes es señal de buen juicio.
         Cada muerte que evitas son 300g que no regalas. Sigue así.
         </p>
         """
-    
-    sv_html += '</div>'
-    
-    secciones.append({
-        "titulo": "TOMA DE DECISIONES Y SUPERVIVENCIA",
-        "icono": "🛡️",
-        "color": "#ef4444" if avg_d > 7 else "#f59e0b" if avg_d > 5 else "#22c55e",
-        "html": sv_html,
-        "prioridad": 0 if avg_d > 6 else 1 if avg_d > 5 else 3,
-    })
-    
+
+    sv_html += "</div>"
+
+    secciones.append(
+        {
+            "titulo": "TOMA DE DECISIONES Y SUPERVIVENCIA",
+            "icono": "🛡️",
+            "color": "#ef4444" if avg_d > 7 else "#f59e0b" if avg_d > 5 else "#22c55e",
+            "html": sv_html,
+            "prioridad": 0 if avg_d > 6 else 1 if avg_d > 5 else 3,
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 4: VISIÓN
     # ═══════════════════════════════════════════════════
     if avg_vision_game > 0:
-        vis_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        vis_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
         if avg_vision_game < 15:
             vis_html += f"""
             <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Visión muy baja: {avg_vision_game:.0f} de visión por partida</b></p>
@@ -553,16 +641,18 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             Excelente control de visión. Eso ayuda a tu equipo más de lo que crees. ¡Sigue así!
             </p>
             """
-        vis_html += '</div>'
+        vis_html += "</div>"
 
-        secciones.append({
-            "titulo": "CONTROL DE VISIÓN",
-            "icono": "👁️",
-            "color": "#ef4444" if avg_vision_game < 15 else "#f59e0b" if avg_vision_game < 28 else "#22c55e",
-            "html": vis_html,
-            "prioridad": 2 if avg_vision_game < 15 else 3,
-        })
-    
+        secciones.append(
+            {
+                "titulo": "CONTROL DE VISIÓN",
+                "icono": "👁️",
+                "color": "#ef4444" if avg_vision_game < 15 else "#f59e0b" if avg_vision_game < 28 else "#22c55e",
+                "html": vis_html,
+                "prioridad": 2 if avg_vision_game < 15 else 3,
+            }
+        )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 5: GESTIÓN DE SESIONES (FATIGA)
     # ═══════════════════════════════════════════════════
@@ -572,23 +662,23 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         if sesiones:
             sesion_actual = sesiones[-1] if sesiones else []
             total_sesion = len(sesion_actual)
-            
+
             if total_sesion >= 4:
                 wins_sesion = sum(1 for p in sesion_actual if p.get("win", False))
                 wr_sesion = (wins_sesion / total_sesion * 100) if total_sesion else 0
-                
-                fat_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-                
+
+                fat_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+
                 if wr_sesion < 40:
                     fat_html += f"""
                     <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Llevas {total_sesion} partidas en esta sesión con {wr_sesion:.0f}% WR</b></p>
                     <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-                    {nombre}, los datos son claros: tu rendimiento baja drásticamente en sesiones largas. 
+                    {nombre}, los datos son claros: tu rendimiento baja drásticamente en sesiones largas.
                     Llevas {total_sesion} partidas seguidas. Tu cerebro está fatigado aunque no lo notes.
                     </p>
                     <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🧠 Lo que dice la ciencia:</b></p>
                     <p style="font-size: 11px; color: {TEXT_MUTED}; margin: 0 0 8px 0;">
-                    Después de 90-120 minutos de juego intenso, tu tiempo de reacción y toma de decisiones 
+                    Después de 90-120 minutos de juego intenso, tu tiempo de reacción y toma de decisiones
                     se degradan significativamente. Los jugadores profesionales rotan entre partidas y descansos por esto.
                     </p>
                     <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Mi recomendación:</b></p>
@@ -602,7 +692,7 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
                     fat_html += f"""
                     <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🔥 Buen momento: {wr_sesion:.0f}% WR en {total_sesion} partidas</b></p>
                     <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-                    Estás en racha, {nombre}. Pero recuerda: incluso en una buena sesión, 
+                    Estás en racha, {nombre}. Pero recuerda: incluso en una buena sesión,
                     tu concentración tiene un límite. Programa un descanso pronto para mantener el nivel.
                     </p>
                     """
@@ -613,22 +703,24 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
                     Rendimiento consistente. Vigila cómo te sientes y no dudes en parar si notas fatiga mental.
                     </p>
                     """
-                
+
                 if partidas_hoy:
                     wins_hoy = sum(1 for p in partidas_hoy if p.get("win", False))
                     wr_hoy = (wins_hoy / len(partidas_hoy) * 100) if partidas_hoy else 0
                     fat_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">📅 Hoy: {len(partidas_hoy)} partidas · {wr_hoy:.0f}% WR</p>'
-                
-                fat_html += '</div>'
-                
-                secciones.append({
-                    "titulo": "GESTIÓN DE SESIONES Y FATIGA",
-                    "icono": "🧠",
-                    "color": "#ef4444" if wr_sesion < 40 else "#22c55e" if wr_sesion >= 60 else "#f59e0b",
-                    "html": fat_html,
-                    "prioridad": 1 if wr_sesion < 40 else 3,
-                })
-    
+
+                fat_html += "</div>"
+
+                secciones.append(
+                    {
+                        "titulo": "GESTIÓN DE SESIONES Y FATIGA",
+                        "icono": "🧠",
+                        "color": "#ef4444" if wr_sesion < 40 else "#22c55e" if wr_sesion >= 60 else "#f59e0b",
+                        "html": fat_html,
+                        "prioridad": 1 if wr_sesion < 40 else 3,
+                    }
+                )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 5.5: RACHA Y RESILIENCIA (Proceso vs Resultado)
     # ═══════════════════════════════════════════════════
@@ -637,21 +729,21 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     for g in recent:
         win = g.get("participants", [{}])[0].get("stats", {}).get("win", False)
         if racha_tipo is None:
-            racha_tipo = 'W' if win else 'L'
+            racha_tipo = "W" if win else "L"
             racha_actual = 1
-        elif (win and racha_tipo == 'W') or (not win and racha_tipo == 'L'):
+        elif (win and racha_tipo == "W") or (not win and racha_tipo == "L"):
             racha_actual += 1
         else:
             break
-    
+
     if racha_actual >= 3:
-        racha_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-        if racha_tipo == 'L':
+        racha_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+        if racha_tipo == "L":
             racha_html += f"""
             <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Llevas {racha_actual} derrotas seguidas</b></p>
             <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            {nombre}, esto es importante: <b>la mala suerte existe</b>. AFKs, trolls, malos matchups... 
-            todo eso pasa y es real. Pero hay dos caminos: puedes enfocarte en lo que no controlas (y frustrarte) 
+            {nombre}, esto es importante: <b>la mala suerte existe</b>. AFKs, trolls, malos matchups...
+            todo eso pasa y es real. Pero hay dos caminos: puedes enfocarte en lo que no controlas (y frustrarte)
             o puedes enfocarte en <b>lo que sí depende de ti</b>.
             </p>
             <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Qué hacer ahora:</b></p>
@@ -666,29 +758,31 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             racha_html += f"""
             <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🔥 ¡{racha_actual} victorias seguidas!</b></p>
             <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            Excelente momento, {nombre}. Pero no te confíes: <b>el verdadero crecimiento viene de mantener la consistencia</b> 
+            Excelente momento, {nombre}. Pero no te confíes: <b>el verdadero crecimiento viene de mantener la consistencia</b>
             incluso cuando las cosas van bien. Disfruta la racha, pero no olvides que cada partida es una nueva oportunidad de aprender.
             </p>
             <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">💡 Dato: los jugadores que más mejoran no son los que ganan más, sino los que <b>analizan tanto sus victorias como sus derrotas</b>.</p>
             """
-        racha_html += '</div>'
-        
-        secciones.append({
-            "titulo": "RACHA Y RESILIENCIA",
-            "icono": "📈",
-            "color": "#ef4444" if racha_tipo == 'L' else "#22c55e",
-            "html": racha_html,
-            "prioridad": 1 if racha_tipo == 'L' else 4,
-        })
-    
+        racha_html += "</div>"
+
+        secciones.append(
+            {
+                "titulo": "RACHA Y RESILIENCIA",
+                "icono": "📈",
+                "color": "#ef4444" if racha_tipo == "L" else "#22c55e",
+                "html": racha_html,
+                "prioridad": 1 if racha_tipo == "L" else 4,
+            }
+        )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 5.6: JUGAR POR BLOQUES (método de 3 partidas)
     # ═══════════════════════════════════════════════════
-    bloques_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+    bloques_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
     bloques_html += f"""
     <p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🧊 Juega por bloques de 3 partidas</b></p>
     <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-    Tu concentración <b>tiene un límite</b>. Después de 3-4 partidas seguidas, tu cerebro entra en piloto automático 
+    Tu concentración <b>tiene un límite</b>. Después de 3-4 partidas seguidas, tu cerebro entra en piloto automático
     y tomas peores decisiones. No es falta de habilidad: es fatiga mental real.
     </p>
     <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>📊 El método simple:</b></p>
@@ -699,43 +793,49 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     <li>Entre partidas: 2-5 min de pausa. Suelta el mouse, estira las manos, mira a lo lejos.</li>
     </ul>
     <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">
-    💡 Este sistema hace que tengas más días positivos que negativos. No es frenarte: es <b>administrar tu energía</b>. 
+    💡 Este sistema hace que tengas más días positivos que negativos. No es frenarte: es <b>administrar tu energía</b>.
     Las ganas de jugar se acumulan y las aprovechas mejor cuando vuelves fresco.
     </p>
     """
-    bloques_html += '</div>'
-    
-    secciones.append({
-        "titulo": "JUGAR POR BLOQUES (3 partidas)",
-        "icono": "🧊",
-        "color": "#818cf8",
-        "html": bloques_html,
-        "prioridad": 4,
-    })
-    
+    bloques_html += "</div>"
+
+    secciones.append(
+        {
+            "titulo": "JUGAR POR BLOQUES (3 partidas)",
+            "icono": "🧊",
+            "color": "#818cf8",
+            "html": bloques_html,
+            "prioridad": 4,
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 5.7: PRÁCTICA DELIBERADA
     # ═══════════════════════════════════════════════════
     practica_html = _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision)
-    secciones.append({
-        "titulo": "PRÁCTICA DELIBERADA",
-        "icono": "🦾",
-        "color": "#a78bfa",
-        "html": practica_html,
-        "prioridad": 5,
-    })
-    
+    secciones.append(
+        {
+            "titulo": "PRÁCTICA DELIBERADA",
+            "icono": "🦾",
+            "color": "#a78bfa",
+            "html": practica_html,
+            "prioridad": 5,
+        }
+    )
+
     # ═══════════════════════════════════════════════════
     # SECCIÓN 5.8: SALUD MENTAL Y FISIOLOGÍA
     # ═══════════════════════════════════════════════════
     salud_html = _generar_tips_salud()
-    secciones.append({
-        "titulo": "SALUD MENTAL Y FISIOLOGIA",
-        "icono": "💚",
-        "color": "#f0b232",
-        "html": salud_html,
-        "prioridad": 6,
-    })
+    secciones.append(
+        {
+            "titulo": "SALUD MENTAL Y FISIOLOGIA",
+            "icono": "💚",
+            "color": "#f0b232",
+            "html": salud_html,
+            "prioridad": 6,
+        }
+    )
 
     # ═══════════════════════════════════════════════════
     # SECCION 6: DANO Y EFICIENCIA
@@ -744,10 +844,18 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         if avg_dmg_game < 12000:
             d_verdict, d_color, d_prio = f"🔴 Daño bajo: {avg_dmg_game:,.0f} a campeones por partida", RED_DANGER, 2
         elif avg_dmg_game < 22000:
-            d_verdict, d_color, d_prio = f"🟡 Daño aceptable: {avg_dmg_game:,.0f} a campeones por partida", YELLOW_WARNING, 3
+            d_verdict, d_color, d_prio = (
+                f"🟡 Daño aceptable: {avg_dmg_game:,.0f} a campeones por partida",
+                YELLOW_WARNING,
+                3,
+            )
         else:
-            d_verdict, d_color, d_prio = f"🟢 Excelente daño: {avg_dmg_game:,.0f} a campeones por partida", GREEN_SUCCESS, 3
-        dmg_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+            d_verdict, d_color, d_prio = (
+                f"🟢 Excelente daño: {avg_dmg_game:,.0f} a campeones por partida",
+                GREEN_SUCCESS,
+                3,
+            )
+        dmg_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
         dmg_html += f'<p style="font-size: 14px; color: {d_color}; margin: 0 0 8px 0;"><b>{d_verdict}</b></p>'
         dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">Total infligido / recibido: {dmg_vs_taken:,} / {dmg_taken_total:,} (ratio {dmg_eff:.2f})</p>'
         dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">{dmg_ratio:.1f} de daño a campeones por cada oro generado</p>'
@@ -755,14 +863,16 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Recibes más daño del que infliges: trabaja posicionamiento y kiteo en teamfights.</p>'
         elif dmg_eff > 1.3:
             dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Infliges mucho más daño del que recibes: buen posicionamiento, sigue así.</p>'
-        dmg_html += '</div>'
-        secciones.append({
-            "titulo": "DANO Y EFICIENCIA",
-            "icono": "⚡",
-            "color": d_color,
-            "html": dmg_html,
-            "prioridad": d_prio,
-        })
+        dmg_html += "</div>"
+        secciones.append(
+            {
+                "titulo": "DANO Y EFICIENCIA",
+                "icono": "⚡",
+                "color": d_color,
+                "html": dmg_html,
+                "prioridad": d_prio,
+            }
+        )
 
     # ═══════════════════════════════════════════════════
     # SECCION 7: ORO Y ECONOMIA
@@ -774,44 +884,52 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             g_verdict, g_color = f"🟡 Oro decente: {avg_gold_game:,.0f} por partida", YELLOW_WARNING
         else:
             g_verdict, g_color = f"🟢 Buena economía: {avg_gold_game:,.0f} por partida", GREEN_SUCCESS
-        eco_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        eco_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
         eco_html += f'<p style="font-size: 14px; color: {g_color}; margin: 0 0 8px 0;"><b>{g_verdict}</b></p>'
         eco_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 4px 0 0 0;">Prioriza el farmeo seguro sobre las kills arriesgadas: el CS es oro garantizado y compone tu economía partida a partida.</p>'
-        eco_html += '</div>'
-        secciones.append({
-            "titulo": "ORO Y ECONOMIA",
-            "icono": "💰",
-            "color": g_color,
-            "html": eco_html,
-            "prioridad": 4,
-        })
+        eco_html += "</div>"
+        secciones.append(
+            {
+                "titulo": "ORO Y ECONOMIA",
+                "icono": "💰",
+                "color": g_color,
+                "html": eco_html,
+                "prioridad": 4,
+            }
+        )
 
     # ═══════════════════════════════════════════════════
     # SECCION 8: CONTROL DE OBJETIVOS
     # ═══════════════════════════════════════════════════
-    obj_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-    obj_html += f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🏆 Control de Objetivos</b></p>'
+    obj_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+    obj_html += (
+        f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🏆 Control de Objetivos</b></p>'
+    )
     obj_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Promedios por partida:</p>'
     obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🗼 Torres: <b>{avg_turrets:.1f}</b></p>'
     obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🐉 Dragones: <b>{avg_dragons:.1f}</b></p>'
     obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">👹 Barones: <b>{avg_barons:.1f}</b></p>'
     if avg_dragons < 0.5 and avg_barons < 0.2:
         obj_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">📝 Participas poco en objetivos. Rotar a dragon/baron con tu equipo gana partidas.</p>'
-    obj_html += '</div>'
-    secciones.append({
-        "titulo": "CONTROL DE OBJETIVOS",
-        "icono": "🏆",
-        "color": "#818cf8",
-        "html": obj_html,
-        "prioridad": 4,
-    })
+    obj_html += "</div>"
+    secciones.append(
+        {
+            "titulo": "CONTROL DE OBJETIVOS",
+            "icono": "🏆",
+            "color": "#818cf8",
+            "html": obj_html,
+            "prioridad": 4,
+        }
+    )
 
     # ═══════════════════════════════════════════════════
     # SECCION 9: CONTROL DE MASAS (CC)
     # ═══════════════════════════════════════════════════
     if avg_cc > 0:
-        cc_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-        cc_html += f'<p style="font-size: 14px; color: {ACCENT_TEAL}; margin: 0 0 8px 0;"><b>🎯 Control de Masas (CC)</b></p>'
+        cc_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+        cc_html += (
+            f'<p style="font-size: 14px; color: {ACCENT_TEAL}; margin: 0 0 8px 0;"><b>🎯 Control de Masas (CC)</b></p>'
+        )
         cc_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Aplicas <b>{avg_cc:.1f}s de CC por minuto</b> a enemigos.</p>'
         if avg_cc > 30:
             cc_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS};">🟢 Excelente uso de CC. Tus enemigos no se mueven.</p>'
@@ -819,20 +937,24 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             cc_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING};">🟡 Buen uso de CC. Si tu campeon tiene mucho CC, aprovéchalo mas.</p>'
         else:
             cc_html += f'<p style="font-size: 11px; color: {TEXT_MUTED};">📝 Poco CC aplicado. Si tu campeon tiene CC, úsalo para peel o engage.</p>'
-        cc_html += '</div>'
-        secciones.append({
-            "titulo": "CONTROL DE MASAS",
-            "icono": "🎯",
-            "color": "#f0b232",
-            "html": cc_html,
-            "prioridad": 5,
-        })
+        cc_html += "</div>"
+        secciones.append(
+            {
+                "titulo": "CONTROL DE MASAS",
+                "icono": "🎯",
+                "color": "#f0b232",
+                "html": cc_html,
+                "prioridad": 5,
+            }
+        )
 
     # ═══════════════════════════════════════════════════
     # SECCION 10: PINK WARDS
     # ═══════════════════════════════════════════════════
-    pink_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
-    pink_html += f'<p style="font-size: 14px; color: {TEAL_EMERALD}; margin: 0 0 8px 0;"><b>🔮 Control Wards (Pinks)</b></p>'
+    pink_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
+    pink_html += (
+        f'<p style="font-size: 14px; color: {TEAL_EMERALD}; margin: 0 0 8px 0;"><b>🔮 Control Wards (Pinks)</b></p>'
+    )
     pink_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Compras <b>{avg_pink:.1f} Pink Wards</b> por partida en promedio.</p>'
     if avg_pink < 0.5:
         pink_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 No compras Pink Wards. 75g que te salvan de regalar 300g.</p>'
@@ -841,20 +963,22 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
     else:
         pink_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Buen uso de Pinks. Control de vision solido.</p>'
     pink_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Los Pinks revelan wards enemigos, aseguran objetivos y previenen ganks.</p>'
-    pink_html += '</div>'
-    secciones.append({
-        "titulo": "CONTROL WARDS (PINKS)",
-        "icono": "🔮",
-        "color": "#f0b232",
-        "html": pink_html,
-        "prioridad": 5,
-    })
+    pink_html += "</div>"
+    secciones.append(
+        {
+            "titulo": "CONTROL WARDS (PINKS)",
+            "icono": "🔮",
+            "color": "#f0b232",
+            "html": pink_html,
+            "prioridad": 5,
+        }
+    )
 
     # ═══════════════════════════════════════════════════
     # SECCION 11: ARSENAL VS MAESTRIA
     # ═══════════════════════════════════════════════════
     if maestrias:
-        mast_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        mast_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
         mast_html += f'<p style="font-size: 14px; color: {TEXT_GOLD}; margin: 0 0 8px 0;"><b>⭐ Tu Arsenal vs. Tus Maestrias</b></p>'
         mast_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 6px 0;">Tus campeones con mas maestria:</p>'
         for m in maestrias[:3]:
@@ -871,20 +995,22 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             mast_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">⚠️ Tus campeones mas jugados NO coinciden con tus maestrias mas altas. Juega lo que mejor dominas.</p>'
         else:
             mast_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 6px 0 0 0;">✅ Tus picks mas frecuentes coinciden con tus maestrias. Buen alineamiento.</p>'
-        mast_html += '</div>'
-        secciones.append({
-            "titulo": "ARSENAL VS MAESTRIA",
-            "icono": "⭐",
-            "color": "#f8fafc",
-            "html": mast_html,
-            "prioridad": 3,
-        })
+        mast_html += "</div>"
+        secciones.append(
+            {
+                "titulo": "ARSENAL VS MAESTRIA",
+                "icono": "⭐",
+                "color": "#f8fafc",
+                "html": mast_html,
+                "prioridad": 3,
+            }
+        )
 
     # ═══════════════════════════════════════════════════
     # SECCION 12: PROGRESION DE LP
     # ═══════════════════════════════════════════════════
     if lp_history and len(lp_history) >= 3:
-        lp_html = '<div style="font-family: \'Segoe UI\', Arial, sans-serif; line-height: 1.7;">'
+        lp_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
         lp_html += f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>📈 Progresion de ELO (30 dias)</b></p>'
 
         first = lp_history[0]
@@ -892,13 +1018,13 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         lp_delta = last.get("lp_total", 0) - first.get("lp_total", 0)
         lp_deltas = []
         for i in range(1, len(lp_history)):
-            lp_deltas.append(lp_history[i].get("lp_total", 0) - lp_history[i-1].get("lp_total", 0))
+            lp_deltas.append(lp_history[i].get("lp_total", 0) - lp_history[i - 1].get("lp_total", 0))
         total_wins = sum(e.get("wins", 0) for e in lp_history)
         total_losses = sum(e.get("losses", 0) for e in lp_history)
         total_games_lp = total_wins + total_losses
 
-        lp_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">{first.get("fecha","?")} → {last.get("fecha","?")} ({len(lp_history)} dias con datos)</p>'
-        lp_html += f'<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">{last.get("tier","?")} {last.get("division","")} — {last.get("lp",0)} LP</p>'
+        lp_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">{first.get("fecha", "?")} → {last.get("fecha", "?")} ({len(lp_history)} dias con datos)</p>'
+        lp_html += f'<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">{last.get("tier", "?")} {last.get("division", "")} — {last.get("lp", 0)} LP</p>'
 
         if lp_delta > 100:
             lp_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Subiendo (+{lp_delta} LP en 30 dias). Buen ritmo.</p>'
@@ -919,47 +1045,60 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
             elif daily_avg < 1:
                 lp_html += f'<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 2px 0;">📝 Pocas partidas/dia ({daily_avg:.1f}). La mejora requiere volumen controlado.</p>'
 
-        lp_html += '</div>'
-        secciones.append({
-            "titulo": "PROGRESION DE ELO",
-            "icono": "📈",
-            "color": "#818cf8",
-            "html": lp_html,
-            "prioridad": 4,
-        })
+        lp_html += "</div>"
+        secciones.append(
+            {
+                "titulo": "PROGRESION DE ELO",
+                "icono": "📈",
+                "color": "#818cf8",
+                "html": lp_html,
+                "prioridad": 4,
+            }
+        )
 
     # ═══════════════════════════════════════════════════
     # SECCION 13: CONSEJO FINAL
     # ═══════════════════════════════════════════════════
     # Identificar el área más urgente
     secciones.sort(key=lambda s: s["prioridad"])
-    
+
     if nivel == "inicial":
         consejo_final = f"Recuerda, {nombre}: League of Legends es un maratón, no un sprint. Cada partida —incluso las que pierdes— es una oportunidad de aprender algo nuevo. No te castigues por los errores: TODO jugador pasó por donde estás tú ahora. Enfócate en mejorar un 1% cada día y los resultados van a llegar solos. Y si algún día te frustras, vuelve a leer la sección de Filosofía de Juego. 💜"
     elif nivel == "medio":
         consejo_final = f"{nombre}, estás en un punto donde pequeños cambios producen grandes resultados. Elige UN área de las que te mostré y enfócate en ella esta semana. No intentes mejorar todo a la vez. Y lo más importante: disfruta del proceso. Cuando tu motivación viene de aprender y no solo de ganar, la mejora se acelera. Confía en ti: eres el factor constante en tu progreso."
     else:
         consejo_final = f"Tu nivel es alto, {nombre}. La diferencia entre tú y el siguiente escalón está en los detalles: consistencia, gestión emocional y liderazgo en el mapa. Pero no te olvides de lo fundamental: incluso Faker sigue aprendiendo en cada partida. Mantén la cabeza limpia, ajusta tus expectativas y sigue refinando. El elo es consecuencia, no objetivo."
-    
+
     return {
         "secciones": secciones,
         "resumen": resumen_html,
         "consejo_final": consejo_final,
         "nivel": nivel,
         "metricas": {
-            "wr": wr, "kda": kda, "avg_cs": avg_cs, "avg_d": avg_d,
-            "avg_k": avg_k, "avg_a": avg_a,
-            "avg_vision": avg_vision, "unique_champs": unique_champs,
-            "top3_wr": top3_wr, "nivel": nivel,
-            "avg_dmg": avg_dmg, "avg_gold": avg_gold,
+            "wr": wr,
+            "kda": kda,
+            "avg_cs": avg_cs,
+            "avg_d": avg_d,
+            "avg_k": avg_k,
+            "avg_a": avg_a,
+            "avg_vision": avg_vision,
+            "unique_champs": unique_champs,
+            "top3_wr": top3_wr,
+            "nivel": nivel,
+            "avg_dmg": avg_dmg,
+            "avg_gold": avg_gold,
             # Por partida (más concretas):
-            "avg_cs_game": avg_cs_game, "avg_dmg_game": avg_dmg_game,
-            "avg_gold_game": avg_gold_game, "avg_vision_game": avg_vision_game,
-            "avg_turrets": avg_turrets, "avg_dragons": avg_dragons,
+            "avg_cs_game": avg_cs_game,
+            "avg_dmg_game": avg_dmg_game,
+            "avg_gold_game": avg_gold_game,
+            "avg_vision_game": avg_vision_game,
+            "avg_turrets": avg_turrets,
+            "avg_dragons": avg_dragons,
             "avg_barons": avg_barons,
-            "avg_cc": avg_cc, "avg_pink": avg_pink,
-            "dmg_eff": dmg_eff, "total_all": total_all,
+            "avg_cc": avg_cc,
+            "avg_pink": avg_pink,
+            "dmg_eff": dmg_eff,
+            "total_all": total_all,
             "primer_sangre_pct": (primer_sangre / total_all * 100) if total_all else 0,
-        }
+        },
     }
-

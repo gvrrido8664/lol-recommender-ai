@@ -1,10 +1,11 @@
+import json
 import os
 import warnings
-import joblib
-import json
-import numpy as np
 
+import joblib
+import numpy as np
 from sklearn.exceptions import InconsistentVersionWarning
+
 from src.tags_champions import obtener_tag
 
 _EARLY_MAP = {"weak": 1, "neutral": 2, "strong": 3}
@@ -84,7 +85,7 @@ class MotorIA:
     def _preparar_columnas_globales(self):
         ruta_json = os.path.join("assets", "campeones.json")
         if os.path.exists(ruta_json):
-            with open(ruta_json, 'r', encoding='utf-8') as f:
+            with open(ruta_json, "r", encoding="utf-8") as f:
                 datos = json.load(f)
                 self.lista_campeones_global = sorted(datos.values())
 
@@ -97,22 +98,22 @@ class MotorIA:
     def cambiar_rol_activo(self, nuevo_rol):
         bloque_rol = self.todos_los_modelos.get(nuevo_rol)
         if isinstance(bloque_rol, dict):
-            self.modelo_actual = bloque_rol.get('model')
+            self.modelo_actual = bloque_rol.get("model")
             self.rol_activo = nuevo_rol
-            self.n_global = bloque_rol.get('n_global', len(self.lista_campeones_global))
-            self.n_feats_equipo = bloque_rol.get('n_feats_equipo', 15)
+            self.n_global = bloque_rol.get("n_global", len(self.lista_campeones_global))
+            self.n_feats_equipo = bloque_rol.get("n_feats_equipo", 15)
 
             if self.lista_campeones_global:
                 self.nombre_a_idx = {nombre: i for i, nombre in enumerate(self.lista_campeones_global)}
             else:
-                campeones_global = bloque_rol.get('campeones_global', [])
+                campeones_global = bloque_rol.get("campeones_global", [])
                 self.nombre_a_idx = {nombre: i for i, nombre in enumerate(campeones_global)}
 
             clases = self.modelo_actual.classes_
             if isinstance(clases[0], str):
                 self.lista_nombres_salida = list(clases)
             else:
-                lista_original = bloque_rol.get('champs', [])
+                lista_original = bloque_rol.get("champs", [])
                 if lista_original:
                     self.lista_nombres_salida = sorted(lista_original)
                 else:
@@ -134,14 +135,14 @@ class MotorIA:
                     input_vector[idx] = 1.0
 
         feats_enemigos = extraer_features_equipo(enemigos)
-        input_vector[offset_tags:offset_tags + self.n_feats_equipo] = feats_enemigos
+        input_vector[offset_tags : offset_tags + self.n_feats_equipo] = feats_enemigos
 
         X = input_vector.reshape(1, -1)
         probabilidades = self.modelo_actual.predict_proba(X)[0]
 
         clases = self.modelo_actual.classes_
         bloque_rol = self.todos_los_modelos.get(self.rol_activo, {})
-        champs_del_rol = bloque_rol.get('champs', [])
+        champs_del_rol = bloque_rol.get("champs", [])
 
         if isinstance(clases[0], str):
             idx_to_name = list(clases)

@@ -1,23 +1,27 @@
+import json
 import os
 import sys
-import json
+
 
 def _obtener_dir_base():
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         return sys._MEIPASS
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
 def _obtener_dir_datos():
-    if getattr(sys, 'frozen', False):
-        base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
+    if getattr(sys, "frozen", False):
+        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "LoLRecommender")
     else:
         base = _obtener_dir_base()
     d = os.path.join(base, "data")
     os.makedirs(d, exist_ok=True)
     return d
 
+
 BASE_DIR = _obtener_dir_base()
 DATA_DIR = _obtener_dir_datos()
+
 
 def cargar_config():
     config = {}
@@ -40,6 +44,7 @@ def cargar_config():
     # config.json (p.ej. una API key propia de dev). Ver src/secretos.py.
     try:
         from src.secretos import cargar_secretos_embebidos
+
         for clave, valor in cargar_secretos_embebidos().items():
             if valor and not config.get(clave):
                 config[clave] = valor

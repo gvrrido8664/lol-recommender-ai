@@ -2,9 +2,8 @@
 comparativa vs benchmarks de rol, series por minuto (si hay timeline),
 fortalezas/mejoras y veredicto con acciones concretas."""
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget,
-                               QLabel, QPushButton, QScrollArea, QFrame)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ui.design import *
 from ui.dialogs.postgame_charts import BarComparisonWidget, TimelineChartWidget
@@ -29,10 +28,13 @@ class PostGameDialog(QDialog):
     # ── helpers ──
     def _seccion(self, lay, titulo, color=None):
         lbl = QLabel(titulo)
-        lbl.setStyleSheet(f"color: {color or ACCENT_RED}; font-size: 11px; font-weight: bold; "
-                          f"letter-spacing: 1px; margin-top: 6px;")
+        lbl.setStyleSheet(
+            f"color: {color or ACCENT_RED}; font-size: 11px; font-weight: bold; letter-spacing: 1px; margin-top: 6px;"
+        )
         lay.addWidget(lbl)
-        sep = QLabel(); sep.setFixedHeight(1); sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
+        sep = QLabel()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background: {BORDER_SUBTLE};")
         lay.addWidget(sep)
 
     def _metricas(self, s):
@@ -53,11 +55,11 @@ class PostGameDialog(QDialog):
         b_dmg = 250 if es_sup else (400 if es_jg else 500)
         b_vis = 1.8 if es_sup else 0.9
         return [
-            {"label": "KDA",        "valor": f"{kda:.1f}",       "ratio": kda / 3.0},
-            {"label": "CS/min",     "valor": f"{cs_min:.1f}",    "ratio": cs_min / b_cs},
-            {"label": "Oro/min",    "valor": f"{gold_min:.0f}",  "ratio": gold_min / b_gold},
-            {"label": "Daño/min",   "valor": f"{dmg_min:.0f}",   "ratio": dmg_min / b_dmg},
-            {"label": "Visión/min", "valor": f"{vis_min:.2f}",   "ratio": vis_min / b_vis},
+            {"label": "KDA", "valor": f"{kda:.1f}", "ratio": kda / 3.0},
+            {"label": "CS/min", "valor": f"{cs_min:.1f}", "ratio": cs_min / b_cs},
+            {"label": "Oro/min", "valor": f"{gold_min:.0f}", "ratio": gold_min / b_gold},
+            {"label": "Daño/min", "valor": f"{dmg_min:.0f}", "ratio": dmg_min / b_dmg},
+            {"label": "Visión/min", "valor": f"{vis_min:.2f}", "ratio": vis_min / b_vis},
         ]
 
     def _build_ui(self, s):
@@ -84,7 +86,9 @@ class PostGameDialog(QDialog):
         if resultado in ("Victoria", "Derrota"):
             lbl_res = QLabel(f"  {resultado.upper()}  ")
             col = GREEN_WR if resultado == "Victoria" else RED_WR
-            lbl_res.setStyleSheet(f"background: {col}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;")
+            lbl_res.setStyleSheet(
+                f"background: {col}; color: #fff; font-weight: bold; font-size: 11px; border-radius: 4px; padding: 2px 6px;"
+            )
             hdr.addWidget(lbl_res)
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(20, 20)
@@ -101,7 +105,8 @@ class PostGameDialog(QDialog):
         scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
         scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setMaximumHeight(640)
-        cont = QWidget(); cont.setStyleSheet("background: transparent;")
+        cont = QWidget()
+        cont.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(cont)
         lay.setContentsMargins(0, 0, 6, 0)
         lay.setSpacing(6)
@@ -112,9 +117,11 @@ class PostGameDialog(QDialog):
         gt = s.get("game_time", 0)
         cs = s.get("cs", 0)
         cs_min = cs / max(1, gt / 60) if gt else 0
-        lbl_champ = QLabel(f"🎮  {champ}    "
-                           f"<span style='color:{ACCENT_TEAL};font-weight:bold;'>{k}/{d}/{a}</span>"
-                           f"   <span style='color:{TEXT_MUTED};font-size:10px;'>{cs} CS · {cs_min:.1f}/min · {gt//60}min</span>")
+        lbl_champ = QLabel(
+            f"🎮  {champ}    "
+            f"<span style='color:{ACCENT_TEAL};font-weight:bold;'>{k}/{d}/{a}</span>"
+            f"   <span style='color:{TEXT_MUTED};font-size:10px;'>{cs} CS · {cs_min:.1f}/min · {gt // 60}min</span>"
+        )
         lbl_champ.setTextFormat(Qt.RichText)
         lbl_champ.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ACCENT_TEAL};")
         lay.addWidget(lbl_champ)
@@ -146,13 +153,15 @@ class PostGameDialog(QDialog):
         if positives:
             self._seccion(lay, "✅  LO QUE HICISTE BIEN", GREEN_WR)
             for pt in positives:
-                l = QLabel(f"•  {pt}"); l.setWordWrap(True)
+                l = QLabel(f"•  {pt}")
+                l.setWordWrap(True)
                 l.setStyleSheet(f"color: {GREEN_WR}; font-size: 10px;")
                 lay.addWidget(l)
         if negatives:
             self._seccion(lay, "⚠️  A MEJORAR", RED_WR)
             for ng in negatives:
-                l = QLabel(f"•  {ng}"); l.setWordWrap(True)
+                l = QLabel(f"•  {ng}")
+                l.setWordWrap(True)
                 l.setStyleSheet(f"color: {RED_WR}; font-size: 10px;")
                 lay.addWidget(l)
 
@@ -161,7 +170,8 @@ class PostGameDialog(QDialog):
         if veredicto:
             self._seccion(lay, "🧠  VEREDICTO DEL COACH", YELLOW_WR)
             for v in veredicto:
-                l = QLabel(f"▸  {v}"); l.setWordWrap(True)
+                l = QLabel(f"▸  {v}")
+                l.setWordWrap(True)
                 l.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; padding: 2px 0;")
                 lay.addWidget(l)
 

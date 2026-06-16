@@ -1,24 +1,24 @@
-import pandas as pd
-import numpy as np
-import joblib
 import os
 import sys
 import time
 import warnings
+
+import joblib
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
 warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
-from src.db_manager import obtener_conexion, DATA_DIR
+from src.db_manager import DATA_DIR, obtener_conexion
 from src.riot_api import cargar_campeones, normalizar_nombre_champ
 from src.tags_champions import (
-    obtener_tag, obtener_nivel_cc, obtener_dano, obtener_poder_temprano,
-    obtener_escalado, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte
+    obtener_tag,
 )
 
 MODELO_PATH = os.path.join(DATA_DIR, "modelo_ia.pkl")
@@ -219,9 +219,13 @@ def consejos_matchup(aliado, enemigo, rol=None):
     if dmg_e == "AD":
         tips.append(f"Itemiza armadura contra {enemigo} (Placas de Acero / Corazón Helado, botas de armadura).")
     elif dmg_e == "AP":
-        tips.append(f"Itemiza resistencia mágica contra {enemigo} (Velo de Banshee / Fauces de Espíritu, botas mágicas).")
+        tips.append(
+            f"Itemiza resistencia mágica contra {enemigo} (Velo de Banshee / Fauces de Espíritu, botas mágicas)."
+        )
     else:
-        tips.append(f"{enemigo} hace daño mixto: combina armadura y resistencia mágica, o vida bruta (Corazón de Acero).")
+        tips.append(
+            f"{enemigo} hace daño mixto: combina armadura y resistencia mágica, o vida bruta (Corazón de Acero)."
+        )
 
     if profile_e == "burst":
         tips.append(f"{enemigo} es de burst: cuida tu posición, un combo suyo puede matarte de golpe.")
@@ -290,9 +294,9 @@ def entrenar_modelos():
     n_total_features = n_global + N_FEATS_EQUIPO
 
     MODEL_HPARAMS = [
-        {"n_estimators": 25,  "max_depth": 12, "min_samples_leaf": 5},
-        {"n_estimators": 50,  "max_depth": 12, "min_samples_leaf": 5},
-        {"n_estimators": 50,  "max_depth": 15, "min_samples_leaf": 5},
+        {"n_estimators": 25, "max_depth": 12, "min_samples_leaf": 5},
+        {"n_estimators": 50, "max_depth": 12, "min_samples_leaf": 5},
+        {"n_estimators": 50, "max_depth": 15, "min_samples_leaf": 5},
         {"n_estimators": 100, "max_depth": 12, "min_samples_leaf": 5},
         {"n_estimators": 100, "max_depth": 15, "min_samples_leaf": 5},
     ]
@@ -311,7 +315,7 @@ def entrenar_modelos():
             WHERE team_position IS NOT NULL AND team_position != ''
         """
         df_parts = pd.read_sql_query(query, conn)
-        df_parts['champion'] = df_parts['champion'].apply(normalizar_nombre_champ)
+        df_parts["champion"] = df_parts["champion"].apply(normalizar_nombre_champ)
 
         conteo = df_parts.groupby("match_id").size()
         match_ids_validos = conteo[conteo == 10].index
@@ -320,7 +324,7 @@ def entrenar_modelos():
         dataset_filas = []
         campeones_vistos = set()
 
-        for match_id, grupo in df_parts.groupby("match_id"):
+        for _match_id, grupo in df_parts.groupby("match_id"):
             equipos = grupo["team"].unique()
             if len(equipos) != 2:
                 continue
@@ -362,20 +366,14 @@ def entrenar_modelos():
             X = X[mascara]
             y = [etiqueta for etiqueta, m in zip(y, mascara) if m]
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
         mejor_modelo = None
         mejor_acc = -1
         mejor_params = None
 
         for params in MODEL_HPARAMS:
-            modelo = RandomForestClassifier(
-                **params,
-                random_state=42,
-                n_jobs=-1
-            )
+            modelo = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
             modelo.fit(X_train, y_train)
             acc = modelo.score(X_test, y_test)
             if acc > mejor_acc:
@@ -386,31 +384,24 @@ def entrenar_modelos():
         print(f"  Mejor config: {mejor_params} -> acc test={mejor_acc:.4f}")
 
         y_pred = mejor_modelo.predict(X_test)
-        report = classification_report(
-            y_test, y_pred, labels=sorted(set(y_test)), zero_division=0
-        )
+        report = classification_report(y_test, y_pred, labels=sorted(set(y_test)), zero_division=0)
 
         proba = mejor_modelo.predict_proba(X_test)
         try:
-            auc = roc_auc_score(
-                y_test, proba, multi_class='ovr', labels=sorted(set(y_test))
-            )
+            auc = roc_auc_score(y_test, proba, multi_class="ovr", labels=sorted(set(y_test)))
         except ValueError:
             auc = None
 
         kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
         try:
-            cv_scores = cross_val_score(
-                mejor_modelo, X, y, cv=kf, scoring='accuracy', n_jobs=-1
-            )
+            cv_scores = cross_val_score(mejor_modelo, X, y, cv=kf, scoring="accuracy", n_jobs=-1)
             cv_mean = np.mean(cv_scores)
             cv_std = np.std(cv_scores)
         except Exception:
             cv_mean, cv_std = None, None
 
         auc_str = f"roc_auc={auc:.4f}" if auc else "roc_auc=N/A"
-        print(f"     {rol}: train={len(X_train)} test={len(X_test)} "
-              f"accuracy={mejor_acc:.4f} {auc_str}")
+        print(f"     {rol}: train={len(X_train)} test={len(X_test)} accuracy={mejor_acc:.4f} {auc_str}")
         if cv_mean is not None:
             print(f"     CV 5-fold: acc={cv_mean:.4f} +/- {cv_std:.4f}")
         print(f"        Classification report:\n{report}")
@@ -458,8 +449,8 @@ def entrenar_modelo_1v1():
               AND p1.team != p2.team
         """
         df = pd.read_sql_query(query, conn, params=(rol, rol))
-        df['aliado'] = df['aliado'].apply(normalizar_nombre_champ)
-        df['enemigo'] = df['enemigo'].apply(normalizar_nombre_champ)
+        df["aliado"] = df["aliado"].apply(normalizar_nombre_champ)
+        df["enemigo"] = df["enemigo"].apply(normalizar_nombre_champ)
 
         if len(df) < 15:
             print(f"  Datos insuficientes para {rol} ({len(df)}). Saltando...")
@@ -468,11 +459,11 @@ def entrenar_modelo_1v1():
         print(f"  Entrenando {rol} con {len(df)} enfrentamientos directos...")
 
         X = np.zeros((len(df), n * 2 + N_FEATS_COMPARATIVAS), dtype=np.float32)
-        y = df['win'].values
+        y = df["win"].values
 
         for idx, row in df.iterrows():
-            aliado = row['aliado']
-            enemigo = row['enemigo']
+            aliado = row["aliado"]
+            enemigo = row["enemigo"]
 
             if aliado in todos_campeones:
                 X[idx, todos_campeones.index(aliado)] = 1
@@ -481,13 +472,11 @@ def entrenar_modelo_1v1():
 
             try:
                 feats = extraer_features_comparativas(aliado, enemigo)
-                X[idx, n * 2:] = feats
+                X[idx, n * 2 :] = feats
             except Exception:
                 pass
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
         HPARAMS_1V1 = [
             {"n_estimators": 100, "max_depth": 10, "min_samples_leaf": 5},
@@ -502,11 +491,7 @@ def entrenar_modelo_1v1():
         mejor_params = None
 
         for params in HPARAMS_1V1:
-            modelo = RandomForestClassifier(
-                **params,
-                random_state=42,
-                n_jobs=-1
-            )
+            modelo = RandomForestClassifier(**params, random_state=42, n_jobs=-1)
             modelo.fit(X_train, y_train)
             acc = modelo.score(X_test, y_test)
             if acc > mejor_acc:
@@ -525,16 +510,17 @@ def entrenar_modelo_1v1():
 
         kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
         try:
-            cv_scores = cross_val_score(
-                mejor_modelo, X, y, cv=kf, scoring='accuracy', n_jobs=-1
-            )
+            cv_scores = cross_val_score(mejor_modelo, X, y, cv=kf, scoring="accuracy", n_jobs=-1)
             cv_mean = np.mean(cv_scores)
             cv_std = np.std(cv_scores)
         except Exception:
             cv_mean, cv_std = None, None
 
-        print(f"     {rol}: train={len(X_train)} test={len(X_test)} "
-              f"accuracy={acc:.4f} roc_auc={auc:.4f}" if auc else f"     {rol}: train={len(X_train)} test={len(X_test)} accuracy={acc:.4f} roc_auc=N/A")
+        print(
+            f"     {rol}: train={len(X_train)} test={len(X_test)} accuracy={acc:.4f} roc_auc={auc:.4f}"
+            if auc
+            else f"     {rol}: train={len(X_train)} test={len(X_test)} accuracy={acc:.4f} roc_auc=N/A"
+        )
         if cv_mean is not None:
             print(f"     CV 5-fold: acc={cv_mean:.4f} +/- {cv_std:.4f}")
 

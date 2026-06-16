@@ -9,11 +9,16 @@ Cada función devuelve un dict con:
 - "razon": str (explicación educativa)
 - "icono": str (emoji temático)
 """
+
 from .tags_champions import (
-    obtener_tag, obtener_dano, es_tanque, es_mago, es_tirador,
-    es_asesino, es_luchador, es_soporte, obtener_nivel_cc,
-    obtener_subrol_soporte, obtener_escalado, obtener_poder_temprano,
-    es_botas_estaticas, obtener_bota_estatica
+    es_botas_estaticas,
+    es_tanque,
+    es_tirador,
+    obtener_bota_estatica,
+    obtener_dano,
+    obtener_nivel_cc,
+    obtener_subrol_soporte,
+    obtener_tag,
 )
 
 # ─── CONSTANTES ─────────────────────────────────────────────────────
@@ -43,14 +48,14 @@ SPELL_NAMES = {
 
 SPELL_REASONING = {
     "14": ("Ignite", "reduce las curaciones enemigas y asegura kills en early"),
-    "4":  ("Flash", "esencial para reposicionarse, escapar o iniciar jugadas"),
+    "4": ("Flash", "esencial para reposicionarse, escapar o iniciar jugadas"),
     "12": ("Teleportar", "permite volver rápido a línea y rotar a otras líneas en mid-game"),
-    "6":  ("Agotamiento", "anula a campeones de daño sostenido y asesinos en teamfights"),
-    "3":  ("Extenuación", "reduce el daño de un enemigo clave y lo ralentiza"),
-    "7":  ("Curar", "da sustain en línea y una pequeña velocidad de escape"),
+    "6": ("Agotamiento", "anula a campeones de daño sostenido y asesinos en teamfights"),
+    "3": ("Extenuación", "reduce el daño de un enemigo clave y lo ralentiza"),
+    "7": ("Curar", "da sustain en línea y una pequeña velocidad de escape"),
     "11": ("Aplastar", "obligatorio en jungla para asegurar objetivos"),
     "21": ("Barrera", "escudo reactivo contra burst enemigo"),
-    "1":  ("Limpiar", "elimina CC enemigo, clave contra composiciones con mucho control"),
+    "1": ("Limpiar", "elimina CC enemigo, clave contra composiciones con mucho control"),
 }
 
 ROLE_PLAYSTYLE = {
@@ -74,7 +79,7 @@ def razonar_pick(campeon: str, rol: str, aliados: list, enemigos: list) -> dict:
     cc = tag.get("cc_level", 0)
 
     # Contar daño enemigo
-    ap_enemigos = sum(1 for e in enemigos if obtener_dano(e) in ("AP", "HYBRID"))
+    sum(1 for e in enemigos if obtener_dano(e) in ("AP", "HYBRID"))
     ad_enemigos = sum(1 for e in enemigos if obtener_dano(e) == "AD")
     cc_enemigo_total = sum(obtener_nivel_cc(e) for e in enemigos)
 
@@ -224,7 +229,7 @@ def razonar_botas(campeon: str, rol: str, enemigos: list, bota_id: str) -> dict:
         else:
             razon = f"Resistencia mágica y tenacidad contra {ap} amenazas AP con CC"
     elif bota_id == "3020":  # Sorcerer
-        razon = f"Penetración mágica plana: esencial para maximizar tu daño AP"
+        razon = "Penetración mágica plana: esencial para maximizar tu daño AP"
     elif bota_id == "3006":  # Berserker
         razon = "Velocidad de ataque para maximizar tu DPS como tirador"
     elif bota_id == "3158":  # Ionian
@@ -350,10 +355,15 @@ def razonar_objeto(item_id: str, campeon: str, rol: str, enemigos: list, items_d
 
 # ─── HELPERS ─────────────────────────────────────────────────────────
 
+
 def _icono_clase(clase: str) -> str:
     iconos = {
-        "Tank": "🛡️", "Fighter": "⚔️", "Assassin": "🗡️",
-        "Mage": "🔮", "Marksman": "🏹", "Support": "💚",
+        "Tank": "🛡️",
+        "Fighter": "⚔️",
+        "Assassin": "🗡️",
+        "Mage": "🔮",
+        "Marksman": "🏹",
+        "Support": "💚",
     }
     return iconos.get(clase, "✅")
 
@@ -361,10 +371,29 @@ def _icono_clase(clase: str) -> str:
 def _contar_curaciones(enemigos: list) -> int:
     """Campeones con curación significativa en su kit."""
     curadores = {
-        "Aatrox", "Briar", "Darius", "DrMundo", "Fiora", "Illaoi",
-        "Kayn", "Maokai", "Nasus", "Olaf", "RedKayn", "Renekton",
-        "Samira", "Soraka", "Swain", "Sylas", "Trundle", "Viego",
-        "Vladimir", "Warwick", "Yone", "Yorick", "Zac",
+        "Aatrox",
+        "Briar",
+        "Darius",
+        "DrMundo",
+        "Fiora",
+        "Illaoi",
+        "Kayn",
+        "Maokai",
+        "Nasus",
+        "Olaf",
+        "RedKayn",
+        "Renekton",
+        "Samira",
+        "Soraka",
+        "Swain",
+        "Sylas",
+        "Trundle",
+        "Viego",
+        "Vladimir",
+        "Warwick",
+        "Yone",
+        "Yorick",
+        "Zac",
     }
     return sum(1 for e in enemigos if e in curadores)
 
@@ -372,7 +401,7 @@ def _contar_curaciones(enemigos: list) -> int:
 def _razon_bota_estatica(bota_id: str, tag: dict) -> str:
     """Explica por qué este campeón usa estas botas fijas."""
     clase = tag.get("champion_class", "")
-    dano = tag.get("damage_type", "AD")
+    tag.get("damage_type", "AD")
 
     if bota_id == "3006":  # Berserker
         if clase == "Marksman":

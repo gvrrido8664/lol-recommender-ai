@@ -13,7 +13,7 @@ def hoja_estilos_global() -> str:
             QWidget {{ 
                 color: {TEXT_WHITE}; 
                 font-family: {FONT_FAMILY}; 
-                font-size: 12px; 
+                font-size: 13px; 
             }}
             
             /* ═══ PANELES / TARJETAS ═══ */

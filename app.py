@@ -40,6 +40,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     postgame_ready = Signal(dict)
     season_partial = Signal(list)  # streaming: batch de partidas de Riot descargadas
     season_progress = Signal(int, int)  # progreso de descarga: (procesadas, total)
+    riot_error = Signal(str)  # error de Riot API para mostrar en la UI
     db_listo = Signal(bool)  # inicializacion de la BD terminada en hilo de fondo (ok/fallo)
 
     def __init__(self):
@@ -90,6 +91,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.postgame_ready.connect(self._on_postgame_ready)
         self.season_partial.connect(self._on_season_partial)
         self.season_progress.connect(self._on_season_progress)
+        self.riot_error.connect(self._on_riot_error)
         
         self.last_aliados = []
         self.last_enemigos = []
@@ -477,6 +479,13 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         else:
             detalle = self._format_lcu_error(res)
             QMessageBox.critical(self, "Error API LCU", f"{error_message}\n\nDetalle: {detalle}")
+
+    def _on_riot_error(self, msg):
+        """Muestra error de Riot API en la etiqueta del perfil."""
+        if hasattr(self, 'lbl_riot_error'):
+            self.lbl_riot_error.setText(f"⚠️ {msg}")
+            self.lbl_riot_error.setVisible(True)
+            QTimer.singleShot(15000, lambda: self.lbl_riot_error.setVisible(False))
 
     # ── Auto-import wrappers (sin botón, para modo automático) ──
     def _auto_importar_runas(self, ids_runas, campeon):
@@ -920,7 +929,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setApplicationName("NEXUS")
-    app.setFont(QFont("Segoe UI", 10))
+    app.setFont(QFont("Segoe UI", 11))
     # El tema lo define enteramente el QSS propio (hoja_estilos_global) que la
     # ventana aplica en aplicar_estilos(). Qt6 maneja High-DPI por defecto.
 

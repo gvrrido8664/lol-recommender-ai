@@ -54,29 +54,36 @@ class PerfilTabMixin:
         center_info = QVBoxLayout()
         center_info.setSpacing(2)
         self.lbl_sum_name = QLabel("Esperando al Cliente...")
-        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
+        self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 18px; font-weight: bold;")
         center_info.addWidget(self.lbl_sum_name)
         self.lbl_sum_lvl = QLabel("Nivel: --")
-        self.lbl_sum_lvl.setStyleSheet("color: #8fa3b8; font-size: 11px;")
+        self.lbl_sum_lvl.setStyleSheet("color: #8fa3b8; font-size: 12px;")
         center_info.addWidget(self.lbl_sum_lvl)
         id_card_layout.addLayout(center_info, 1)
         
         # Derecha: SoloQ + Flex (compacto, una linea cada uno)
         ranks_info = QVBoxLayout()
         ranks_info.setSpacing(2)
-        self.lbl_soloq_tier = QLabel("⚔️ --")
-        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 11px;")
+        self.lbl_soloq_tier = QLabel("SoloQ ⚔️ --")
+        self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px;")
         ranks_info.addWidget(self.lbl_soloq_tier)
         self.lbl_soloq_stats = QLabel("")
-        self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 9px;")
+        self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 11px;")
         ranks_info.addWidget(self.lbl_soloq_stats)
-        self.lbl_flex_tier = QLabel("🛡️ --")
-        self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 11px;")
+        self.lbl_flex_tier = QLabel("Flex 🛡️ --")
+        self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 13px;")
         ranks_info.addWidget(self.lbl_flex_tier)
         self.lbl_flex_stats = QLabel("")
-        self.lbl_flex_stats.setStyleSheet("color: #8fa3b8; font-size: 9px;")
+        self.lbl_flex_stats.setStyleSheet("color: #8fa3b8; font-size: 11px;")
         ranks_info.addWidget(self.lbl_flex_stats)
         id_card_layout.addLayout(ranks_info)
+
+        # Etiqueta de error de Riot API (oculta por defecto)
+        self.lbl_riot_error = QLabel("")
+        self.lbl_riot_error.setStyleSheet(f"color: {RED_WR}; font-size: 12px; font-weight: bold; padding: 4px 8px; background-color: #1a0a0a; border: 1px solid #3a1a1a; border-radius: 4px; margin-top: 4px;")
+        self.lbl_riot_error.setVisible(False)
+        self.lbl_riot_error.setWordWrap(True)
+        self.col_id.addWidget(self.lbl_riot_error)
         
         self.col_id.addWidget(self.pnl_identity_card)
         
@@ -120,7 +127,7 @@ class PerfilTabMixin:
         self.tb_season_champs.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.tb_season_champs.setStyleSheet("""
             QTableWidget { border: none; background-color: transparent; }
-            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 10px; }
+            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 12px; }
             QTableWidget::item { border-bottom: 1px solid #1f1a26; padding: 0px; }
         """)
         self.tb_season_champs.verticalScrollBar().valueChanged.connect(self._on_scroll_season)
@@ -166,7 +173,7 @@ class PerfilTabMixin:
         
         self.lbl_fatiga_consejo = QLabel("Esperando datos del cliente.")
         self.lbl_fatiga_consejo.setAlignment(Qt.AlignLeft)
-        self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 6px 4px 6px;")
+        self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
         self.lbl_fatiga_consejo.setWordWrap(True)
         self.l_fatiga.addWidget(self.lbl_fatiga_consejo)
         
@@ -383,6 +390,10 @@ class PerfilTabMixin:
                         res = requests.get(url, headers=hdrs, timeout=15)
                     else:
                         break
+                if res.status_code == 403:
+                    print(f"[RiotAPI] HTTP 403 — API key invalida o expirada")
+                    self.riot_error.emit("API key de Riot invalida o expirada. Ve a Configuracion > General para actualizarla.")
+                    break
                 if res.status_code != 200:
                     print(f"[RiotAPI] HTTP {res.status_code} en listado (start={offset})")
                     break
@@ -465,6 +476,8 @@ class PerfilTabMixin:
                     continue
                 if res.status_code == 200:
                     return self._riot_convert_match(res.json(), my_puuid)
+                if res.status_code == 403:
+                    return None
                 if res.status_code == 404:
                     return None
             except Exception:
@@ -482,14 +495,14 @@ class PerfilTabMixin:
             match_ids = match_ids[:max_matches]
         if not match_ids:
             return []
-        print(f"[RiotAPI] Descargando {len(match_ids)}/{total_ids} partidas (6 workers)...")
+        print(f"[RiotAPI] Descargando {len(match_ids)}/{total_ids} partidas (3 workers)...")
         games = []
         downloaded = 0
         errores = 0
         t_start = time.time()
         last_emit = 0
         BATCH_EMIT = 30
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(self._riot_fetch_one_match, mid, my_puuid): mid for mid in match_ids}
             for future in as_completed(futures):
                 try:
@@ -547,6 +560,12 @@ class PerfilTabMixin:
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
         Usa streaming via season_partial para mostrar datos mientras llegan."""
         try:
+            # Verificar API key primero
+            api_key, _, _ = self._riot_get_config()
+            if not api_key:
+                self.riot_error.emit("API Key de Riot no configurada. Ve a Configuracion > General para ingresarla.")
+                return
+
             # Emitir cache si existe
             cached = self._load_season_cache(puuid)
             if cached:
@@ -571,6 +590,7 @@ class PerfilTabMixin:
                 riot_ids = self._riot_fetch_match_ids(riot_puuid)
             else:
                 print(f"[RiotAPI] PUUID invalido ({str(riot_puuid)[:30]}...), saltando Riot API")
+                self.riot_error.emit("No se pudo resolver tu cuenta en la API de Riot. Verifica tu nombre de invocador.")
                 return
             if riot_ids:
                 riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)
@@ -583,8 +603,13 @@ class PerfilTabMixin:
                         merged.append(g)
                         seen.add(gid)
                 self._save_season_cache(puuid, merged)
+                if not riot_games:
+                    self.riot_error.emit("No se pudieron descargar partidas. Puede que tu API key haya expirado o tenga rate limit.")
+            else:
+                self.riot_error.emit("No se encontraron partidas en la temporada actual. ¿Jugaste partidas este año?")
         except Exception as e:
             print(f"[RiotAPI] Error en background: {e}")
+            self.riot_error.emit(f"Error inesperado descargando partidas: {str(e)[:100]}")
 
     @staticmethod
     def _gid_or_fallback(g):
@@ -761,7 +786,7 @@ class PerfilTabMixin:
             def _format_rank(rank_data, lbl_tier, lbl_stats, prefijo=""):
                 """Formato compacto para tarjeta fusionada (1 linea)."""
                 if not rank_data or not rank_data.get("tier"):
-                    lbl_tier.setText(f"{prefijo}--")
+                    lbl_tier.setText(f"{prefijo} --")
                     lbl_stats.setText("")
                     return
                 t = rank_data["tier"]
@@ -773,9 +798,9 @@ class PerfilTabMixin:
                 icon = self._rank_icon(t)
                 if d not in ("I", "II", "III", "IV"):
                     d = ""
-                display_tier = f"{icon} {t.capitalize()} {d}" if d else f"{icon} {t.capitalize()}"
+                display_tier = f"{prefijo} {t.capitalize()} {d}" if d else f"{prefijo} {t.capitalize()}"
                 lbl_tier.setText(display_tier)
-                lbl_tier.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 11px;")
+                lbl_tier.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 13px;")
                 total = w + l
                 if total > 0:
                     wr = round(w / total * 100)
@@ -783,8 +808,8 @@ class PerfilTabMixin:
                 else:
                     lbl_stats.setText(f"{lp} PL")
 
-            _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats)
-            _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats)
+            _format_rank(ranked_solo, self.lbl_soloq_tier, self.lbl_soloq_stats, prefijo="SoloQ ⚔️")
+            _format_rank(ranked_flex, self.lbl_flex_tier, self.lbl_flex_stats, prefijo="Flex 🛡️")
 
             # Registrar LP del día y actualizar gráfica
             try:
@@ -1042,7 +1067,7 @@ class PerfilTabMixin:
                 lbl.setToolTip(f"{s['wins']}V / {s['games']-s['wins']}D en {s['games']} partidas")
             else:
                 lbl.setText(f"{rol}\n--")
-                lbl.setStyleSheet("font-size: 10px; color: #8fa3b8; padding: 4px;")
+                lbl.setStyleSheet("font-size: 11px; color: #8fa3b8; padding: 4px;")
                 lbl.setToolTip("Sin datos en el historial reciente")
 
         # --- ESTADÍSTICAS DE LA SEASON + FATIGA ---
@@ -1134,7 +1159,7 @@ class PerfilTabMixin:
             self.lbl_fatiga_estado.setText("SIN DATOS")
             self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 16px; font-weight: bold;")
             self.lbl_fatiga_consejo.setText("Esperando datos del cliente.")
-            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 6px 4px 6px;")
+            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
             return
         try:
             # Solo considerar partidas de hoy para no detectar fatiga de sesiones viejas
@@ -1175,7 +1200,7 @@ class PerfilTabMixin:
                 self.lbl_fatiga_consejo.setText(f"💡 {recomendacion}")
             else:
                 self.lbl_fatiga_consejo.setText(mensaje)
-            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 6px 4px 6px;")
+            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
         except Exception as e:
             print(f"[_analizar_fatiga] Error: {e}")
             self.lbl_fatiga_icono.setText("❌")

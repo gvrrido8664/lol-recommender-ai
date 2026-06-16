@@ -101,7 +101,7 @@ class PartidaTabMixin:
         tabla.setStyleSheet(f"""
             QTableWidget {{ background-color: {bg_color}; border: 1px solid {BORDER_SUBTLE}; border-radius: 6px; font-size: 11px; }}
             QTableWidget::item {{ padding: 2px 6px; border-bottom: 1px solid #1a2236; }}
-            QHeaderView::section {{ background-color: {BG_DARK}; color: {TEXT_MUTED}; font-size: 10px; padding: 3px; border: none; }}
+            QHeaderView::section {{ background-color: {BG_DARK}; color: {TEXT_MUTED}; font-size: 12px; padding: 3px; border: none; }}
         """)
 
     def actualizar_partida_vivo(self):
@@ -1090,7 +1090,7 @@ class PartidaTabMixin:
         lbl_name.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 11px; font-weight: bold; background: transparent;")
         txt_vbox.addWidget(lbl_name)
         lbl_cs = QLabel(f"{cs_min} CS/min")
-        lbl_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 8px; background: transparent;")
+        lbl_cs.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; background: transparent;")
         txt_vbox.addWidget(lbl_cs)
         l0.addLayout(txt_vbox, 1)
 
@@ -1198,7 +1198,7 @@ class PartidaTabMixin:
             cat_layout.setAlignment(Qt.AlignTop)
             cat_layout.setSpacing(4)
             lbl_cat = QLabel(categoria)
-            lbl_cat.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 10px;")
+            lbl_cat.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 11px;")
             lbl_cat.setAlignment(Qt.AlignCenter)
             cat_layout.addWidget(lbl_cat)
 

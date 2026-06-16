@@ -47,7 +47,7 @@ from src.analizador_fatiga import analizar_fatiga
 from src.perfil_jugador import analizar_personalidad, detectar_habitos, generar_objetivos_semanales, analizar_emocional_vs_wr
 from src.entrenador_ia import extraer_features_comparativas, interpretar_features, consejos_matchup
 from src.discord_rpc import iniciar_discord_rpc, detener_discord_rpc, actualizar_discord_rpc
-from src.logros import evaluar_logros, obtener_logros_conseguidos, LOGROS_DEFINICIONES
+from src.logros import evaluar_logros, obtener_logros_conseguidos, LOGROS_DEFINICIONES, generar_insights_jugador
 from src.logger import get_logger
 from src.updater import check_for_update, set_current_version
 

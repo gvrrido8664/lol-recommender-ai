@@ -7,7 +7,8 @@ from .riot_api import cargar_objetos, cargar_campeones
 from .roles import POS_EQUIVALENTES as pos_equivalentes, normalizar_posicion
 from .tags_champions import (
     obtener_dano, es_tanque, es_mago, es_tirador, es_asesino, es_luchador, es_soporte,
-    obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica
+    obtener_nivel_cc, obtener_subrol_soporte, obtener_tag, es_botas_estaticas, obtener_bota_estatica,
+    _CHAMPS_POR_ROL,
 )
 from .itemizador_dinamico import recomendar_bota, recomendar_items_situacionales
 from .razonador import razonar_pick, razonar_hechizos, razonar_botas, razonar_runas, razonar_objeto
@@ -505,6 +506,17 @@ def recomendar_picks_vivo(rol, aliados, enemigos, enemigo_lane=None):
     # Filtrar campeones ya pickeados (aliados o enemigos) para no recomendarlos
     picks_existentes = set(aliados) | set(enemigos)
     campeones_rol = [c for c in campeones_rol if c not in picks_existentes]
+
+    # Filtrar por clase apropiada en roles restringidos (evita recomendar
+    # Katarina, Vel'Koz o magos no-ADC como picks para BOTTOM, o asesinos
+    # para SUPPORT).  La lista canonica _CHAMPS_POR_ROL ya incluye las
+    # excepciones legitmas (Nilah, Ziggs, Karthus, Pyke, Brand, etc.).
+    if rol in ("BOTTOM", "UTILITY"):
+        permitidos = _CHAMPS_POR_ROL.get(rol, set())
+        campeones_clase = [c for c in campeones_rol if c in permitidos]
+        if len(campeones_clase) >= 5:
+            campeones_rol = campeones_clase
+
     if not campeones_rol:
         conn.close(); return {}
 

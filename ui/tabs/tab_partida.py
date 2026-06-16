@@ -1002,9 +1002,19 @@ class PartidaTabMixin:
                     unique_games.append(g)
             if len(unique_games) < len(all_games):
                 print(f"[_cargar_stats_season] DEDUP: {len(all_games)} -> {len(unique_games)} partidas unicas")
+
+            # Filtrar solo ranked
+            ranked_games = [g for g in unique_games if self._es_ranked(g)]
+
+            # Modo mas jugado (SoloQ vs Flex)
+            soloq = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 420)
+            flex  = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 440)
+            modo_principal = 420 if soloq >= flex else 440
+            season_games = [g for g in ranked_games if (g.get("queueId", 0) or 0) == modo_principal]
+
             # Computar stats por campeon (todos, con CS y duracion)
             champ_stats = {}
-            for g in unique_games:
+            for g in season_games:
                 part = g.get("participants", [{}])[0]
                 stats = part.get("stats", {})
                 cid = str(part.get("championId", "0"))

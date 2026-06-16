@@ -45,8 +45,8 @@ Name: "desktopicon"; Description: "Crear acceso directo en el Escritorio"; Group
 
 [Files]
 Source: "build_onedir\NEXUS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Config real empaquetada (copiada por build_exe.ps1 desde config.json)
-Source: "build_onedir\config.json"; DestDir: "{userappdata}\LoLRecommender"; DestName: "config.json"; Flags: onlyifdoesntexist
+; NOTA: los secretos (API_KEY, DATABASE_URL) van cifrados en secretos.bin DENTRO
+; del bundle de la app (build_onedir\NEXUS\*). NO se shippea config.json en claro.
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

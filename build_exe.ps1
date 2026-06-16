@@ -29,9 +29,26 @@ if (-not (Test-Path "icono_app.ico")) {
     }
 }
 
+# Cifrar secretos (API_KEY, DATABASE_URL) ANTES de PyInstaller para que el .spec
+# los embeba como secretos.bin dentro del bundle. NUNCA se shippea config.json plano.
+Write-Host "== Cifrando secretos -> secretos.bin ==" -ForegroundColor Cyan
+Remove-Item "secretos.bin" -Force -ErrorAction SilentlyContinue
+if (Test-Path "config.json") {
+    python scripts/cifrar_secretos.py "secretos.bin"
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path "secretos.bin")) {
+        Write-Host "ERROR: fallo el cifrado de secretos." -ForegroundColor Red; exit 1
+    }
+    Write-Host "OK: secretos.bin generado" -ForegroundColor Green
+} else {
+    Write-Host "AVISO: no hay config.json en la raiz; el build NO tendra secretos embebidos." -ForegroundColor Yellow
+}
+
 Write-Host "== Ejecutando PyInstaller (build_nexus.spec) ==" -ForegroundColor Cyan
 pyinstaller build_nexus.spec --noconfirm --distpath build_onedir --workpath build_temp
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: PyInstaller fallo." -ForegroundColor Red; exit 1 }
+$pyinstallerExit = $LASTEXITCODE
+# Borrar el blob plano de la raiz: ya quedo embebido dentro del bundle.
+Remove-Item "secretos.bin" -Force -ErrorAction SilentlyContinue
+if ($pyinstallerExit -ne 0) { Write-Host "ERROR: PyInstaller fallo." -ForegroundColor Red; exit 1 }
 
 if (-not (Test-Path $ExePath)) { Write-Host "ERROR: no se genero $ExePath" -ForegroundColor Red; exit 1 }
 $sizeMB = [math]::Round((Get-Item $ExePath).Length / 1MB, 1)
@@ -55,14 +72,8 @@ if ($Sign) {
 
 # ── Instalador con Inno Setup ──
 if ($Installer) {
-    # Copiar config.json real al directorio de build para que el instalador lo incluya
-    if (Test-Path "config.json") {
-        Copy-Item "config.json" "build_onedir\config.json" -Force
-        Write-Host "OK: config.json copiado al instalador" -ForegroundColor Green
-    } else {
-        Write-Host "AVISO: no se encuentra config.json en la raiz. Usando config.example.json como fallback." -ForegroundColor Yellow
-        Copy-Item "config.example.json" "build_onedir\config.json" -Force
-    }
+    # NOTA: los secretos van cifrados en secretos.bin (ya embebido en el bundle).
+    # NO se copia config.json plano al instalador.
     $isccPaths = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",

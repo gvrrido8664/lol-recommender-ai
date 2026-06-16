@@ -369,25 +369,11 @@ class LCUConnector:
         return None
 
     def obtener_api_key_local(self):
-        # Primero buscar en directorio escribible (donde el usuario guarda config)
-        if getattr(sys, 'frozen', False):
-            writable_root = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'LoLRecommender')
-        else:
-            writable_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(writable_root, "config.json")
-        if not os.path.exists(config_path):
-            # Fallback: directorio del bundle
-            if getattr(sys, 'frozen', False):
-                config_path = os.path.join(sys._MEIPASS, "config.json")
-            else:
-                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                return config.get("API_KEY")
-        except Exception:
-            pass
-        return None
+        # Unico chokepoint: cargar_config() mergea la API_KEY desde el blob cifrado
+        # embebido (distribuido) o desde config.json plano (dev). No leer el archivo
+        # directo aqui para que el descifrado en memoria aplique tambien a la LCU.
+        from src.config import cargar_config
+        return (cargar_config() or {}).get("API_KEY")
 
     def obtener_encrypted_summoner_id(self, puuid, region):
         api_key = self.obtener_api_key_local()

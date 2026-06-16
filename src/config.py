@@ -20,6 +20,7 @@ BASE_DIR = _obtener_dir_base()
 DATA_DIR = _obtener_dir_datos()
 
 def cargar_config():
+    config = {}
     try:
         # En .exe el config.json va en %APPDATA%/LoLRecommender (carpeta escribible);
         # en dev, en la raiz del proyecto. Tambien se acepta junto al ejecutable (CWD).
@@ -28,7 +29,21 @@ def cargar_config():
         for p in config_paths:
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    config = json.load(f)
+                break
+    except Exception:
+        config = {}
+
+    # Secretos embebidos cifrados (API_KEY, DATABASE_URL): en distribucion no van en
+    # texto plano en config.json, sino en secretos.bin dentro del bundle. Se descifran
+    # solo en memoria y se mergean SIN sobrescribir lo que el usuario haya puesto en su
+    # config.json (p.ej. una API key propia de dev). Ver src/secretos.py.
+    try:
+        from src.secretos import cargar_secretos_embebidos
+        for clave, valor in cargar_secretos_embebidos().items():
+            if valor and not config.get(clave):
+                config[clave] = valor
     except Exception:
         pass
-    return {}
+
+    return config

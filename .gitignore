@@ -28,6 +28,9 @@ datos_iniciales.zip
 # Configuracion local (API keys, preferencias de usuario)
 config.json
 
+# Blob de secretos cifrados generado en build-time (no commitear)
+secretos.bin
+
 # Assets descargados por Data Dragon
 assets/items/*.png
 assets/champs/*.png

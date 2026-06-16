@@ -23,6 +23,12 @@ for _f in glob.glob("data/*"):
 for _f in glob.glob("assets/*.json"):
     _datas.append((_f, "assets"))
 
+# Secretos cifrados (API_KEY, DATABASE_URL). Generado por scripts/cifrar_secretos.py
+# antes del build. Va a la raiz del bundle (se lee desde sys._MEIPASS en runtime).
+# Cifrado con Fernet -> seguro incluirlo en el bundle (no es texto plano).
+if os.path.isfile("secretos.bin"):
+    _datas.append(("secretos.bin", "."))
+
 # Solo PySide6 necesita collect_all (DLLs, shiboken, Qt plugins, QML, translations).
 # numpy, pandas, scipy, sklearn -> hooks estandar (pyinstaller-hooks-contrib).
 _binaries, _collected_datas, _hidden = [], [], []
@@ -44,6 +50,9 @@ hiddenimports = list(set(_hidden + [
     "sklearn.neighbors", "sklearn.linear_model",
     "sklearn.model_selection", "sklearn.feature_extraction",
     "pypresence", "requests", "urllib3",
+    "cryptography", "cryptography.fernet",
+    "cryptography.hazmat.primitives.kdf.pbkdf2",
+    "cryptography.hazmat.primitives.hashes",
 ]))
 
 _icon = "icono_app.ico" if os.path.isfile("icono_app.ico") else None
@@ -57,7 +66,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', '_tkinter', 'matplotlib', 'PyQt5', 'PyQt6'],
+    excludes=['tkinter', '_tkinter', 'matplotlib', 'PyQt5', 'PyQt6', 'PySide6.QtQml', 'PySide6.QtQuick'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

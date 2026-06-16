@@ -172,21 +172,17 @@ class PerfilTabMixin:
         
         self.col_id.addWidget(self.pnl_fatiga)
 
-        # ── PANEL LP HISTORY ──
-        self.pnl_lp, self.l_lp = self.crear_panel("📈 EVOLUCIÓN DE LP (30 DÍAS)")
-        lp_header = QHBoxLayout()
-        self.cb_lp_queue = QComboBox()
-        self.cb_lp_queue.addItems(["Solo/Dúo", "Flex"])
-        self.cb_lp_queue.setMinimumWidth(130)
-        self.cb_lp_queue.currentIndexChanged.connect(self._actualizar_grafica_lp)
-        lp_header.addWidget(QLabel("Cola:"))
-        lp_header.addWidget(self.cb_lp_queue)
-        lp_header.addStretch()
-        self.l_lp.addLayout(lp_header)
-        self.lp_graph = LPGraphWidget()
-        self.lp_graph.setMinimumHeight(130)
-        self.l_lp.addWidget(self.lp_graph)
-        self.col_id.addWidget(self.pnl_lp)
+        # ── PANEL INSIGHTS ──
+        self.pnl_insights, self.l_insights = self.crear_panel("💡 INSIGHTS")
+        self.fr_logros = QGridLayout()
+        self.fr_logros.setSpacing(3)
+        self.fr_logros.setContentsMargins(6, 2, 6, 4)
+        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus insights...")
+        self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
+        self.lbl_logros_text.setWordWrap(True)
+        self.fr_logros.addWidget(self.lbl_logros_text, 0, 0, 1, 2)
+        self.l_insights.addLayout(self.fr_logros)
+        self.col_id.addWidget(self.pnl_insights)
 
         l_pnl.addLayout(self.col_id, 35)
         
@@ -303,19 +299,6 @@ class PerfilTabMixin:
         hs_layout.setCurrentIndex(1)  # arranca mostrando el placeholder (sin datos aún)
 
         self.col_hist.addWidget(self.historial_stack, 1)
-
-        # Insights estilo Porofessor (tags compactos en 2 columnas)
-        self.lbl_logros_title = QLabel("INSIGHTS")
-        self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: bold; font-size: 13px; margin-top: 8px;")
-        self.col_hist.addWidget(self.lbl_logros_title)
-        self.fr_logros = QGridLayout()
-        self.fr_logros.setSpacing(3)
-        self.fr_logros.setContentsMargins(0, 2, 0, 0)
-        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus insights...")
-        self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
-        self.lbl_logros_text.setWordWrap(True)
-        self.fr_logros.addWidget(self.lbl_logros_text, 0, 0, 1, 2)
-        self.col_hist.addLayout(self.fr_logros)
 
         self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)
         
@@ -652,17 +635,6 @@ class PerfilTabMixin:
             puuid = perfil.get("puuid")
             self._season_puuid = puuid
 
-            # ── Mini-fetch LCU: solo 100 partidas para reconstruir LP (eloChange) ──
-            historial_lp = []
-            if puuid:
-                try:
-                    historial_lp = self.lcu.obtener_historial_extendido(
-                        puuid=puuid, inicio=0, cantidad=100
-                    )
-                except Exception as e:
-                    print(f"[LP] Mini-fetch LCU error: {e}")
-            data["historial_lp"] = historial_lp or []
-
             # ── Historial y season desde Riot API (no LCU) ──
             data["historial"] = []
             data["all_games_season"] = []
@@ -810,11 +782,6 @@ class PerfilTabMixin:
                     registrar_lp(ranked_flex["tier"], ranked_flex.get("division", ""),
                                  ranked_flex.get("lp", 0), ranked_flex.get("wins", 0),
                                  ranked_flex.get("losses", 0), "RANKED_FLEX_SR")
-                # Reconstruir LP diario desde eloChange del LCU
-                historial_lp = data.get("historial_lp", [])
-                if historial_lp:
-                    self._reconstruir_lp_desde_partidas(historial_lp)
-                self._actualizar_grafica_lp()
             except Exception as _e_lp:
                 print(f"[LP] Error registrando: {_e_lp}")
 
@@ -1144,127 +1111,6 @@ class PerfilTabMixin:
                 self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
-
-    def _reconstruir_lp_desde_partidas(self, games):
-        """Reconstruye LP diario hacia atras usando eloChange de partidas del LCU.
-        Consulta el endpoint individual /lol-match-history/v1/games/{id}
-        porque el batch /matches no incluye eloChange."""
-        from datetime import date
-        from collections import defaultdict
-
-        # Sumar eloChange por dia — endpoint individual por game (batch no tiene el field)
-        daily_net = defaultdict(int)
-        for g in games[:30]:
-            game_id = g.get("gameId")
-            if not game_id:
-                continue
-            try:
-                res = self.lcu.request('GET', f'/lol-match-history/v1/games/{game_id}', timeout=3)
-                if not res or res.status_code != 200:
-                    continue
-                detail = res.json()
-                if not daily_net:  # debug: imprimir keys del primer juego
-                    print(f"[LP] Keys endpoint individual: {sorted(detail.keys())}")
-                elo = detail.get("eloChange") or detail.get("playerScoreChange")
-                if elo is None:
-                    continue
-
-                ts = detail.get("gameCreation") or detail.get("gameCreationDate") or g.get("gameCreation") or g.get("gameCreationDate")
-                if not ts:
-                    continue
-                try:
-                    if isinstance(ts, (int, float)):
-                        fecha = str(date.fromtimestamp(ts / 1000 if ts > 1e12 else ts))
-                    else:
-                        fecha = str(ts)[:10]
-                except Exception:
-                    continue
-
-                daily_net[fecha] += int(elo)
-            except Exception:
-                continue
-
-        print(f"[LP] Partidas con eloChange: {len(daily_net)} dias encontrados")
-        if not daily_net:
-            return
-
-        hoy = str(date.today())
-
-        # Obtener tier/LP actual de cada cola como ancla
-        from src.db_manager import registrar_lp, obtener_conexion
-        conn = obtener_conexion()
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT queue_type, fecha, tier, division, lp FROM lp_history WHERE fecha=%s", (hoy,))
-        anclas = {}
-        for r in cur.fetchall():
-            anclas[r["queue_type"]] = {"tier": r["tier"], "division": r["division"], "lp": r["lp"]}
-        conn.close()
-
-        if not anclas:
-            print("[LP] Sin datos de hoy en lp_history, no se puede anclar")
-            return
-
-        # Usar solo la cola con mas partidas para la reconstruccion
-        qt = max(anclas.items(), key=lambda x: x[1]["lp"])[0] if len(anclas) > 1 else list(anclas.keys())[0]
-        ancla = anclas[qt]
-
-        tier_base = {"IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
-                     "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
-                     "MASTER": 2800, "GRANDMASTER": 2800, "CHALLENGER": 2800}
-        div_offset = {"I": 300, "II": 200, "III": 100, "IV": 0, "": 0}
-        tiers_list = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"]
-
-        sorted_dates = sorted(daily_net.keys(), reverse=True)
-        registrados = 0
-        for fecha in sorted_dates:
-            if fecha >= hoy:
-                continue
-            net = daily_net[fecha]
-
-            t = tier_base.get(ancla["tier"], 0)
-            d = div_offset.get(ancla.get("division", ""), 0)
-            total = t + d + ancla["lp"]
-            prev_total = total - net
-
-            prev_tier = ancla["tier"]
-            while prev_total < 0 and prev_tier != "IRON":
-                idx = tiers_list.index(prev_tier) if prev_tier in tiers_list else 0
-                prev_tier = tiers_list[max(0, idx - 1)]
-                prev_total += 400
-            if prev_total < 0:
-                prev_total = 0
-
-            while prev_total >= 400 and prev_tier != "CHALLENGER":
-                prev_total -= 400
-                idx = tiers_list.index(prev_tier) if prev_tier in tiers_list else -1
-                prev_tier = tiers_list[min(len(tiers_list) - 1, idx + 1)]
-
-            prev_lp = max(0, min(100, prev_total))
-
-            if prev_lp >= 75: prev_div = "I"
-            elif prev_lp >= 50: prev_div = "II"
-            elif prev_lp >= 25: prev_div = "III"
-            else: prev_div = "IV"
-
-            registrar_lp(prev_tier, prev_div, int(prev_lp), queue_type=qt)
-            ancla["tier"] = prev_tier
-            ancla["division"] = prev_div
-            ancla["lp"] = int(prev_lp)
-            registrados += 1
-
-        print(f"[LP] Reconstruidos {registrados} dias para {qt}")
-
-    def _actualizar_grafica_lp(self):
-        """Refresca la gráfica de LP con los datos de la cola seleccionada."""
-        if not hasattr(self, "lp_graph"):
-            return
-        queue_map = {"Solo/Dúo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
-        queue = queue_map.get(self.cb_lp_queue.currentText(), "RANKED_SOLO_5x5")
-        try:
-            history = obtener_historial_lp(queue)
-            self.lp_graph.set_data(history)
-        except Exception as e:
-            print(f"[LP Graph] Error: {e}")
 
     def _analizar_fatiga(self):
         """Analiza fatiga/tilt desde el historial de la LCU y actualiza el dashboard premium."""

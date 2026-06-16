@@ -678,8 +678,12 @@ class PerfilTabMixin:
 
             # ── Fase 6: Riot API (background, no bloquea la UI) ──
             if puuid and len(all_games) < 500:
-                game_name = perfil.get("gameName") or perfil.get("displayName", "").split("#")[0]
-                tag_line = perfil.get("tagLine") or ""
+                raw_name = perfil.get("gameName") or perfil.get("displayName") or ""
+                if "#" in raw_name:
+                    game_name, tag_line = raw_name.split("#", 1)
+                else:
+                    game_name = raw_name
+                    tag_line = perfil.get("tagLine") or ""
                 threading.Thread(
                     target=self._riot_season_background,
                     args=(puuid, all_games, game_name, tag_line),
@@ -852,14 +856,16 @@ class PerfilTabMixin:
 
     def _es_ranked(self, g):
         """True si la partida es ranked (SoloQ 420 / Flex 440).
-        Las partidas del LCU sin queueId se asumen ranked (la mayoria lo son);
-        las de queueId conocido no-ranked se excluyen."""
+        Usa queueId cuando esta presente; si no, detecta por eloChange
+        (LP delta, solo existe en partidas ranked del LCU)."""
         q = g.get("queueId", 0) or 0
         if q in (420, 440):
             return True
         if q in (400, 430, 450, 700, 1700):  # Normal, ARAM, Clash, Arena
             return False
-        return (g.get("gameMode") or "").upper() not in ("ARAM", "URF", "PRACTICETOOL")
+        # LCU sin queueId: eloChange es la unica senial confiable
+        elo = g.get("eloChange") or g.get("playerScoreChange")
+        return elo is not None
 
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""

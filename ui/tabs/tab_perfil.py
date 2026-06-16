@@ -326,42 +326,39 @@ class PerfilTabMixin:
         outer.addWidget(self.crear_scroll_responsive(cont, 1080))
 
     def _riot_resolve_puuid(self, game_name: str, tag_line: str):
-        """Obtiene el PUUID desde la Edge Function."""
+        """Obtiene el PUUID desde la Edge Function resolviendo el Riot ID."""
+        import requests as _requests
+
         from src.backend_client import riot_get
 
         if not game_name:
             return None
-        if not tag_line:
-            if game_name and "#" in game_name:
-                parts = game_name.split("#", 1)
-                game_name, tag_line = parts[0], parts[1]
-            else:
-                return None
-        tag = tag_line
+        if not tag_line and game_name and "#" in game_name:
+            game_name, tag_line = game_name.split("#", 1)
+        if not game_name or not tag_line:
+            print(f"[Edge] Riot ID incompleto (name='{game_name}', tag='{tag_line}'), no se puede resolver")
+            return None
+        _, routing = self._riot_get_config()
+        # URL-encode: los Riot ID admiten espacios y caracteres no-ASCII (frecuentes en LAS/LAN)
+        nombre_q = _requests.utils.quote(game_name, safe="")
+        tag_q = _requests.utils.quote(tag_line, safe="")
         try:
-            _, routing = self._riot_get_config()
-            data = riot_get(f"/account/by-riot-id/{game_name}/{tag}", {"routing": routing})
+            data = riot_get(f"/account/by-riot-id/{nombre_q}/{tag_q}", {"routing": routing})
             if data and data.get("puuid"):
                 puuid = data["puuid"]
-                print(f"[Edge] PUUID resuelto: {game_name}#{tag} -> {puuid}")
+                print(f"[Edge] PUUID resuelto: {game_name}#{tag_line} -> {puuid}")
                 return puuid
+            print(f"[Edge] No se resolvio PUUID para {game_name}#{tag_line} (routing={routing}); ver nexus.log")
         except Exception as e:
             print(f"[Edge] Error resolviendo PUUID: {e}")
         return None
 
     def _riot_get_config(self):
         """Obtiene region y routing para llamadas a la Edge Function."""
+        from src.lcu_api import routing_para_region
+
         region = (self.lcu.obtener_region_local() or "la2").lower()
-        routing = (
-            "americas"
-            if region in ("la1", "la2", "na1", "br1", "oc1", "la", "lan", "las", "na", "br")
-            else "europe"
-            if region in ("euw1", "eun1", "tr1", "ru", "euw", "eune", "tr")
-            else "sea"
-            if region in ("ph2", "sg2", "th2", "tw2", "vn2")
-            else "asia"
-        )
-        return region, routing
+        return region, routing_para_region(region)
 
     def _riot_fetch_match_ids(self, puuid: str):
         """Pagina la Edge Function para obtener TODOS los match IDs de la temporada actual."""
@@ -562,20 +559,32 @@ class PerfilTabMixin:
                 if self._cache_es_reciente(puuid):
                     return
 
-            # Resolver PUUID nuevo
-            riot_puuid = puuid
+            # Un PUUID real tiene 78 chars; algunos clientes devuelven un placeholder
+            # (UUID de 36 chars / zero-UUID) que no sirve para la API de Riot.
+            def _puuid_valido(p):
+                return bool(p) and len(p) > 40
+
+            # Resolver PUUID: si el de la LCU no es valido, resolver por Riot ID
+            riot_puuid = puuid if _puuid_valido(puuid) else None
             new_puuid = self._riot_resolve_puuid(game_name, tag_line)
-            if new_puuid and new_puuid != puuid:
+            if _puuid_valido(new_puuid):
                 riot_puuid = new_puuid
 
             # Descargar IDs + partidas
-            if riot_puuid and len(riot_puuid) > 40:
+            if _puuid_valido(riot_puuid):
                 riot_ids = self._riot_fetch_match_ids(riot_puuid)
             else:
-                print(f"[RiotAPI] PUUID invalido ({str(riot_puuid)[:30]}...), saltando Riot API")
-                self.riot_error.emit(
-                    "No se pudo resolver tu cuenta en la API de Riot. Verifica tu nombre de invocador."
-                )
+                print(f"[RiotAPI] PUUID invalido (lcu='{str(puuid)[:30]}', resuelto='{new_puuid}'), saltando Riot API")
+                tiene_riot_id = bool(game_name) and (bool(tag_line) or "#" in (game_name or ""))
+                if tiene_riot_id:
+                    # Tenemos nombre+tag pero la resolucion fallo: casi siempre red/proxy.
+                    self.riot_error.emit(
+                        "No se pudo contactar la API de Riot (proxy). Reintentá en unos segundos."
+                    )
+                else:
+                    self.riot_error.emit(
+                        "No se pudo resolver tu cuenta en la API de Riot. Verifica tu nombre de invocador."
+                    )
                 return
             if riot_ids:
                 riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)

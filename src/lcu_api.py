@@ -9,6 +9,19 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+def routing_para_region(region):
+    """Mapea un codigo de region (plataforma o forma corta) al cluster regional
+    de Riot (americas/europe/asia/sea) para Account-v1 y Match-v5."""
+    r = (region or "la2").lower()
+    if r in ("la1", "la2", "na1", "br1", "oc1", "la", "lan", "las", "na", "br", "oce"):
+        return "americas"
+    if r in ("euw1", "eun1", "tr1", "ru", "euw", "eune", "tr"):
+        return "europe"
+    if r in ("ph2", "sg2", "th2", "tw2", "vn2"):
+        return "sea"
+    return "asia"
+
+
 class LCUConnector:
     def __init__(self, lol_path=None):
         if lol_path is None:
@@ -326,13 +339,7 @@ class LCUConnector:
                 from src.backend_client import riot_get
 
                 region = self.obtener_region_local() or "la2"
-                routing = (
-                    "americas"
-                    if region in ("la1", "la2", "na1", "br1", "oc1")
-                    else "europe"
-                    if region in ("euw1", "eun1", "tr1", "ru")
-                    else "asia"
-                )
+                routing = routing_para_region(region)
 
                 # Summoner API — icono + nivel + summonerId
                 if needs_icon or needs_lvl:

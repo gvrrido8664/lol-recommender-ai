@@ -11,6 +11,10 @@ import os
 
 import requests
 
+from src.logger import get_logger
+
+log = get_logger(__name__)
+
 
 def _cargar_config_json():
     try:
@@ -37,21 +41,37 @@ def _headers():
     }
 
 
+def _log_http_error(metodo, path, resp):
+    """Loguea un fallo HTTP del proxy con status + cuerpo (truncado) para diagnostico."""
+    cuerpo = ""
+    try:
+        cuerpo = (resp.text or "")[:200]
+    except Exception:
+        pass
+    log.warning("%s %s -> HTTP %s %s", metodo, path, resp.status_code, cuerpo)
+
+
 def _post(path, json_data):
     try:
         r = requests.post(f"{URL_BASE}{path}", json=json_data, headers=_headers(), timeout=15)
-        r.raise_for_status()
+        if r.status_code != 200:
+            _log_http_error("POST", path, r)
+            return None
         return r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("POST %s -> error de red: %s", path, e)
         return None
 
 
 def _get(path, params=None):
     try:
         r = requests.get(f"{URL_BASE}{path}", params=params, headers=_headers(), timeout=15)
-        r.raise_for_status()
+        if r.status_code != 200:
+            _log_http_error("GET", path, r)
+            return None
         return r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("GET %s -> error de red: %s", path, e)
         return None
 
 
@@ -64,9 +84,12 @@ def _headers_edge():
 def _get_edge(path, params=None):
     try:
         r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers_edge(), timeout=15)
-        r.raise_for_status()
+        if r.status_code != 200:
+            _log_http_error("EDGE GET", path, r)
+            return None
         return r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("EDGE GET %s -> error de red: %s", path, e)
         return None
 
 

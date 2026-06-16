@@ -246,6 +246,8 @@ def generar_insights_jugador(games):
     if len(flat) < 5:
         return []
 
+    # Solo ultimas 20 partidas
+    flat = flat[-20:]
     wins = sum(1 for g in flat if g.get("win"))
     total = len(flat)
     wr_total = round(wins / total * 100, 1)

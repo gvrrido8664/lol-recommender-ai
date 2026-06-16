@@ -622,62 +622,21 @@ class PerfilTabMixin:
                 print(f"[_fetch_perfil] Error obteniendo maestrías (no fatal): {e}")
             data["maestrias"] = maestrias[:3] if maestrias else []
             
-            # ── Fase 4: Historial (con reintentos, no fatal si falla) ──
+            # ── Fase 4: PUUID para API ──
             puuid = perfil.get("puuid")
             self._season_puuid = puuid
-            historial = None
-            if puuid:
-                for intento in range(3):
-                    try:
-                        historial = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=0, cantidad=100)
-                        if historial:
-                            break
-                    except Exception as e:
-                        print(f"[_fetch_perfil] Error historial intento {intento+1}: {e}")
-                    if intento < 2:
-                        time.sleep(2)
-                if not historial:
-                    print("[_fetch_perfil] No se pudo obtener historial (no fatal).")
-            data["historial"] = historial
-            
-            # ── Fase 5: Season stats (paginación completa para toda la temporada) ──
-            all_games = list(historial) if historial else []
 
-            def _gid(g):
-                gid = str(g.get("gameId", "") or "")
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    return gid
-                if '_' in gid:
-                    gid = gid.rsplit('_', 1)[-1]
-                return gid
+            # ── Historial y season desde Riot API (no LCU) ──
+            data["historial"] = []
+            data["all_games_season"] = []
 
-            if all_games and self.lcu and self.lcu.port:
-                try:
-                    existing_ids = {_gid(g) for g in all_games}
-                    for offset in range(100, 2000, 100):
-                        batch = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=offset, cantidad=100)
-                        if not batch:
-                            break
-                        new_batch = [g for g in batch if _gid(g) and _gid(g) not in existing_ids]
-                        if not new_batch:
-                            break
-                        for g in new_batch:
-                            existing_ids.add(_gid(g))
-                        all_games.extend(new_batch)
-                        if len(batch) < 100:
-                            break
-                    print(f"[_fetch_perfil] Season stats: {len(all_games)} partidas totales (temporada completa)")
-                except Exception as e:
-                    print(f"[_fetch_perfil] Error paginando season stats (no fatal): {e}")
-            data["all_games_season"] = all_games
-
-            # Emitir YA los datos del LCU — no esperar a Riot API
+            # Emitir YA los datos del LCU (perfil, ligas, maestrias) — las partidas
+            # llegan despues via season_partial desde Riot API.
             data["ok"] = perfil_ok
             self.perfil_listo.emit(data)
 
-            # ── Fase 6: Riot API (background, no bloquea la UI) ──
-            if puuid and len(all_games) < 500:
+            # ── Fase 5: Riot API (background, no bloquea la UI) ──
+            if puuid:
                 raw_name = perfil.get("gameName") or perfil.get("displayName") or ""
                 if "#" in raw_name:
                     game_name, tag_line = raw_name.split("#", 1)
@@ -686,7 +645,7 @@ class PerfilTabMixin:
                     tag_line = perfil.get("tagLine") or ""
                 threading.Thread(
                     target=self._riot_season_background,
-                    args=(puuid, all_games, game_name, tag_line),
+                    args=(puuid, [], game_name, tag_line),
                     daemon=True
                 ).start()
 

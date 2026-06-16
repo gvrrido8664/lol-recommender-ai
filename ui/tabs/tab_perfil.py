@@ -534,7 +534,7 @@ class PerfilTabMixin:
             cached = self._load_season_cache(puuid)
             if cached:
                 # Si el cache no cubre la temporada completa, borrarlo y redescargar
-                if len(cached) < 500:
+                if len(cached) < 200:
                     print(f"[RiotAPI] Cache incompleto ({len(cached)} partidas), eliminando...")
                     from src.db_manager import obtener_conexion
                     try:

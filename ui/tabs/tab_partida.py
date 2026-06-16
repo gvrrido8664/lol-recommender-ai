@@ -122,7 +122,7 @@ class PartidaTabMixin:
                 # Mostrar post-game una sola vez por partida (al transicionar desde InProgress)
                 if not self._postgame_shown and self._last_fase in ("InProgress", "GameStart"):
                     self._postgame_shown = True
-                    threading.Thread(target=self._preparar_postgame, daemon=True).start()
+                    ejecutar_en_hilo(self._preparar_postgame)
             else:
                 # Nueva fase de lobby → refrescar perfil si venimos de partida
                 if self._postgame_shown:

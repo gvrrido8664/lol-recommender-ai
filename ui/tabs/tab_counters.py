@@ -78,7 +78,7 @@ class CountersTabMixin:
         self._cargando_meta = True
         rol_api = ROL_TO_API[self.cb_rol_counter.currentText()]
         enemigo = self.cb_enemigo.currentText()
-        threading.Thread(target=self._fetch_meta_builds, args=(rol_api, enemigo), daemon=True).start()
+        ejecutar_en_hilo(self._fetch_meta_builds, rol_api, enemigo)
 
     def _fetch_meta_builds(self, rol_api, enemigo):
         """Hilo secundario: ejecuta todas las queries de Meta Builds."""

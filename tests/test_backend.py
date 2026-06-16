@@ -6,6 +6,7 @@ Requiere: APP_TOKEN=test-token-nexus configurado como env var.
 """
 
 import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -161,7 +162,7 @@ def test_riot_proxy_sin_api_key():
 # ─── Rate Limiter ─────────────────────────────────────────────────────────────
 
 def test_rate_limiter_reset():
-    from backend.riot import reset_limiter, _short_window, _long_window
+    from backend.riot import _long_window, _short_window, reset_limiter
     reset_limiter()
     assert len(_short_window) == 0
     assert len(_long_window) == 0

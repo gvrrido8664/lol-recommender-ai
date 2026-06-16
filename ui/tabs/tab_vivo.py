@@ -250,12 +250,12 @@ class VivoTabMixin:
         # Cargar perfil en hilo secundario (si no está ya cargándose)
         if not self.perfil_cargado and not self._cargando_perfil:
             self._cargando_perfil = True
-            threading.Thread(target=self._fetch_perfil, daemon=True).start()
+            ejecutar_en_hilo(self._fetch_perfil)
 
         # Actualizar radar/draft en hilo secundario (si no está ya actualizándose)
         if not self._actualizando_radar:
             self._actualizando_radar = True
-            threading.Thread(target=self._fetch_radar, daemon=True).start()
+            ejecutar_en_hilo(self._fetch_radar)
 
         # Auto-switch de pestañas segun fase del juego + notificaciones
         fase = self.lcu.obtener_fase_juego()

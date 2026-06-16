@@ -11,6 +11,7 @@ Extraido de app.py sin cambios de comportamiento:
 
 import json
 import os
+import threading
 
 from src.logger import get_logger
 from src.paths import BASE_DIR, CONFIG_DIR
@@ -709,3 +710,16 @@ def guardar_settings(settings):
     except Exception as e:
         log.warning("No se pudo guardar settings: %s", e)
         return False
+
+
+def ejecutar_en_hilo(func, *args, daemon=True, **kwargs):
+    """Lanza `func(*args, **kwargs)` en un hilo daemon y lo retorna.
+    Reduce el boilerplate `threading.Thread(target=..., daemon=True).start()`.
+
+    Uso:
+        hilo = ejecutar_en_hilo(self._fetch_perfil)
+        hilo = ejecutar_en_hilo(self._fetch_radar, rol_api, enemigo)
+    """
+    t = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=daemon)
+    t.start()
+    return t

@@ -1,9 +1,11 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
+from psycopg2.extras import DictCursor
 from pydantic import BaseModel
+
 from backend.auth import verificar_token
 from backend.db import obtener_conexion
-from psycopg2.extras import DictCursor
-import json
 
 router = APIRouter(prefix="/cache", tags=["cache"])
 

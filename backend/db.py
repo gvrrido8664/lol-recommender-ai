@@ -1,7 +1,7 @@
 import threading
+
 import psycopg2
 import psycopg2.pool
-from psycopg2.extras import DictCursor
 
 from backend.config import DATABASE_URL
 

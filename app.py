@@ -134,7 +134,7 @@ class LoLRecommenderApp(
         # funcionan normalmente via el pool de conexiones.
         self._db_conectado = True  # optimista; se corrige si falla
         self.db_listo.connect(self._on_db_listo)
-        threading.Thread(target=self._inicializar_db_background, daemon=True).start()
+        ejecutar_en_hilo(self._inicializar_db_background)
 
         self._limpiar_cache_antiguo()
 

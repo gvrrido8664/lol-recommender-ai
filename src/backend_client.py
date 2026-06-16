@@ -7,7 +7,7 @@ en src/db_manager.py y src/riot_public_api.py para facilitar la migracion.
 """
 
 import os
-import threading
+
 import requests
 
 URL_BASE = os.environ.get("NEXUS_BACKEND_URL", "http://localhost:8000")

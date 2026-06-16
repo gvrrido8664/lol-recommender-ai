@@ -28,7 +28,7 @@ class TestDraftsDB:
         assert drafts[0]["wr_predicho"] == 53.5
 
     def test_completar_draft_resultado_con_ganada(self):
-        from src.db_manager import guardar_draft, completar_draft_resultado, obtener_historial_drafts
+        from src.db_manager import completar_draft_resultado, guardar_draft, obtener_historial_drafts
 
         did = guardar_draft("Ahri", "MIDDLE", [], [], [], 50.0)
         completar_draft_resultado(did, True)
@@ -37,7 +37,7 @@ class TestDraftsDB:
         assert drafts[0]["ganada"] == 1
 
     def test_completar_draft_sin_ganada(self):
-        from src.db_manager import guardar_draft, completar_draft_resultado, obtener_historial_drafts
+        from src.db_manager import completar_draft_resultado, guardar_draft, obtener_historial_drafts
 
         did = guardar_draft("Zed", "MIDDLE", [], [], [], 48.0)
         completar_draft_resultado(did, None)
@@ -62,7 +62,7 @@ class TestLPDB:
         # No deberia crashear ni insertar nada
 
     def test_registrar_y_obtener_lp(self):
-        from src.db_manager import registrar_lp, obtener_historial_lp
+        from src.db_manager import obtener_historial_lp, registrar_lp
 
         registrar_lp("GOLD", "II", 75, 10, 8)
         historial = obtener_historial_lp()
@@ -71,7 +71,7 @@ class TestLPDB:
         assert historial[0]["lp"] == 75
 
     def test_lp_total_calculation(self):
-        from src.db_manager import registrar_lp, obtener_historial_lp
+        from src.db_manager import obtener_historial_lp, registrar_lp
 
         registrar_lp("SILVER", "III", 50, 5, 5)
         historial = obtener_historial_lp()

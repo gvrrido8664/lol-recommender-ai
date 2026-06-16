@@ -1,4 +1,5 @@
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, HTTPException
+
 from backend.config import validar_token
 
 

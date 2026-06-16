@@ -733,7 +733,7 @@ class PerfilTabMixin:
                 self.pb_historial.setRange(0, 0)  # indeterminado hasta saber el total
                 self.pb_historial.setFormat("Buscando partidas…")
                 self.pb_historial.setVisible(True)
-            threading.Thread(target=self._fetch_perfil, daemon=True).start()
+            ejecutar_en_hilo(self._fetch_perfil)
 
     def _on_season_progress(self, procesadas, total):
         """Actualiza la barra de progreso de descarga de partidas (hilo principal)."""

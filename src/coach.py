@@ -3,7 +3,6 @@
 from .riot_api import cargar_mapeo_ids
 from .theme import (
     GREEN_SUCCESS,
-    PURPLE_ACCENT,
     PURPLE_LIGHT,
     PURPLE_VIOLET,
     RED_DANGER,
@@ -12,7 +11,6 @@ from .theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
     TEXT_SUBTLE,
-    YELLOW_WARNING,
 )
 
 TEXT_GOLD = "#f8fafc"
@@ -434,298 +432,15 @@ def generar_reporte_coach(
     )
 
     # ═══════════════════════════════════════════════════
-    # SECCIÓN 1: CHAMPION POOL
-    # ═══════════════════════════════════════════════════
+
+    # ── Métricas adicionales ──
     top3_wr = sum(c["wins"] for _, c in top3) / max(1, sum(c["games"] for _, c in top3)) * 100
     rest = sorted_champs[3:]
     rest_wr = sum(c["wins"] for _, c in rest) / max(1, sum(c["games"] for _, c in rest)) * 100 if rest else 0
-    is_too_wide = unique_champs > 5
+    top3_ids = [cid for cid, _ in top3]
 
-    cp_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-
-    if is_too_wide:
-        cp_html += f"""
-        <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>⚠️ Estas jugando demasiados campeones ({unique_champs} en {total_all} partidas)</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Esto es lo que pasa: tu cerebro gasta energía adaptándose a cada campeón en vez de enfocarse en el mapa.
-        <b style="color: {GREEN_SUCCESS};">Tu WR con tu top 3 es {top3_wr:.0f}%</b>, pero con el resto cae a
-        <b style="color: {RED_DANGER};">{rest_wr:.0f}%</b>. Esa diferencia son partidas que regalas.
-        </p>
-        <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Plan de acción:</b></p>
-        <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-        <li>Elige <b>2 campeones principales</b> y 1 de reserva. Juega solo esos durante 2 semanas.</li>
-        <li>Tus picks deben <b>compartir estilo de juego</b> (coherencia mecánica): así las habilidades se transfieren y el aprendizaje se acumula.</li>
-        <li>Idealmente, que <b>se cubran entre sí</b>: si te pickean tu main, que el otro sea una buena respuesta.</li>
-        <li>Si quieres probar algo nuevo, hazlo en normals, no en ranked.</li>
-        <li>La consistencia gana más partidas que el counterpick perfecto.</li>
-        </ul>
-        """
-    else:
-        cp_html += f"""
-        <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>✅ Pool de campeones enfocada ({unique_champs} distintos)</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Buena disciplina. Mantener un pool reducido y coherente te permite dominar matchups y concentrarte en el macro.
-        Tus picks deben <b>compartir patrones de gameplay</b>: así las mecánicas se transfieren, el aprendizaje se acumula
-        y cambiar de campeón se siente natural. Tu WR con tu top 3 es <b style="color: {GREEN_SUCCESS};">{top3_wr:.0f}%</b>. Así se construye el elo.
-        </p>
-        """
-
-    # Mostrar top 3 con stats
-    cp_html += '<p style="font-size: 12px; color: #a39a93; margin: 8px 0 4px 0;"><b>Tu top 3:</b></p>'
-    for i, (champ_name, cs_data) in enumerate(top3):
-        c_wr = (cs_data["wins"] / cs_data["games"] * 100) if cs_data["games"] > 0 else 0
-        c_kda = (cs_data["kills"] + cs_data["assists"]) / max(1, cs_data["deaths"])
-        cs_data["cs"] / max(1, cs_data["games"])
-        color_wr = "#22c55e" if c_wr >= 50 else "#ef4444"
-        display_name = _id_to_champ(champ_name)
-        cp_html += f'<p style="font-size: 11px; color: {color_wr}; margin: 2px 0 2px 12px;">{i + 1}. {display_name} — {c_wr:.0f}% WR · KDA {c_kda:.1f} · {cs_data["games"]} partidas</p>'
-
-    cp_html += "</div>"
-
-    secciones.append(
-        {
-            "titulo": "AUDITORÍA DE CHAMPION POOL",
-            "icono": "📋",
-            "color": "#f59e0b" if is_too_wide else "#22c55e",
-            "html": cp_html,
-            "prioridad": 1 if is_too_wide else 3,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 2: FASE DE LÍNEAS (CS + EARLY)
-    # ═══════════════════════════════════════════════════
-    cs_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-
-    if avg_cs < 4.5:
-        cs_html += f"""
-        <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Tu farmeo necesita atención urgente: {avg_cs:.1f} CS/min</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Mira, {nombre}, esto es lo más importante que puedes mejorar ahora mismo. Cada 15-20 CS equivalen a
-        <b>una kill en oro</b>. Si farmeas mejor, llegarás a tus objetos más rápido sin necesidad de arriesgarte en peleas.
-        </p>
-        <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Ejercicio concreto:</b></p>
-        <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-        <li>Entra al <b>Practice Tool</b> 10 minutos al día.</li>
-        <li>Elige tu campeón principal, <b>sin objetos ni runas de daño</b>.</li>
-        <li>Solo last-hit. Nada de habilidades. Apunta a 36 CS a los 5 min (6/min).</li>
-        <li>Cuando llegues a 70 CS en 10 min consistentemente, empieza a añadir trades contra un bot.</li>
-        </ul>
-        <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">💡 Dato: Un campeón con 150 CS a los 20 min tiene el mismo oro que uno con 50 CS y 5 kills. El CS es seguro, las kills no.</p>
-        """
-    elif avg_cs < 6.5:
-        cs_html += f"""
-        <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Farmeo decente pero con margen de mejora: {avg_cs:.1f} CS/min</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        No está mal, {nombre}, pero cada CS que pierdes es oro que dejas en la mesa. En partidas igualadas,
-        la diferencia entre 6 y 7.5 CS/min puede ser completar un objeto clave 3 minutos antes.
-        </p>
-        <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Plan:</b></p>
-        <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-        <li>En los primeros 10 min, prioriza <b>NO perder CS</b> sobre tradear.</li>
-        <li>Aprende a farmear bajo torre: melé = 2 torre + 1 auto, caster = 1 auto + torre + 1 auto.</li>
-        <li>En mid-late, no dejes que las oleadas mueran solas: rotan entre líneas para absorber oro.</li>
-        </ul>
-        """
-    else:
-        cs_html += f"""
-        <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Excelente farmeo: {avg_cs:.1f} CS/min</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Esto es nivel alto, {nombre}. Tu economía early es sólida y llegas a tus poderes antes que el rival.
-        Asegúrate de traducir esa ventaja de oro en presión en el mapa: rotaciones, visión agresiva y objetivos.
-        </p>
-        """
-
-    # First blood
-    if total_all and primer_sangre >= total_all * 0.3:
-        cs_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 8px 0 0 0;">⚔️ Además, consigues First Blood en el {primer_sangre / total_all * 100:.0f}% de tus partidas. ¡Agresividad bien ejecutada!</p>'
-
-    cs_html += "</div>"
-
-    secciones.append(
-        {
-            "titulo": "RENDIMIENTO EN FASE DE LÍNEAS",
-            "icono": "⚔️",
-            "color": "#ef4444" if avg_cs < 5 else "#f59e0b" if avg_cs < 6.5 else "#22c55e",
-            "html": cs_html,
-            "prioridad": 0 if avg_cs < 5 else 2,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 3: SUPERVIVENCIA Y DECISIONES
-    # ═══════════════════════════════════════════════════
-    sv_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-
-    if avg_d > 7:
-        sv_html += f"""
-        <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Mueres demasiado: {avg_d:.1f} muertes por partida</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        {nombre}, esta es la estadística que más te está frenando. Cada muerte le da <b>300g + asistencia</b> al enemigo.
-        En {total_all} partidas con {avg_d:.1f} muertes de media, has regalado aproximadamente <b>{int(avg_d * 300 * total_all):,} de oro</b>.
-        Eso son varios objetos completos.
-        </p>
-        <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Reglas de oro:</b></p>
-        <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-        <li><b>Regla de las 2 muertes:</b> si mueres 2 veces en lane, deja de tradear. Farma bajo torre y espera a tu jungla.</li>
-        <li>Antes de pushear una línea lateral, pregúntate: ¿sé dónde están los 5 enemigos? Si la respuesta es no, no pases del río.</li>
-        <li>Compra un <b>Control Ward</b> cada vez que vuelvas a base. 75g que te salvan de regalar 300g.</li>
-        </ul>
-        """
-    elif avg_d > 5:
-        sv_html += f"""
-        <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Tus muertes son mejorables: {avg_d:.1f} por partida (KDA {kda:.1f})</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        No es dramático, {nombre}, pero reducir tus muertes a 4 o menos por partida puede subir tu WR 5-10%
-        sin cambiar nada más de tu juego.
-        </p>
-        <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Claves:</b></p>
-        <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-        <li>Wardea antes de pushear, no mientras.</li>
-        <li>Si no ves al jungla enemigo en el mapa, asume que está en tu línea.</li>
-        <li>En teamfights, identifica qué habilidad enemiga NO debes recibir y juega alrededor de eso.</li>
-        </ul>
-        """
-    else:
-        sv_html += f"""
-        <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Buen control de muertes: {avg_d:.1f} por partida (KDA {kda:.1f})</b></p>
-        <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-        Muy bien, {nombre}. Mantener baja tu tasa de muertes es señal de buen juicio.
-        Cada muerte que evitas son 300g que no regalas. Sigue así.
-        </p>
-        """
-
-    sv_html += "</div>"
-
-    secciones.append(
-        {
-            "titulo": "TOMA DE DECISIONES Y SUPERVIVENCIA",
-            "icono": "🛡️",
-            "color": "#ef4444" if avg_d > 7 else "#f59e0b" if avg_d > 5 else "#22c55e",
-            "html": sv_html,
-            "prioridad": 0 if avg_d > 6 else 1 if avg_d > 5 else 3,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 4: VISIÓN
-    # ═══════════════════════════════════════════════════
-    if avg_vision_game > 0:
-        vis_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        if avg_vision_game < 15:
-            vis_html += f"""
-            <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Visión muy baja: {avg_vision_game:.0f} de visión por partida</b></p>
-            <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            La visión es información, y la información gana partidas. Con {avg_vision_game:.0f} de visión por partida
-            estás jugando a ciegas gran parte del tiempo. Cada ward es un "no me matan" potencial.
-            </p>
-            <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;">Hábito a crear:</p>
-            <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-            <li>Cada vez que vuelvas a base, compra al menos 1 Control Ward.</li>
-            <li>Usa el trinket en cuanto esté disponible. No lo guardes.</li>
-            <li>Mira el minimapa cada 5 segundos. Suena intenso, pero se convierte en hábito.</li>
-            </ul>
-            """
-        elif avg_vision_game < 28:
-            vis_html += f"""
-            <p style="font-size: 14px; color: {YELLOW_WARNING}; margin: 0 0 8px 0;"><b>🟡 Visión aceptable: {avg_vision_game:.0f} de visión por partida</b></p>
-            <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            No está mal, pero hay margen. Un buen objetivo es comprar 2-3 Control Wards por partida
-            y vaciar el trinket cada vez que se recarga.
-            </p>
-            """
-        else:
-            vis_html += f"""
-            <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🟢 Buena visión: {avg_vision_game:.0f} de visión por partida</b></p>
-            <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            Excelente control de visión. Eso ayuda a tu equipo más de lo que crees. ¡Sigue así!
-            </p>
-            """
-        vis_html += "</div>"
-
-        secciones.append(
-            {
-                "titulo": "CONTROL DE VISIÓN",
-                "icono": "👁️",
-                "color": "#ef4444" if avg_vision_game < 15 else "#f59e0b" if avg_vision_game < 28 else "#22c55e",
-                "html": vis_html,
-                "prioridad": 2 if avg_vision_game < 15 else 3,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 5: GESTIÓN DE SESIONES (FATIGA)
-    # ═══════════════════════════════════════════════════
-    if datos_fatiga:
-        sesiones = datos_fatiga.get("sesiones", [])
-        partidas_hoy = datos_fatiga.get("partidas_hoy", [])
-        if sesiones:
-            sesion_actual = sesiones[-1] if sesiones else []
-            total_sesion = len(sesion_actual)
-
-            if total_sesion >= 4:
-                wins_sesion = sum(1 for p in sesion_actual if p.get("win", False))
-                wr_sesion = (wins_sesion / total_sesion * 100) if total_sesion else 0
-
-                fat_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-
-                if wr_sesion < 40:
-                    fat_html += f"""
-                    <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Llevas {total_sesion} partidas en esta sesión con {wr_sesion:.0f}% WR</b></p>
-                    <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-                    {nombre}, los datos son claros: tu rendimiento baja drásticamente en sesiones largas.
-                    Llevas {total_sesion} partidas seguidas. Tu cerebro está fatigado aunque no lo notes.
-                    </p>
-                    <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🧠 Lo que dice la ciencia:</b></p>
-                    <p style="font-size: 11px; color: {TEXT_MUTED}; margin: 0 0 8px 0;">
-                    Después de 90-120 minutos de juego intenso, tu tiempo de reacción y toma de decisiones
-                    se degradan significativamente. Los jugadores profesionales rotan entre partidas y descansos por esto.
-                    </p>
-                    <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Mi recomendación:</b></p>
-                    <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-                    <li>Termina esta sesión ya. Levántate, hidrátate, descansa al menos 30 minutos.</li>
-                    <li>Establece un límite: 3 partidas, luego pausa obligatoria de 15-30 min.</li>
-                    <li>Si pierdes 2 seguidas, para. No hay recuperación milagrosa en la tercera.</li>
-                    </ul>
-                    """
-                elif wr_sesion >= 60:
-                    fat_html += f"""
-                    <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🔥 Buen momento: {wr_sesion:.0f}% WR en {total_sesion} partidas</b></p>
-                    <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-                    Estás en racha, {nombre}. Pero recuerda: incluso en una buena sesión,
-                    tu concentración tiene un límite. Programa un descanso pronto para mantener el nivel.
-                    </p>
-                    """
-                else:
-                    fat_html += f"""
-                    <p style="font-size: 14px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>⚖️ Sesión estable: {wr_sesion:.0f}% WR en {total_sesion} partidas</b></p>
-                    <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-                    Rendimiento consistente. Vigila cómo te sientes y no dudes en parar si notas fatiga mental.
-                    </p>
-                    """
-
-                if partidas_hoy:
-                    wins_hoy = sum(1 for p in partidas_hoy if p.get("win", False))
-                    wr_hoy = (wins_hoy / len(partidas_hoy) * 100) if partidas_hoy else 0
-                    fat_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">📅 Hoy: {len(partidas_hoy)} partidas · {wr_hoy:.0f}% WR</p>'
-
-                fat_html += "</div>"
-
-                secciones.append(
-                    {
-                        "titulo": "GESTIÓN DE SESIONES Y FATIGA",
-                        "icono": "🧠",
-                        "color": "#ef4444" if wr_sesion < 40 else "#22c55e" if wr_sesion >= 60 else "#f59e0b",
-                        "html": fat_html,
-                        "prioridad": 1 if wr_sesion < 40 else 3,
-                    }
-                )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 5.5: RACHA Y RESILIENCIA (Proceso vs Resultado)
-    # ═══════════════════════════════════════════════════
     racha_actual = 0
-    racha_tipo = None  # 'W' o 'L'
+    racha_tipo = None
     for g in recent:
         win = g.get("participants", [{}])[0].get("stats", {}).get("win", False)
         if racha_tipo is None:
@@ -736,330 +451,33 @@ def generar_reporte_coach(
         else:
             break
 
-    if racha_actual >= 3:
-        racha_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        if racha_tipo == "L":
-            racha_html += f"""
-            <p style="font-size: 14px; color: {RED_DANGER}; margin: 0 0 8px 0;"><b>🔴 Llevas {racha_actual} derrotas seguidas</b></p>
-            <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            {nombre}, esto es importante: <b>la mala suerte existe</b>. AFKs, trolls, malos matchups...
-            todo eso pasa y es real. Pero hay dos caminos: puedes enfocarte en lo que no controlas (y frustrarte)
-            o puedes enfocarte en <b>lo que sí depende de ti</b>.
-            </p>
-            <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>🎯 Qué hacer ahora:</b></p>
-            <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-            <li><b>No juegues en automático.</b> Tómate 5 minutos para respirar antes de la siguiente.</li>
-            <li>Pregúntate: ¿Hubo algo que YO podría haber hecho mejor? Incluso en partidas con AFK, siempre hay algo para revisar.</li>
-            <li>Si perdiste 2 seguidas, para. No hay recuperación milagrosa en la tercera. Es la trampa más común del LoL.</li>
-            </ul>
-            <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">📝 Recuerda: <b>todas las partidas son útiles</b>. Rendirse o jugar mal a propósito solo cultiva una mentalidad tóxica que te daña. Incluso en las peores derrotas, siempre hay algo para aprender.</p>
-            """
-        else:
-            racha_html += f"""
-            <p style="font-size: 14px; color: {GREEN_SUCCESS}; margin: 0 0 8px 0;"><b>🔥 ¡{racha_actual} victorias seguidas!</b></p>
-            <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-            Excelente momento, {nombre}. Pero no te confíes: <b>el verdadero crecimiento viene de mantener la consistencia</b>
-            incluso cuando las cosas van bien. Disfruta la racha, pero no olvides que cada partida es una nueva oportunidad de aprender.
-            </p>
-            <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">💡 Dato: los jugadores que más mejoran no son los que ganan más, sino los que <b>analizan tanto sus victorias como sus derrotas</b>.</p>
-            """
-        racha_html += "</div>"
+    metricas = {
+        "nombre": nombre, "nivel": nivel, "total_all": total_all,
+        "wr": wr, "kda": kda, "avg_k": avg_k, "avg_d": avg_d, "avg_a": avg_a,
+        "avg_cs": avg_cs, "avg_vision": avg_vision, "avg_vision_game": avg_vision_game,
+        "avg_dmg": avg_dmg, "avg_dmg_game": avg_dmg_game,
+        "avg_gold": avg_gold, "avg_gold_game": avg_gold_game,
+        "avg_turrets": avg_turrets, "avg_dragons": avg_dragons, "avg_barons": avg_barons,
+        "avg_cc": avg_cc, "avg_pink": avg_pink,
+        "dmg_eff": dmg_eff, "dmg_ratio": dmg_ratio,
+        "unique_champs": unique_champs,
+        "top3": [{"cid": cid, "wins": c["wins"], "games": c["games"],
+                  "kills": c["kills"], "deaths": c["deaths"],
+                  "assists": c["assists"], "cs": c["cs"],
+                  "dmg": c["dmg"], "gold": c["gold"]} for cid, c in top3],
+        "top3_ids": top3_ids, "top3_wr": top3_wr, "rest_wr": rest_wr,
+        "primer_sangre_pct": (primer_sangre / total_all * 100) if total_all else 0,
+        "racha_actual": racha_actual, "racha_tipo": racha_tipo,
+        "datos_fatiga": datos_fatiga, "maestrias": maestrias, "lp_history": lp_history,
+    }
 
-        secciones.append(
-            {
-                "titulo": "RACHA Y RESILIENCIA",
-                "icono": "📈",
-                "color": "#ef4444" if racha_tipo == "L" else "#22c55e",
-                "html": racha_html,
-                "prioridad": 1 if racha_tipo == "L" else 4,
-            }
-        )
+    from .rules_coach import REGLAS_COACH
 
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 5.6: JUGAR POR BLOQUES (método de 3 partidas)
-    # ═══════════════════════════════════════════════════
-    bloques_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-    bloques_html += f"""
-    <p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🧊 Juega por bloques de 3 partidas</b></p>
-    <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 8px 0;">
-    Tu concentración <b>tiene un límite</b>. Después de 3-4 partidas seguidas, tu cerebro entra en piloto automático
-    y tomas peores decisiones. No es falta de habilidad: es fatiga mental real.
-    </p>
-    <p style="font-size: 12px; color: {TEXT_PRIMARY}; margin: 0 0 4px 0;"><b>📊 El método simple:</b></p>
-    <ul style="margin: 4px 0; padding-left: 18px; color: {TEXT_SECONDARY}; font-size: 12px;">
-    <li>Juega <b>hasta 3 partidas</b> por bloque.</li>
-    <li><b>Si pierdes 2 seguidas → corta el bloque.</b> No hay recuperación milagrosa en la tercera.</li>
-    <li>Entre bloques: descansa sin LoL (30+ min). Levántate, camina, toma agua.</li>
-    <li>Entre partidas: 2-5 min de pausa. Suelta el mouse, estira las manos, mira a lo lejos.</li>
-    </ul>
-    <p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 8px 0 0 0;">
-    💡 Este sistema hace que tengas más días positivos que negativos. No es frenarte: es <b>administrar tu energía</b>.
-    Las ganas de jugar se acumulan y las aprovechas mejor cuando vuelves fresco.
-    </p>
-    """
-    bloques_html += "</div>"
+    for regla in REGLAS_COACH:
+        sec = regla.evaluar(metricas)
+        if sec is not None:
+            secciones.append(sec)
 
-    secciones.append(
-        {
-            "titulo": "JUGAR POR BLOQUES (3 partidas)",
-            "icono": "🧊",
-            "color": "#818cf8",
-            "html": bloques_html,
-            "prioridad": 4,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 5.7: PRÁCTICA DELIBERADA
-    # ═══════════════════════════════════════════════════
-    practica_html = _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision)
-    secciones.append(
-        {
-            "titulo": "PRÁCTICA DELIBERADA",
-            "icono": "🦾",
-            "color": "#a78bfa",
-            "html": practica_html,
-            "prioridad": 5,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 5.8: SALUD MENTAL Y FISIOLOGÍA
-    # ═══════════════════════════════════════════════════
-    salud_html = _generar_tips_salud()
-    secciones.append(
-        {
-            "titulo": "SALUD MENTAL Y FISIOLOGIA",
-            "icono": "💚",
-            "color": "#f0b232",
-            "html": salud_html,
-            "prioridad": 6,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 6: DANO Y EFICIENCIA
-    # ═══════════════════════════════════════════════════
-    if avg_dmg_game > 0:
-        if avg_dmg_game < 12000:
-            d_verdict, d_color, d_prio = f"🔴 Daño bajo: {avg_dmg_game:,.0f} a campeones por partida", RED_DANGER, 2
-        elif avg_dmg_game < 22000:
-            d_verdict, d_color, d_prio = (
-                f"🟡 Daño aceptable: {avg_dmg_game:,.0f} a campeones por partida",
-                YELLOW_WARNING,
-                3,
-            )
-        else:
-            d_verdict, d_color, d_prio = (
-                f"🟢 Excelente daño: {avg_dmg_game:,.0f} a campeones por partida",
-                GREEN_SUCCESS,
-                3,
-            )
-        dmg_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        dmg_html += f'<p style="font-size: 14px; color: {d_color}; margin: 0 0 8px 0;"><b>{d_verdict}</b></p>'
-        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">Total infligido / recibido: {dmg_vs_taken:,} / {dmg_taken_total:,} (ratio {dmg_eff:.2f})</p>'
-        dmg_html += f'<p style="font-size: 11px; color: {TEXT_SECONDARY}; margin: 2px 0;">{dmg_ratio:.1f} de daño a campeones por cada oro generado</p>'
-        if dmg_eff < 0.7:
-            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Recibes más daño del que infliges: trabaja posicionamiento y kiteo en teamfights.</p>'
-        elif dmg_eff > 1.3:
-            dmg_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">Infliges mucho más daño del que recibes: buen posicionamiento, sigue así.</p>'
-        dmg_html += "</div>"
-        secciones.append(
-            {
-                "titulo": "DANO Y EFICIENCIA",
-                "icono": "⚡",
-                "color": d_color,
-                "html": dmg_html,
-                "prioridad": d_prio,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 7: ORO Y ECONOMIA
-    # ═══════════════════════════════════════════════════
-    if avg_gold_game > 0:
-        if avg_gold_game < 9000:
-            g_verdict, g_color = f"🔴 Generas poco oro: {avg_gold_game:,.0f} por partida", RED_DANGER
-        elif avg_gold_game < 12000:
-            g_verdict, g_color = f"🟡 Oro decente: {avg_gold_game:,.0f} por partida", YELLOW_WARNING
-        else:
-            g_verdict, g_color = f"🟢 Buena economía: {avg_gold_game:,.0f} por partida", GREEN_SUCCESS
-        eco_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        eco_html += f'<p style="font-size: 14px; color: {g_color}; margin: 0 0 8px 0;"><b>{g_verdict}</b></p>'
-        eco_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 4px 0 0 0;">Prioriza el farmeo seguro sobre las kills arriesgadas: el CS es oro garantizado y compone tu economía partida a partida.</p>'
-        eco_html += "</div>"
-        secciones.append(
-            {
-                "titulo": "ORO Y ECONOMIA",
-                "icono": "💰",
-                "color": g_color,
-                "html": eco_html,
-                "prioridad": 4,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 8: CONTROL DE OBJETIVOS
-    # ═══════════════════════════════════════════════════
-    obj_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-    obj_html += (
-        f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>🏆 Control de Objetivos</b></p>'
-    )
-    obj_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Promedios por partida:</p>'
-    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🗼 Torres: <b>{avg_turrets:.1f}</b></p>'
-    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">🐉 Dragones: <b>{avg_dragons:.1f}</b></p>'
-    obj_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">👹 Barones: <b>{avg_barons:.1f}</b></p>'
-    if avg_dragons < 0.5 and avg_barons < 0.2:
-        obj_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">📝 Participas poco en objetivos. Rotar a dragon/baron con tu equipo gana partidas.</p>'
-    obj_html += "</div>"
-    secciones.append(
-        {
-            "titulo": "CONTROL DE OBJETIVOS",
-            "icono": "🏆",
-            "color": "#818cf8",
-            "html": obj_html,
-            "prioridad": 4,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 9: CONTROL DE MASAS (CC)
-    # ═══════════════════════════════════════════════════
-    if avg_cc > 0:
-        cc_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        cc_html += (
-            f'<p style="font-size: 14px; color: {ACCENT_TEAL}; margin: 0 0 8px 0;"><b>🎯 Control de Masas (CC)</b></p>'
-        )
-        cc_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Aplicas <b>{avg_cc:.1f}s de CC por minuto</b> a enemigos.</p>'
-        if avg_cc > 30:
-            cc_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS};">🟢 Excelente uso de CC. Tus enemigos no se mueven.</p>'
-        elif avg_cc > 10:
-            cc_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING};">🟡 Buen uso de CC. Si tu campeon tiene mucho CC, aprovéchalo mas.</p>'
-        else:
-            cc_html += f'<p style="font-size: 11px; color: {TEXT_MUTED};">📝 Poco CC aplicado. Si tu campeon tiene CC, úsalo para peel o engage.</p>'
-        cc_html += "</div>"
-        secciones.append(
-            {
-                "titulo": "CONTROL DE MASAS",
-                "icono": "🎯",
-                "color": "#f0b232",
-                "html": cc_html,
-                "prioridad": 5,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 10: PINK WARDS
-    # ═══════════════════════════════════════════════════
-    pink_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-    pink_html += (
-        f'<p style="font-size: 14px; color: {TEAL_EMERALD}; margin: 0 0 8px 0;"><b>🔮 Control Wards (Pinks)</b></p>'
-    )
-    pink_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">Compras <b>{avg_pink:.1f} Pink Wards</b> por partida en promedio.</p>'
-    if avg_pink < 0.5:
-        pink_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 No compras Pink Wards. 75g que te salvan de regalar 300g.</p>'
-    elif avg_pink < 2:
-        pink_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Compra al menos 1-2 Pinks por partida. Marca la diferencia.</p>'
-    else:
-        pink_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Buen uso de Pinks. Control de vision solido.</p>'
-    pink_html += f'<p style="font-size: 11px; color: {TEXT_SUBTLE}; margin: 4px 0 0 0;">💡 Los Pinks revelan wards enemigos, aseguran objetivos y previenen ganks.</p>'
-    pink_html += "</div>"
-    secciones.append(
-        {
-            "titulo": "CONTROL WARDS (PINKS)",
-            "icono": "🔮",
-            "color": "#f0b232",
-            "html": pink_html,
-            "prioridad": 5,
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 11: ARSENAL VS MAESTRIA
-    # ═══════════════════════════════════════════════════
-    if maestrias:
-        mast_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        mast_html += f'<p style="font-size: 14px; color: {TEXT_GOLD}; margin: 0 0 8px 0;"><b>⭐ Tu Arsenal vs. Tus Maestrias</b></p>'
-        mast_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 6px 0;">Tus campeones con mas maestria:</p>'
-        for m in maestrias[:3]:
-            m_id = str(m.get("championId", ""))
-            m_name = _id_to_champ(m_id) if m_id else "?"
-            m_level = m.get("championLevel", 0)
-            m_points = m.get("championPoints", 0)
-            mast_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0 2px 12px;">⭐ {m_name} — Maestria {m_level} ({m_points:,} pts)</p>'
-
-        top3_ids = {cid for cid, _ in top3}
-        mast_ids = {str(m.get("championId", "")) for m in (maestrias or [])[:3]}
-        overlap = top3_ids & mast_ids
-        if not overlap:
-            mast_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 6px 0 0 0;">⚠️ Tus campeones mas jugados NO coinciden con tus maestrias mas altas. Juega lo que mejor dominas.</p>'
-        else:
-            mast_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 6px 0 0 0;">✅ Tus picks mas frecuentes coinciden con tus maestrias. Buen alineamiento.</p>'
-        mast_html += "</div>"
-        secciones.append(
-            {
-                "titulo": "ARSENAL VS MAESTRIA",
-                "icono": "⭐",
-                "color": "#f8fafc",
-                "html": mast_html,
-                "prioridad": 3,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 12: PROGRESION DE LP
-    # ═══════════════════════════════════════════════════
-    if lp_history and len(lp_history) >= 3:
-        lp_html = "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;\">"
-        lp_html += f'<p style="font-size: 14px; color: {PURPLE_ACCENT}; margin: 0 0 8px 0;"><b>📈 Progresion de ELO (30 dias)</b></p>'
-
-        first = lp_history[0]
-        last = lp_history[-1]
-        lp_delta = last.get("lp_total", 0) - first.get("lp_total", 0)
-        lp_deltas = []
-        for i in range(1, len(lp_history)):
-            lp_deltas.append(lp_history[i].get("lp_total", 0) - lp_history[i - 1].get("lp_total", 0))
-        total_wins = sum(e.get("wins", 0) for e in lp_history)
-        total_losses = sum(e.get("losses", 0) for e in lp_history)
-        total_games_lp = total_wins + total_losses
-
-        lp_html += f'<p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 4px 0;">{first.get("fecha", "?")} → {last.get("fecha", "?")} ({len(lp_history)} dias con datos)</p>'
-        lp_html += f'<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">{last.get("tier", "?")} {last.get("division", "")} — {last.get("lp", 0)} LP</p>'
-
-        if lp_delta > 100:
-            lp_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Subiendo (+{lp_delta} LP en 30 dias). Buen ritmo.</p>'
-        elif lp_delta > 0:
-            lp_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS}; margin: 2px 0;">🟢 Subiendo lentamente (+{lp_delta} LP). La consistencia paga.</p>'
-        elif lp_delta > -100:
-            lp_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING}; margin: 2px 0;">🟡 Estable/bajando ({lp_delta} LP). Revision de fundamentos.</p>'
-        else:
-            lp_html += f'<p style="font-size: 11px; color: {RED_DANGER}; margin: 2px 0;">🔴 En caida ({lp_delta} LP). Toca revisar que esta fallando.</p>'
-
-        if total_games_lp > 0:
-            lp_wr = total_wins / total_games_lp * 100
-            lp_html += f'<p style="font-size: 11px; color: {TEXT_MUTED}; margin: 2px 0;">📊 {total_games_lp} partidas en 30d · WR {lp_wr:.0f}% ({total_wins}V/{total_losses}D)</p>'
-
-            daily_avg = total_games_lp / max(1, len(lp_history))
-            if daily_avg > 5:
-                lp_html += f'<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 2px 0;">📝 Juegas {daily_avg:.1f} partidas/dia. Considera jugar menos partidas con mas calidad.</p>'
-            elif daily_avg < 1:
-                lp_html += f'<p style="font-size: 10px; color: {TEXT_SUBTLE}; margin: 2px 0;">📝 Pocas partidas/dia ({daily_avg:.1f}). La mejora requiere volumen controlado.</p>'
-
-        lp_html += "</div>"
-        secciones.append(
-            {
-                "titulo": "PROGRESION DE ELO",
-                "icono": "📈",
-                "color": "#818cf8",
-                "html": lp_html,
-                "prioridad": 4,
-            }
-        )
-
-    # ═══════════════════════════════════════════════════
-    # SECCION 13: CONSEJO FINAL
-    # ═══════════════════════════════════════════════════
-    # Identificar el área más urgente
     secciones.sort(key=lambda s: s["prioridad"])
 
     if nivel == "inicial":
@@ -1075,30 +493,15 @@ def generar_reporte_coach(
         "consejo_final": consejo_final,
         "nivel": nivel,
         "metricas": {
-            "wr": wr,
-            "kda": kda,
-            "avg_cs": avg_cs,
-            "avg_d": avg_d,
-            "avg_k": avg_k,
-            "avg_a": avg_a,
-            "avg_vision": avg_vision,
-            "unique_champs": unique_champs,
-            "top3_wr": top3_wr,
-            "nivel": nivel,
-            "avg_dmg": avg_dmg,
-            "avg_gold": avg_gold,
-            # Por partida (más concretas):
-            "avg_cs_game": avg_cs_game,
-            "avg_dmg_game": avg_dmg_game,
-            "avg_gold_game": avg_gold_game,
-            "avg_vision_game": avg_vision_game,
-            "avg_turrets": avg_turrets,
-            "avg_dragons": avg_dragons,
-            "avg_barons": avg_barons,
-            "avg_cc": avg_cc,
-            "avg_pink": avg_pink,
-            "dmg_eff": dmg_eff,
-            "total_all": total_all,
+            "wr": wr, "kda": kda, "avg_cs": avg_cs, "avg_d": avg_d,
+            "avg_k": avg_k, "avg_a": avg_a, "avg_vision": avg_vision,
+            "unique_champs": unique_champs, "top3_wr": top3_wr, "nivel": nivel,
+            "avg_dmg": avg_dmg, "avg_gold": avg_gold,
+            "avg_cs_game": avg_cs_game, "avg_dmg_game": avg_dmg_game,
+            "avg_gold_game": avg_gold_game, "avg_vision_game": avg_vision_game,
+            "avg_turrets": avg_turrets, "avg_dragons": avg_dragons, "avg_barons": avg_barons,
+            "avg_cc": avg_cc, "avg_pink": avg_pink,
+            "dmg_eff": dmg_eff, "total_all": total_all,
             "primer_sangre_pct": (primer_sangre / total_all * 100) if total_all else 0,
         },
     }

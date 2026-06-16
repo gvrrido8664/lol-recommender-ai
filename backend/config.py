@@ -1,5 +1,5 @@
-import os
 import hashlib
+import os
 
 API_KEY = os.environ.get("RIOT_API_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")

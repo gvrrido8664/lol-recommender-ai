@@ -1,6 +1,8 @@
 import asyncio
 import time
+
 import httpx
+
 from backend.config import API_KEY
 
 _limiter_lock = asyncio.Lock()

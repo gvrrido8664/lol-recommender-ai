@@ -141,6 +141,7 @@ from ui.helpers import (
     ajustar_shards_adaptativos,
     cargar_settings,
     clear_layout,
+    ejecutar_en_hilo,
     expandir_skill_order,
     guardar_settings,
     obtener_tip_matchup,

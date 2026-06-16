@@ -5,14 +5,14 @@ Guarda API_KEY y DATABASE_URL server-side.
 El cliente de escritorio habla con este backend por HTTPS usando un token de app.
 """
 
-import asyncio
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import PORT
 from backend.db import inicializar_db
-from backend.routers import drafts, lp, emocional, cache, riot_proxy
+from backend.routers import cache, drafts, emocional, lp, riot_proxy
 
 
 @asynccontextmanager

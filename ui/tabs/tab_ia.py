@@ -300,7 +300,7 @@ class IATabMixin:
         if len(champs) >= 2:
             self.cb_ia_enemigo.setCurrentText(champs[1])
         # Precalentar cache WR en hilo secundario para evitar freeze en el primer Simular
-        threading.Thread(target=self._precalentar_cache_ia, args=(champs, rol_api), daemon=True).start()
+        ejecutar_en_hilo(self._precalentar_cache_ia, champs, rol_api)
 
     def _precalentar_cache_ia(self, champs, rol_api):
         """Ejecutado en hilo secundario. Precarga WR global en cache de sesion."""

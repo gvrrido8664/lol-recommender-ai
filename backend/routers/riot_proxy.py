@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
+
 from backend.auth import verificar_token
-from backend.riot import riot_get
 from backend.config import API_KEY
+from backend.riot import riot_get
 
 router = APIRouter(prefix="/riot", tags=["riot"])
 

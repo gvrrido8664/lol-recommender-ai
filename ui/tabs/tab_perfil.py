@@ -291,17 +291,17 @@ class PerfilTabMixin:
 
         self.col_hist.addWidget(self.historial_stack, 1)
 
-        # Insights estilo Porofessor
-        self.lbl_logros_title = QLabel("PERFIL DE JUGADOR")
+        # Insights estilo Porofessor (tags compactos en 2 columnas)
+        self.lbl_logros_title = QLabel("INSIGHTS")
         self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: bold; font-size: 13px; margin-top: 8px;")
         self.col_hist.addWidget(self.lbl_logros_title)
-        self.fr_logros = QVBoxLayout()
-        self.fr_logros.setSpacing(4)
+        self.fr_logros = QGridLayout()
+        self.fr_logros.setSpacing(3)
+        self.fr_logros.setContentsMargins(0, 2, 0, 0)
         self.lbl_logros_text = QLabel("Conecta al cliente para ver tus insights...")
         self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
         self.lbl_logros_text.setWordWrap(True)
-        self.fr_logros.addWidget(self.lbl_logros_text)
-        self.fr_logros.addStretch()
+        self.fr_logros.addWidget(self.lbl_logros_text, 0, 0, 1, 2)
         self.col_hist.addLayout(self.fr_logros)
 
         self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)

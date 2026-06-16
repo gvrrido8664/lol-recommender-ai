@@ -1,3 +1,18 @@
+from .riot_api import cargar_mapeo_ids
+
+_ID_TO_CHAMP = None
+
+
+def _resolver_champ(cid):
+    global _ID_TO_CHAMP
+    if _ID_TO_CHAMP is None:
+        _ID_TO_CHAMP = cargar_mapeo_ids()
+    name = _ID_TO_CHAMP.get(str(cid), None)
+    if name == "MonkeyKing":
+        return "Wukong"
+    return name or f"Champ{cid}"
+
+
 LOGROS_DEFINICIONES = [
     {"id": "hot_streak", "nombre": "En Rachaaa", "emoji": "\U0001f525",
      "desc": "5 victorias seguidas"},
@@ -39,7 +54,7 @@ def _extraer_stats(g):
     stats = p0.get("stats", {})
 
     champion_id = str(p0.get("championId", "0"))
-    champion_name = g.get("championName") or p0.get("championName") or champion_id
+    champion_name = g.get("championName") or p0.get("championName") or _resolver_champ(champion_id)
 
     return {
         "win": stats.get("win", g.get("win", False)),

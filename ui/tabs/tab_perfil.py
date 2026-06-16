@@ -841,15 +841,9 @@ class PerfilTabMixin:
             self.perfil_cargado = False
 
     def _es_ranked(self, g):
-        """True si la partida es ranked (SoloQ 420 / Flex 440). Las que no tienen
-        queueId (vienen del LCU) se asumen ranked salvo ARAM; las de queueId conocido
-        no-ranked (normal/ARAM/clash/arena) se excluyen."""
+        """True si la partida es ranked (SoloQ 420 / Flex 440)."""
         q = g.get("queueId", 0) or 0
-        if q in (420, 440):
-            return True
-        if q == 0:
-            return (g.get("gameMode") or "").upper() != "ARAM"
-        return False
+        return q in (420, 440)
 
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""

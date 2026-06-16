@@ -188,6 +188,8 @@ class VivoTabMixin:
     def _aplicar_settings(self):
         """Aplica los settings actuales a los timers y comportamientos."""
         self.timer_lcu.setInterval(self.user_settings.get("frecuencia_radar", 1500))
+        if hasattr(self, 'timer_partida'):
+            self.timer_partida.setInterval(self.user_settings.get("frecuencia_partida", 4000))
         if not self.user_settings.get("auto_deteccion", True):
             self.timer_lcu.stop()
         else:

@@ -393,15 +393,10 @@ def clear_layout(layout):
 # ─── CONFIGURACION DE USUARIO ───────────────────────────────────────
 DEFAULT_SETTINGS = {
     "auto_deteccion": True,
-    "mostrar_power_spikes": True,
-    "mostrar_explicaciones": True,
     "frecuencia_radar": 1500,
+    "frecuencia_partida": 4000,
     "sonidos": False,
-    "modo_principiante": False,
-    "modo_profesional": False,
-    "recordatorios_partida": True,
     "mostrar_dificultad": True,
-    "tooltips_grandes": False,
     "flash_en_d": True,
     "auto_runas": False,
     "auto_hechizos": False,

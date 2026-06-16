@@ -1357,7 +1357,7 @@ class PerfilTabMixin:
 
             if filtro_champ != "Todos los campeones" and champ_name != filtro_champ:
                 continue
-            if filtro_modo != "Todas las ranked" and modo_juego != filtro_modo:
+            if filtro_modo != "Todos los modos" and modo_juego != filtro_modo:
                 continue
 
             win = stats.get("win", False)

@@ -329,7 +329,8 @@ class VivoTabMixin:
         if game_mode == "ARAM":
             return "ARAM"
         if game_mode == "CLASSIC":
-            return "Ranked"  # LCU sin queueId -> asumir ranked
+            elo = g.get("eloChange") or g.get("playerScoreChange")
+            return "Ranked" if elo is not None else "Normal"
         return game_mode or "Ranked"
 
     def procesar_nombre_champ(self, cid, intent):

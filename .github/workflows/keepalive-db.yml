@@ -1,0 +1,34 @@
+name: keepalive-db
+
+# Mantiene despierta la BD de Supabase (free pausa tras ~7 dias sin uso).
+# Requiere el secret DATABASE_URL (Session pooler de Supabase) en el repo.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1,4"   # lunes y jueves 09:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet psycopg2-binary
+      - name: Ping SELECT 1
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os, sys, psycopg2
+          url = os.environ.get("DATABASE_URL")
+          if not url:
+              print("DATABASE_URL no configurado (agregar el secret).")
+              sys.exit(0)
+          conn = psycopg2.connect(url, connect_timeout=20)
+          cur = conn.cursor()
+          cur.execute("SELECT 1")
+          print("keepalive ok:", cur.fetchone())
+          conn.close()
+          PY

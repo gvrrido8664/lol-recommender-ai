@@ -30,8 +30,10 @@ def _obtener_db_url() -> str | None:
 
 _PG_POOL = None
 _PG_POOL_LOCK = threading.Lock()
-_PG_MINCONN = 2
-_PG_MAXCONN = 10
+# Supabase free (Session pooler) limita a ~15 conexiones compartidas. Mantener el
+# pool chico para no agotarlo (deja margen para otra instancia / migracion / tests).
+_PG_MINCONN = 1
+_PG_MAXCONN = 6
 
 
 def _init_pool():
@@ -130,6 +132,8 @@ def inicializar_db():
         ("kills", "INTEGER"),
         ("deaths", "INTEGER"),
         ("assists", "INTEGER"),
+        ("items_order", "TEXT"),  # secuencia de compra real (del timeline)
+        ("item_timeline", "JSONB"),  # [{iid, ts}, ...] con timestamps reales de compra
     ]:
         tabla = 'participantes' if col != 'patch' else 'matches'
         cur.execute(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {col} {tipo}")
@@ -153,6 +157,9 @@ def inicializar_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON participantes(match_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_win ON participantes(win);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_pos ON participantes(champion, team_position);")
+    # Índices adicionales para acelerar consultas frecuentes (anti-freeze)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pos_champ ON participantes(team_position, champion);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_champ_match ON participantes(champion, match_id);")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS estado_emocional (
@@ -177,6 +184,23 @@ def inicializar_db():
             coaching_ts TIMESTAMP
         )
     """)
+
+    # ─── LP / MMR ───
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS lp_history (
+            id SERIAL PRIMARY KEY,
+            fecha TEXT NOT NULL,
+            queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
+            tier TEXT NOT NULL,
+            division TEXT NOT NULL,
+            lp INTEGER NOT NULL,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0
+        )
+    """)
+    cur.execute("DROP INDEX IF EXISTS idx_lp_fecha")
+    cur.execute("DELETE FROM lp_history WHERE id NOT IN (SELECT MAX(id) FROM lp_history GROUP BY fecha, queue_type)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lp_unique ON lp_history(fecha, queue_type)")
 
     conn.commit()
     conn.close()
@@ -310,34 +334,6 @@ def obtener_estadisticas_emocionales() -> dict:
 
 # ─── TRACKING DE LP / MMR ───
 
-def _crear_tabla_lp_history():
-    conn = obtener_conexion()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS lp_history (
-            id SERIAL PRIMARY KEY,
-            fecha TEXT NOT NULL,
-            queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
-            tier TEXT NOT NULL,
-            division TEXT NOT NULL,
-            lp INTEGER NOT NULL,
-            wins INTEGER DEFAULT 0,
-            losses INTEGER DEFAULT 0
-        )
-    """)
-    cur.execute("DROP INDEX IF EXISTS idx_lp_fecha")
-    cur.execute("DELETE FROM lp_history WHERE id NOT IN (SELECT MAX(id) FROM lp_history GROUP BY fecha, queue_type)")
-    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lp_unique ON lp_history(fecha, queue_type)")
-    conn.commit()
-    conn.close()
-
-
-try:
-    _crear_tabla_lp_history()
-except ConexionDBError:
-    pass
-
-
 def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int = 0,
                  queue_type: str = "RANKED_SOLO_5x5"):
     if not tier or tier.upper() in ("UNRANKED", "NONE", ""):
@@ -359,7 +355,7 @@ def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int =
     conn.close()
 
 
-def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) -> list:
+def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5") -> list:
     TIER_BASE = {
         "IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
         "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
@@ -371,9 +367,9 @@ def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) ->
     cur.execute("""
         SELECT fecha, tier, division, lp, wins, losses
         FROM lp_history
-        WHERE queue_type=%s AND fecha >= (CURRENT_DATE - (%s || ' days')::INTERVAL)::TEXT
+        WHERE queue_type=%s
         ORDER BY fecha ASC
-    """, (queue_type, str(dias)))
+    """, (queue_type,))
     rows = cur.fetchall()
     conn.close()
     resultado = []

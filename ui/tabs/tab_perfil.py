@@ -6,10 +6,26 @@ from ui.contexto import *
 
 class PerfilTabMixin:
     def armar_tab_perfil(self):
-        layout = QVBoxLayout(self.tab_perfil)
+        cont = QWidget()
+        layout = QVBoxLayout(cont)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(0)
-        
+
+        # Boton de refresco manual
+        refresh_row = QHBoxLayout()
+        refresh_row.addStretch()
+        self.btn_refrescar = QPushButton("🔄 Actualizar Perfil")
+        self.btn_refrescar.setStyleSheet(f"""
+            QPushButton {{ background-color: {BG_CARD}; color: {ACCENT_TEAL};
+                           border: 1px solid {ACCENT_TEAL}; border-radius: 4px;
+                           font-size: 11px; padding: 4px 12px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: #1a3a3a; }}
+            QPushButton:disabled {{ color: {BG_BORDER}; border-color: {BG_CARD_HOVER}; }}
+        """)
+        self.btn_refrescar.clicked.connect(self.refrescar_perfil)
+        refresh_row.addWidget(self.btn_refrescar)
+        layout.addLayout(refresh_row)
+
         self.pnl_perfil = QWidget()
         l_pnl = QHBoxLayout(self.pnl_perfil)
         l_pnl.setContentsMargins(0, 0, 0, 0)
@@ -69,6 +85,18 @@ class PerfilTabMixin:
         self.lbl_season_stats = QLabel("")
         self.lbl_season_stats.setVisible(False)
         self.l_season.addWidget(self.lbl_season_stats)
+
+        # Filtro SoloQ / Flex
+        fr_season_filtro = QHBoxLayout()
+        fr_season_filtro.addWidget(QLabel("Modo:"))
+        self.cb_season_modo = QComboBox()
+        self.cb_season_modo.addItems(["SoloQ", "Flex"])
+        self.cb_season_modo.setFixedWidth(90)
+        self.cb_season_modo.currentIndexChanged.connect(self._on_season_modo_change)
+        fr_season_filtro.addWidget(self.cb_season_modo)
+        fr_season_filtro.addStretch()
+        self.l_season.addLayout(fr_season_filtro)
+
         self.tb_season_champs = QTableWidget()
         self.tb_season_champs.setColumnCount(4)
         self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
@@ -144,21 +172,17 @@ class PerfilTabMixin:
         
         self.col_id.addWidget(self.pnl_fatiga)
 
-        # ── PANEL LP HISTORY ──
-        self.pnl_lp, self.l_lp = self.crear_panel("📈 EVOLUCIÓN DE LP (30 DÍAS)")
-        lp_header = QHBoxLayout()
-        self.cb_lp_queue = QComboBox()
-        self.cb_lp_queue.addItems(["Solo/Dúo", "Flex"])
-        self.cb_lp_queue.setFixedWidth(90)
-        self.cb_lp_queue.currentIndexChanged.connect(self._actualizar_grafica_lp)
-        lp_header.addWidget(QLabel("Cola:"))
-        lp_header.addWidget(self.cb_lp_queue)
-        lp_header.addStretch()
-        self.l_lp.addLayout(lp_header)
-        self.lp_graph = LPGraphWidget()
-        self.lp_graph.setMinimumHeight(130)
-        self.l_lp.addWidget(self.lp_graph)
-        self.col_id.addWidget(self.pnl_lp)
+        # ── PANEL INSIGHTS ──
+        self.pnl_insights, self.l_insights = self.crear_panel("💡 INSIGHTS")
+        self.fr_logros = QGridLayout()
+        self.fr_logros.setSpacing(3)
+        self.fr_logros.setContentsMargins(6, 2, 6, 4)
+        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus insights...")
+        self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
+        self.lbl_logros_text.setWordWrap(True)
+        self.fr_logros.addWidget(self.lbl_logros_text, 0, 0, 1, 2)
+        self.l_insights.addLayout(self.fr_logros)
+        self.col_id.addWidget(self.pnl_insights)
 
         l_pnl.addLayout(self.col_id, 35)
         
@@ -210,15 +234,11 @@ class PerfilTabMixin:
         self.cb_filtro_champ.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_champ)
         self.cb_filtro_modo = QComboBox()
-        self.cb_filtro_modo.setMinimumWidth(100)
+        self.cb_filtro_modo.setMinimumWidth(120)
         self.cb_filtro_modo.addItem("Todos los modos")
+        self.cb_filtro_modo.addItems(["SoloQ", "Flex", "Normal", "ARAM"])
         self.cb_filtro_modo.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_modo)
-        self.cb_filtro_season = QComboBox()
-        self.cb_filtro_season.setMinimumWidth(110)
-        self.cb_filtro_season.addItem("Todas las temporadas")
-        self.cb_filtro_season.currentTextChanged.connect(self.filtrar_historial)
-        self.fr_filtro.addWidget(self.cb_filtro_season)
         self.fr_filtro.addStretch()
         self.col_hist.addLayout(self.fr_filtro)
         
@@ -226,11 +246,20 @@ class PerfilTabMixin:
         lbl_h = QLabel("HISTORIAL DE PARTIDAS")
         lbl_h.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
+
+        # Barra de progreso de descarga de partidas (oculta hasta que arranca la descarga)
+        self.pb_historial = QProgressBar()
+        self.pb_historial.setVisible(False)
+        self.pb_historial.setTextVisible(True)
+        self.pb_historial.setFormat("Descargando partidas… %v/%m")
+        self.pb_historial.setFixedHeight(16)
+        self.col_hist.addWidget(self.pb_historial)
         
-        # Stack: historial table + overlay vacío
+        # Stack: historial table + overlay vacío (StackOne: solo uno visible a la vez)
         self.historial_stack = QFrame()
         hs_layout = QStackedLayout(self.historial_stack)
-        hs_layout.setStackingMode(QStackedLayout.StackAll)
+        hs_layout.setStackingMode(QStackedLayout.StackOne)
+        self.historial_stack_layout = hs_layout
         
         self.tb_historial = QTableWidget()
         self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
@@ -267,26 +296,19 @@ class PerfilTabMixin:
         self.lbl_historial_vacio.setStyleSheet("background: transparent;")
         self.lbl_historial_vacio.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         hs_layout.addWidget(self.lbl_historial_vacio)
-        
-        self.col_hist.addWidget(self.historial_stack, 1)
+        hs_layout.setCurrentIndex(1)  # arranca mostrando el placeholder (sin datos aún)
 
-        # Logros row
-        self.lbl_logros_title = QLabel("LOGROS")
-        self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 8px;")
-        self.col_hist.addWidget(self.lbl_logros_title)
-        self.fr_logros = QHBoxLayout()
-        self.fr_logros.setSpacing(4)
-        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus logros...")
-        self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
-        self.lbl_logros_text.setWordWrap(True)
-        self.fr_logros.addWidget(self.lbl_logros_text)
-        self.fr_logros.addStretch()
-        self.col_hist.addLayout(self.fr_logros)
+        self.col_hist.addWidget(self.historial_stack, 1)
 
         self.tb_historial.verticalScrollBar().valueChanged.connect(self._on_scroll_historial)
         
         l_pnl.addLayout(self.col_hist, 65)
         layout.addWidget(self.pnl_perfil)
+
+        # Envolver en scroll responsive: legible hasta ~1100px, scroll por debajo
+        outer = QVBoxLayout(self.tab_perfil)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.crear_scroll_responsive(cont, 1080))
 
     def _riot_resolve_puuid(self, game_name: str, tag_line: str):
         """Obtiene el PUUID nuevo (match v5) desde el riot id (gameName#tagLine).
@@ -295,7 +317,13 @@ class PerfilTabMixin:
         if not api_key or not game_name:
             return None
         if not tag_line:
-            return None
+            # El LCU a veces viene con "gameName#tagLine" en displayName
+            # y tag_line separado vacio. Intentar extraerlo.
+            if game_name and "#" in game_name:
+                parts = game_name.split("#", 1)
+                game_name, tag_line = parts[0], parts[1]
+            else:
+                return None
         tag = tag_line
         try:
             url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag}"
@@ -417,6 +445,7 @@ class PerfilTabMixin:
             "gameCreationDate": datetime.fromtimestamp(game_creation_ts).strftime("%b %d, %Y %I:%M:%S %p") if game_creation_ts else "",
             "gameDuration": info.get("gameDuration", 0),
             "gameMode": info.get("gameMode", "CLASSIC"),
+            "queueId": info.get("queueId", 0),
             "participants": [my_stats],
         }
 
@@ -473,6 +502,7 @@ class PerfilTabMixin:
                 except Exception:
                     errores += 1
                 total = downloaded + errores
+                self.season_progress.emit(total, len(match_ids))
                 if downloaded - last_emit >= BATCH_EMIT:
                     batch = games[last_emit:downloaded]
                     if batch:
@@ -487,6 +517,7 @@ class PerfilTabMixin:
         elapsed = time.time() - t_start
         pct = len(match_ids) / max(1, elapsed)
         print(f"[RiotAPI] {downloaded} OK, {errores} err en {elapsed:.0f}s ({pct:.0f}/s)")
+        self.season_progress.emit(len(match_ids), len(match_ids))  # 100% -> oculta la barra
         return games
 
     def _load_season_cache(self, puuid: str):
@@ -495,11 +526,28 @@ class PerfilTabMixin:
     def _save_season_cache(self, puuid: str, games: list):
         guardar_season_cache(puuid, games)
 
+    def _cache_es_reciente(self, puuid: str) -> bool:
+        """True si el cache tiene menos de 2 horas (evita re-descargar)."""
+        import time as _time
+        try:
+            from src.db_manager import obtener_conexion
+            conn = obtener_conexion()
+            cur = conn.cursor()
+            cur.execute("SELECT season_ts FROM player_cache WHERE puuid = %s", (puuid,))
+            row = cur.fetchone()
+            conn.close()
+            if row and row["season_ts"]:
+                age_h = (_time.time() - row["season_ts"].timestamp()) / 3600
+                return age_h < 2
+        except Exception:
+            pass
+        return False
+
     def _riot_season_background(self, puuid: str, all_games: list, game_name: str, tag_line: str):
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
         Usa streaming via season_partial para mostrar datos mientras llegan."""
         try:
-            # Intentar cache primero
+            # Emitir cache si existe
             cached = self._load_season_cache(puuid)
             if cached:
                 existing_gids = {self._gid_or_fallback(g) for g in all_games}
@@ -507,7 +555,10 @@ class PerfilTabMixin:
                 if nuevos_cache:
                     self.season_partial.emit(nuevos_cache)
                     print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
-                return
+                all_games = list(cached)  # usar cache como base
+                # Si el cache es reciente (< 2h), no re-descargar
+                if self._cache_es_reciente(puuid):
+                    return
 
             # Resolver PUUID nuevo
             riot_puuid = puuid
@@ -515,12 +566,23 @@ class PerfilTabMixin:
             if new_puuid and new_puuid != puuid:
                 riot_puuid = new_puuid
 
-            # Descargar IDs + partidas (my_puuid = el usado para obtener IDs)
-            riot_ids = self._riot_fetch_match_ids(riot_puuid)
+            # Descargar IDs + partidas
+            if riot_puuid and len(riot_puuid) > 40:
+                riot_ids = self._riot_fetch_match_ids(riot_puuid)
+            else:
+                print(f"[RiotAPI] PUUID invalido ({str(riot_puuid)[:30]}...), saltando Riot API")
+                return
             if riot_ids:
                 riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)
-                # Guardar cache (usar puuid original del LCU, no el resuelto)
-                self._save_season_cache(puuid, riot_games)
+                # Merge con cache existente y guardar
+                merged = list(all_games)  # all_games ya incluye el cache
+                seen = {self._gid_or_fallback(g) for g in merged if self._gid_or_fallback(g)}
+                for g in riot_games:
+                    gid = self._gid_or_fallback(g)
+                    if gid and gid not in seen:
+                        merged.append(g)
+                        seen.add(gid)
+                self._save_season_cache(puuid, merged)
         except Exception as e:
             print(f"[RiotAPI] Error en background: {e}")
 
@@ -583,67 +645,30 @@ class PerfilTabMixin:
                 print(f"[_fetch_perfil] Error obteniendo maestrías (no fatal): {e}")
             data["maestrias"] = maestrias[:3] if maestrias else []
             
-            # ── Fase 4: Historial (con reintentos, no fatal si falla) ──
+            # ── Fase 4: PUUID para API ──
             puuid = perfil.get("puuid")
             self._season_puuid = puuid
-            historial = None
-            if puuid:
-                for intento in range(3):
-                    try:
-                        historial = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=0, cantidad=100)
-                        if historial:
-                            break
-                    except Exception as e:
-                        print(f"[_fetch_perfil] Error historial intento {intento+1}: {e}")
-                    if intento < 2:
-                        time.sleep(2)
-                if not historial:
-                    print("[_fetch_perfil] No se pudo obtener historial (no fatal).")
-            data["historial"] = historial
-            
-            # ── Fase 5: Season stats (paginación completa para toda la temporada) ──
-            all_games = list(historial) if historial else []
 
-            def _gid(g):
-                gid = str(g.get("gameId", "") or "")
-                if not gid:
-                    gid = f"{g.get('gameCreationDate','')}_{g.get('gameDuration',0)}"
-                    return gid
-                if '_' in gid:
-                    gid = gid.rsplit('_', 1)[-1]
-                return gid
+            # ── Historial y season desde Riot API (no LCU) ──
+            data["historial"] = []
+            data["all_games_season"] = []
 
-            if all_games and self.lcu and self.lcu.port:
-                try:
-                    existing_ids = {_gid(g) for g in all_games}
-                    for offset in range(100, 2000, 100):
-                        batch = self.lcu.obtener_historial_extendido(puuid=puuid, inicio=offset, cantidad=100)
-                        if not batch:
-                            break
-                        new_batch = [g for g in batch if _gid(g) and _gid(g) not in existing_ids]
-                        if not new_batch:
-                            break
-                        for g in new_batch:
-                            existing_ids.add(_gid(g))
-                        all_games.extend(new_batch)
-                        if len(batch) < 100:
-                            break
-                    print(f"[_fetch_perfil] Season stats: {len(all_games)} partidas totales (temporada completa)")
-                except Exception as e:
-                    print(f"[_fetch_perfil] Error paginando season stats (no fatal): {e}")
-            data["all_games_season"] = all_games
-
-            # Emitir YA los datos del LCU — no esperar a Riot API
+            # Emitir YA los datos del LCU (perfil, ligas, maestrias) — las partidas
+            # llegan despues via season_partial desde Riot API.
             data["ok"] = perfil_ok
             self.perfil_listo.emit(data)
 
-            # ── Fase 6: Riot API (background, no bloquea la UI) ──
-            if puuid and len(all_games) < 500:
-                game_name = perfil.get("gameName") or perfil.get("displayName", "").split("#")[0]
-                tag_line = perfil.get("tagLine") or ""
+            # ── Fase 5: Riot API (background, no bloquea la UI) ──
+            if puuid:
+                raw_name = perfil.get("gameName") or perfil.get("displayName") or ""
+                if "#" in raw_name:
+                    game_name, tag_line = raw_name.split("#", 1)
+                else:
+                    game_name = raw_name
+                    tag_line = perfil.get("tagLine") or ""
                 threading.Thread(
                     target=self._riot_season_background,
-                    args=(puuid, all_games, game_name, tag_line),
+                    args=(puuid, [], game_name, tag_line),
                     daemon=True
                 ).start()
 
@@ -652,10 +677,37 @@ class PerfilTabMixin:
             data["ok"] = False
             self.perfil_listo.emit(data)
 
+    def refrescar_perfil(self):
+        """Fuerza una recarga completa del perfil desde LCU. Util tanto desde el
+        boton manual como desde el auto-refresh al terminar una partida."""
+        self.perfil_cargado = False
+        if not self._cargando_perfil:
+            self._cargando_perfil = True
+            if hasattr(self, "pb_historial"):
+                self.pb_historial.setRange(0, 0)  # indeterminado hasta saber el total
+                self.pb_historial.setFormat("Buscando partidas…")
+                self.pb_historial.setVisible(True)
+            threading.Thread(target=self._fetch_perfil, daemon=True).start()
+
+    def _on_season_progress(self, procesadas, total):
+        """Actualiza la barra de progreso de descarga de partidas (hilo principal)."""
+        if not hasattr(self, "pb_historial"):
+            return
+        if total <= 0:
+            self.pb_historial.setVisible(False)
+            return
+        self.pb_historial.setFormat("Descargando partidas… %v/%m")
+        self.pb_historial.setRange(0, total)
+        self.pb_historial.setValue(min(procesadas, total))
+        self.pb_historial.setVisible(procesadas < total)
+
     def _on_perfil_listo(self, data):
         """Se ejecuta en el hilo principal. Actualiza la UI con los datos ya recogidos."""
         self._cargando_perfil = False
-        
+
+        if hasattr(self, "pb_historial"):
+            self.pb_historial.setVisible(False)
+
         if not data.get("ok") or not data.get("perfil"):
             print(f"[_on_perfil_listo] Datos insuficientes (ok={data.get('ok')}), se reintentará.")
             return
@@ -744,7 +796,6 @@ class PerfilTabMixin:
                     registrar_lp(ranked_flex["tier"], ranked_flex.get("division", ""),
                                  ranked_flex.get("lp", 0), ranked_flex.get("wins", 0),
                                  ranked_flex.get("losses", 0), "RANKED_FLEX_SR")
-                self._actualizar_grafica_lp()
             except Exception as _e_lp:
                 print(f"[LP] Error registrando: {_e_lp}")
 
@@ -784,6 +835,83 @@ class PerfilTabMixin:
             # Si falla el renderizado, permitimos reintentar en el siguiente tick
             self.perfil_cargado = False
 
+    def _es_ranked(self, g):
+        """True si la partida es ranked (SoloQ 420 / Flex 440).
+        Usa queueId cuando esta presente; si no, detecta por eloChange
+        (LP delta, solo existe en partidas ranked del LCU)."""
+        q = g.get("queueId", 0) or 0
+        if q in (420, 440):
+            return True
+        if q in (400, 430, 450, 700, 1700):  # Normal, ARAM, Clash, Arena
+            return False
+        # LCU sin queueId: eloChange es la unica senial confiable
+        elo = g.get("eloChange") or g.get("playerScoreChange")
+        return elo is not None
+
+    def _on_season_modo_change(self):
+        """Actualiza stats de temporada y cards al cambiar SoloQ/Flex."""
+        self._season_modo_filtro = 420 if self.cb_season_modo.currentText() == "SoloQ" else 440
+        self._cargar_stats_season()
+        self._recalc_stats_cards()
+
+    def _recalc_stats_cards(self):
+        """Recalcula las 4 cards (WR, KDA, +Jugado, Mejor WR) segun filtro actual."""
+        if not hasattr(self, 'all_games_season') or not self.all_games_season:
+            return
+        modo = getattr(self, '_season_modo_filtro', None)
+        season_games = [g for g in self.all_games_season if self._es_ranked(g)]
+        if modo:
+            season_games = [g for g in season_games if (g.get("queueId", 0) or 0) in (0, modo)]
+        modo_nombre = "SoloQ" if modo == 420 else ("Flex" if modo == 440 else "")
+
+        total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
+        champ_stats = {}
+        for g in season_games:
+            part_info = g.get("participants", [{}])[0]
+            stats = part_info.get("stats", {})
+            champ_id = str(part_info.get("championId", "0"))
+            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
+            win = stats.get("win", False)
+            k = stats.get("kills", 0)
+            d = stats.get("deaths", 0)
+            a = stats.get("assists", 0)
+            total_k += k; total_d += d; total_a += a; total_games += 1
+            if win: victorias += 1
+            if champ_name not in champ_stats:
+                champ_stats[champ_name] = {"wins": 0, "games": 0}
+            champ_stats[champ_name]["games"] += 1
+            if win: champ_stats[champ_name]["wins"] += 1
+
+        if total_games > 0:
+            wr = round((victorias / total_games) * 100)
+            kda = round((total_k + total_a) / max(1, total_d), 2)
+            self.lbl_card_wr_val.setText(f"{wr}%")
+            tt = f"{victorias}V / {total_games - victorias}D en {total_games} partidas"
+            if modo_nombre: tt = f"{modo_nombre}: {tt}"
+            self.lbl_card_wr_val.setToolTip(tt)
+            self.lbl_card_kda_val.setText(f"{kda}")
+            wr_color = GREEN_WR if wr >= 50 else RED_WR
+            self.lbl_card_wr_val.setStyleSheet(f"color: {wr_color}; font-size: 26px; font-weight: bold;")
+
+            if champ_stats:
+                most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
+                self.lbl_card_most_val.setText(most_played[:10])
+                self.lbl_card_most_val.setToolTip(f"{champ_stats[most_played]['games']} partidas con {most_played}")
+
+                best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 5}
+                if best_wr_champs:
+                    best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
+                    best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
+                    self.lbl_card_best_val.setText(f"{best_champ[:8]} {best_wr}%")
+                    self.lbl_card_best_val.setToolTip(f"{best_wr}% WR con {best_champ}")
+                else:
+                    self.lbl_card_best_val.setText("--")
+        else:
+            self.lbl_card_wr_val.setText("--%")
+            self.lbl_card_kda_val.setText("--")
+            self.lbl_card_most_val.setText("--")
+            self.lbl_card_best_val.setText("--")
+
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
         self.tb_historial.setRowCount(0)
@@ -798,7 +926,12 @@ class PerfilTabMixin:
                 unique.append(g)
         if len(unique) < len(games):
             print(f"[Historial] DEDUP: {len(games)} -> {len(unique)} partidas")
+
         games = unique
+
+        # Mostrar tabla si hay partidas; si no, el placeholder
+        if hasattr(self, "historial_stack_layout"):
+            self.historial_stack_layout.setCurrentIndex(0 if games else 1)
 
         # Ordenar partidas por fecha (mas reciente primero) usando timestamp
         try:
@@ -808,9 +941,10 @@ class PerfilTabMixin:
         except Exception:
             pass
 
-        total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
-        champ_stats = {}
-        
+        # Maximo 50 partidas en la tabla
+        games = games[:50]
+
+        # ── Tabla de historial (loop separado para las 50 mas recientes) ──
         for g in games:
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
@@ -835,18 +969,6 @@ class PerfilTabMixin:
             # Fecha (usa timestamp gameCreation, fallback a gameCreationDate)
             fecha = self._format_game_date(g)
             
-            total_k += k; total_d += d; total_a += a; total_games += 1
-            if win: victorias += 1
-            
-            if champ_name not in champ_stats:
-                champ_stats[champ_name] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
-            cs_entry = champ_stats[champ_name]
-            cs_entry["games"] += 1
-            if win: cs_entry["wins"] += 1
-            cs_entry["kills"] += k
-            cs_entry["deaths"] += d
-            cs_entry["assists"] += a
-            
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
             item_c = QTableWidgetItem(f"  {self._nombre_con_dificultad(champ_name)}")
@@ -864,38 +986,8 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
-        # --- Tarjetas de estadisticas ---
-        if total_games > 0:
-            wr = round((victorias / total_games) * 100)
-            kda = round((total_k + total_a) / max(1, total_d), 2)
-            avg_k = round(total_k / total_games, 1)
-            avg_d = round(total_d / total_games, 1)
-            avg_a = round(total_a / total_games, 1)
-            self.lbl_card_wr_val.setText(f"{wr}%")
-            self.lbl_card_wr_val.setToolTip(f"{victorias}V / {total_games - victorias}D en {total_games} partidas")
-            self.lbl_card_kda_val.setText(f"{kda}")
-            self.lbl_card_kda_val.setToolTip(f"Promedio: {avg_k}/{avg_d}/{avg_a} por partida")
-            most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
-            most_g = champ_stats[most_played]["games"]
-            self.lbl_card_most_val.setText(most_played[:10])
-            self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
-            self.lbl_card_most_val.setToolTip(f"{most_g} partidas con {most_played}")
-            best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 2}
-            if best_wr_champs:
-                best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
-                best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
-                self.lbl_card_best_val.setText(f"{best_champ[:8]} {best_wr}%")
-                self.lbl_card_best_val.setStyleSheet(f"color: {GREEN_WR}; font-size: 14px; font-weight: bold;")
-                self.lbl_card_best_val.setToolTip(f"{best_wr}% WR con {best_champ} en {champ_stats[best_champ]['games']} partidas")
-            else:
-                self.lbl_card_best_val.setText("--")
-            wr_color = GREEN_WR if wr >= 50 else RED_WR
-            self.lbl_card_wr_val.setStyleSheet(f"color: {wr_color}; font-size: 26px; font-weight: bold;")
-        else:
-            self.lbl_card_wr_val.setText("--%")
-            self.lbl_card_kda_val.setText("--")
-            self.lbl_card_most_val.setText("--")
-            self.lbl_card_best_val.setText("--")
+        # --- Tarjetas de estadisticas (segun filtro SoloQ/Flex) ---
+        self._recalc_stats_cards()
 
         # --- WR POR LÍNEA (1 sola query para todos los campeones) ---
         conn = obtener_conexion()
@@ -974,20 +1066,8 @@ class PerfilTabMixin:
         ))
         self.cb_filtro_modo.blockSignals(True)
         self.cb_filtro_modo.clear()
-        self.cb_filtro_modo.addItem("Todos los modos")
-        self.cb_filtro_modo.addItems(modos_usados)
+        self.cb_filtro_modo.addItems(["Todos los modos", "SoloQ", "Flex", "Normal", "ARAM"])
         self.cb_filtro_modo.blockSignals(False)
-        
-        # --- Filtro por temporada ---
-        years_usados = sorted(set(
-            str(y) for y in (self._extraer_year(g) for g in self.historial_games)
-            if y is not None
-        ), reverse=True)
-        self.cb_filtro_season.blockSignals(True)
-        self.cb_filtro_season.clear()
-        self.cb_filtro_season.addItem("Todas las temporadas")
-        self.cb_filtro_season.addItems(years_usados)
-        self.cb_filtro_season.blockSignals(False)
 
         # ─── FASE 4: COACHING PRO ───
         self._actualizar_coaching()
@@ -1045,18 +1125,6 @@ class PerfilTabMixin:
                 self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
-
-    def _actualizar_grafica_lp(self):
-        """Refresca la gráfica de LP con los datos de la cola seleccionada."""
-        if not hasattr(self, "lp_graph"):
-            return
-        queue_map = {"Solo/Dúo": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}
-        queue = queue_map.get(self.cb_lp_queue.currentText(), "RANKED_SOLO_5x5")
-        try:
-            history = obtener_historial_lp(queue, dias=30)
-            self.lp_graph.set_data(history)
-        except Exception as e:
-            print(f"[LP Graph] Error: {e}")
 
     def _analizar_fatiga(self):
         """Analiza fatiga/tilt desde el historial de la LCU y actualiza el dashboard premium."""
@@ -1162,6 +1230,8 @@ class PerfilTabMixin:
     def _append_games_to_table(self, games):
         """Añade partidas a la tabla sin borrar las existentes."""
         for g in games:
+            if not self._es_ranked(g):
+                continue
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
             champ_id = str(part_info.get("championId", "0"))
@@ -1250,30 +1320,41 @@ class PerfilTabMixin:
             print(f"[_on_tag_emocional] Error: {e}")
 
     def filtrar_historial(self, _=None):
-        """Filtra la tabla de historial por campeón, modo y temporada."""
+        """Filtra la tabla de historial por campeón y modo (max 50 partidas)."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
             return
         filtro_champ = self.cb_filtro_champ.currentText()
         filtro_modo = self.cb_filtro_modo.currentText()
-        filtro_season = self.cb_filtro_season.currentText()
-        
+
+        # Ordenar por fecha (mas reciente primero)
+        try:
+            juegos = sorted(self.historial_games, key=lambda g: (
+                self._parse_game_date(g) or datetime(2000,1,1)
+            ), reverse=True)
+        except Exception:
+            juegos = list(self.historial_games)
+
         self.tb_historial.setRowCount(0)
-        for g in self.historial_games:
+        filas = 0
+        for g in juegos:
+            if filas >= 50:
+                break
+            modo_juego = self._clasificar_modo_juego(g)
+            if filtro_modo == "Todos los modos":
+                pass
+            elif filtro_modo in ("SoloQ", "Flex") and not self._es_ranked(g):
+                continue
+            elif filtro_modo != modo_juego:
+                continue
+
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
             champ_id = str(part_info.get("championId", "0"))
             champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
-            
-            modo_juego = g.get("gameMode", "Draft")
-            if modo_juego == "CLASSIC": modo_juego = "Ranked"
 
             if filtro_champ != "Todos los campeones" and champ_name != filtro_champ:
                 continue
             if filtro_modo != "Todos los modos" and modo_juego != filtro_modo:
-                continue
-
-            season_year = self._extraer_year(g)
-            if filtro_season != "Todas las temporadas" and str(season_year) != filtro_season:
                 continue
 
             win = stats.get("win", False)
@@ -1309,4 +1390,5 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
+            filas += 1
 

@@ -19,7 +19,6 @@
     "auto_items": false,
     "auto_switch_radar": true,
     "auto_aceptar": false,
-    "overlay_ingame": false,
     "notificaciones_escritorio": true
   }
 }

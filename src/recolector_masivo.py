@@ -139,7 +139,7 @@ CHECKPOINT_EVERY = 500
 COUNT_POR_JUGADOR = 100
 PLAYER_FETCH_WORKERS = 5
 
-USAR_TIMELINE = False
+USAR_TIMELINE = True
 
 JUGADORES_SEMILLA = 500
 SEMILLA_POR_PLATAFORMA = 20
@@ -790,33 +790,28 @@ def descargar_partida(match_id: str, region: str) -> tuple | None:
         if patch != PARCHE_ACTUAL:
             return None
 
-        boots_map, supp_map = {}, {}
+        boots_map, supp_map, orden_map, timeline_map = {}, {}, {}, {}
         if USAR_TIMELINE:
-            necesita_timeline = False
-            for p in info.get("participants", []):
-                items_slots = [str(p.get(f"item{i}", 0)) for i in range(7) if p.get(f"item{i}", 0) != 0]
-                pos = p.get("teamPosition", "")
-                if not any(es_bota(i) for i in items_slots) or (
-                    pos == "UTILITY" and not any(es_item_supp_final(i) for i in items_slots)
-                ):
-                    necesita_timeline = True
-                    break
-            if necesita_timeline:
-                url_tl = f"https://{region}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
-                timeline = peticion_segura(url_tl)
-                if timeline and "info" in timeline:
-                    for frame in timeline["info"].get("frames", []):
-                        for ev in frame.get("events", []):
-                            if ev.get("type") != "ITEM_PURCHASED":
-                                continue
-                            pid = ev.get("participantId")
-                            iid = str(ev.get("itemId", 0))
-                            if not pid or iid == "0":
-                                continue
-                            if es_bota(iid):
-                                boots_map[pid] = iid
-                            elif es_item_supp_final(iid):
-                                supp_map[pid] = iid
+            # Con timeline activo bajamos SIEMPRE el timeline para capturar el
+            # orden de compra real (ITEM_PURCHASED en orden cronologico) por jugador.
+            url_tl = f"https://{region}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
+            timeline = peticion_segura(url_tl)
+            if timeline and "info" in timeline:
+                for frame in timeline["info"].get("frames", []):
+                    frame_ts = frame.get("timestamp", 0)
+                    for ev in frame.get("events", []):
+                        if ev.get("type") != "ITEM_PURCHASED":
+                            continue
+                        pid = ev.get("participantId")
+                        iid = str(ev.get("itemId", 0))
+                        if not pid or iid == "0":
+                            continue
+                        orden_map.setdefault(pid, []).append(iid)
+                        timeline_map.setdefault(pid, []).append({"iid": iid, "ts": frame_ts})
+                        if es_bota(iid):
+                            boots_map[pid] = iid
+                        elif es_item_supp_final(iid):
+                            supp_map[pid] = iid
 
         champions = []
         participants_rows = []
@@ -845,11 +840,14 @@ def descargar_partida(match_id: str, region: str) -> tuple | None:
                     runas.append(str(sp.get(k, "")))
             runas_str = ",".join(r for r in runas if r)
             spells = f"{p.get('summoner1Id', 0)},{p.get('summoner2Id', 0)}"
+            items_order_str = ",".join(orden_map.get(pid_p, []))
+            item_timeline_json = json.dumps(timeline_map.get(pid_p, []))
 
             participants_rows.append((
                 match_id, champ, pos, p.get("teamId", 0), 1 if p.get("win") else 0,
                 ",".join(items), runas_str, spells,
-                p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0)
+                p.get("kills", 0), p.get("deaths", 0), p.get("assists", 0),
+                items_order_str, item_timeline_json
             ))
 
         match_row = (match_id, version, info.get("gameDuration", 0), patch)
@@ -884,7 +882,7 @@ def insertar_lote_datos(datos: list) -> int:
             if all_parts:
                 execute_values(cur,
                     """INSERT INTO participantes(match_id, champion, team_position, team, win,
-                       items, runes, spells, kills, deaths, assists)
+                       items, runes, spells, kills, deaths, assists, items_order, item_timeline)
                        VALUES %s ON CONFLICT (match_id, champion, team) DO NOTHING""",
                     all_parts)
 

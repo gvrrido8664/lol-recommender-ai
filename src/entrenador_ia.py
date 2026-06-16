@@ -138,6 +138,10 @@ def extraer_features_comparativas(aliado, enemigo):
 
 
 def interpretar_features(aliado, enemigo):
+    """Insights del matchup. Devuelve lista de (texto, sentimiento), donde
+    sentimiento es 'good' (a favor del aliado), 'bad' (a favor del enemigo) o
+    'neutral'. El consumidor decide el color a partir del sentimiento.
+    """
     feats = extraer_features_comparativas(aliado, enemigo)
     insights = []
 
@@ -147,45 +151,115 @@ def interpretar_features(aliado, enemigo):
     delta_scale = int(feats[3])
 
     if delta_cc >= 3:
-        insights.append(f"+{delta_cc} CC: {aliado} anula las opciones de {enemigo}")
+        insights.append((f"+{delta_cc} CC: {aliado} anula las opciones de {enemigo}", "good"))
     elif delta_cc >= 1:
-        insights.append(f"+{delta_cc} CC: {aliado} controla mejor las peleas")
+        insights.append((f"+{delta_cc} CC: {aliado} controla mejor las peleas", "good"))
     elif delta_cc <= -3:
-        insights.append(f"{delta_cc} CC: {enemigo} te supera ampliamente en control")
+        insights.append((f"{delta_cc} CC: {enemigo} te supera ampliamente en control", "bad"))
     elif delta_cc <= -1:
-        insights.append(f"{delta_cc} CC: {enemigo} tiene mejor control de masas")
+        insights.append((f"{delta_cc} CC: {enemigo} tiene mejor control de masas", "bad"))
 
     if delta_mob >= 3:
-        insights.append(f"+{delta_mob} Movilidad: {aliado} dicta el ritmo")
+        insights.append((f"+{delta_mob} Movilidad: {aliado} dicta el ritmo", "good"))
     elif delta_mob >= 1:
-        insights.append(f"+{delta_mob} Movilidad: {aliado} puede esquivar mejor")
+        insights.append((f"+{delta_mob} Movilidad: {aliado} puede esquivar mejor", "good"))
     elif delta_mob <= -2:
-        insights.append(f"{delta_mob} Movilidad: {enemigo} es mas agil")
+        insights.append((f"{delta_mob} Movilidad: {enemigo} es más ágil", "bad"))
 
     if delta_early >= 1:
-        insights.append(f"+{delta_early} Early: {aliado} domina el early game")
+        insights.append((f"+{delta_early} Early: {aliado} domina la fase de línea", "good"))
     elif delta_early <= -1:
-        insights.append(f"{delta_early} Early: {enemigo} es mas fuerte al inicio")
+        insights.append((f"{delta_early} Early: {enemigo} es más fuerte al inicio", "bad"))
 
     if delta_scale >= 1:
-        insights.append(f"+{delta_scale} Escalado: {aliado} supera a {enemigo} en late game")
+        insights.append((f"+{delta_scale} Escalado: {aliado} escala mejor hacia el late game", "good"))
     elif delta_scale <= -1:
-        insights.append(f"{delta_scale} Escalado: {enemigo} escala mejor. Cierra la partida pronto")
+        insights.append((f"{delta_scale} Escalado: {enemigo} escala mejor; cierra la partida pronto", "bad"))
 
     if feats[8] == 1.0:
-        insights.append(f"{aliado} es burst vs Tanque: {enemigo} absorbe tu dano")
+        insights.append((f"{aliado} es de burst contra tanque: {enemigo} absorbe tu daño", "bad"))
     if feats[9] == 1.0:
-        insights.append(f"{enemigo} counterea tanques naturalmente")
+        insights.append((f"{enemigo} contrarresta a los tanques de forma natural", "bad"))
     if feats[10] == 1.0:
-        insights.append("Ambos comparten tipo de dano: builds defensivas mas eficientes")
+        insights.append(("Ambos comparten tipo de daño: las builds defensivas son más eficientes", "neutral"))
     if feats[13] == 1.0:
-        insights.append(f"{aliado} es hyper-carry: juega seguro y escala imparable")
+        insights.append((f"{aliado} es hyper-carry: juega seguro y escala imparable", "scale"))
     if feats[14] == 1.0:
-        insights.append(f"{enemigo} es hyper-carry: acaba antes de que escale")
+        insights.append((f"{enemigo} es hyper-carry: acaba la partida antes de que escale", "scale"))
     if not insights:
-        insights.append("Enfrentamiento equilibrado: habilidad > counter")
+        insights.append(("Enfrentamiento equilibrado: la habilidad pesa más que el counter", "neutral"))
 
     return insights
+
+
+def consejos_matchup(aliado, enemigo, rol=None):
+    """Consejos profesionales de matchup 1v1, reglados a partir de los tags.
+
+    Devuelve una lista de strings (4-6 tips prácticos): itemización defensiva,
+    fase de línea, uso de CC/movilidad, escalado y amenazas de daño.
+    """
+    tag_a = obtener_tag(aliado)
+    tag_e = obtener_tag(enemigo)
+
+    cc_a = tag_a.get("cc_level", 1)
+    cc_e = tag_e.get("cc_level", 1)
+    mob_a = tag_a.get("mobility", 2)
+    mob_e = tag_e.get("mobility", 2)
+    early_a = _EARLY_MAP.get(tag_a.get("early_power", "neutral"), 2)
+    early_e = _EARLY_MAP.get(tag_e.get("early_power", "neutral"), 2)
+    scale_a = _SCALING_MAP.get(tag_a.get("scaling", "mid"), 2)
+    scale_e = _SCALING_MAP.get(tag_e.get("scaling", "mid"), 2)
+    dmg_e = tag_e.get("damage_type", "AD")
+    profile_e = tag_e.get("damage_profile", "dps")
+    class_a = tag_a.get("champion_class", "Fighter")
+
+    tips = []
+
+    # ── Itemización defensiva según el daño enemigo ──
+    if dmg_e == "AD":
+        tips.append(f"Itemiza armadura contra {enemigo} (Placas de Acero / Corazón Helado, botas de armadura).")
+    elif dmg_e == "AP":
+        tips.append(f"Itemiza resistencia mágica contra {enemigo} (Velo de Banshee / Fauces de Espíritu, botas mágicas).")
+    else:
+        tips.append(f"{enemigo} hace daño mixto: combina armadura y resistencia mágica, o vida bruta (Corazón de Acero).")
+
+    if profile_e == "burst":
+        tips.append(f"{enemigo} es de burst: cuida tu posición, un combo suyo puede matarte de golpe.")
+    elif profile_e == "poke":
+        tips.append(f"{enemigo} te hostigará a distancia: usa minions de cobertura y sustain para aguantar la línea.")
+
+    # ── Fase de línea ──
+    if early_e >= 3 and scale_a >= 3:
+        tips.append(f"{enemigo} domina el early: juega seguro los primeros niveles, farmea bajo torre y escala.")
+    elif early_a >= 3 and early_a > early_e:
+        tips.append(f"Tienes ventaja en el early: presiona y busca el all-in antes del power spike de {enemigo}.")
+    elif early_a == early_e:
+        tips.append("Fase de línea pareja: gestiona las oleadas y espera el error rival o la ayuda de tu jungla.")
+
+    # ── Control de masas ──
+    if cc_a - cc_e >= 2:
+        tips.append("Tu CC es superior: inicia tú los enganches y encadena tu control para ganar los all-in.")
+    elif cc_e - cc_a >= 2:
+        tips.append(f"{enemigo} tiene más CC: guarda tu flash/dash para esquivar su habilidad clave antes de pelear.")
+
+    # ── Movilidad ──
+    if mob_e - mob_a >= 2:
+        tips.append(f"{enemigo} es más móvil: respeta sus gaps, mantén visión en el río y no te sobre-extiendas.")
+
+    # ── Escalado ──
+    if scale_e >= 3 and scale_e > scale_a:
+        tips.append(f"{enemigo} escala mejor: cierra la partida pronto, niégale farm y fuerza objetivos tempranos.")
+    elif scale_a >= 3 and scale_a > scale_e:
+        tips.append("Tú escalas mejor: sobrevive la fase de línea, no fuerces peleas y deja que llegue tu late game.")
+
+    # ── Amenaza vs tanque ──
+    if class_a == "Tank" and tag_e.get("damage_profile") == "dps":
+        tips.append(f"Cuidado como tanque: {enemigo} derrite tanques con daño sostenido; pícalo y desengancha.")
+
+    if not tips:
+        tips.append("Matchup equilibrado: enfócate en el CS, la visión y jugar alrededor de tu jungla.")
+
+    return tips[:6]
 
 
 def obtener_lista_campeones():

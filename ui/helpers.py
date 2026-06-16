@@ -79,6 +79,49 @@ SKILL_ORDERS = {
     "Mel": "Q>E>W", "Ambessa": "Q>E>W",
 }
 
+
+def expandir_skill_order(orden_maxeo):
+    """Expande un orden de maxeo ('Q>W>E') a la secuencia heuristica de 18 niveles.
+
+    Reglas: R en niveles 6/11/16; niveles 1-3 un punto a cada basica (orden de
+    prioridad); luego se maximiza segun prioridad respetando el cap de rango por
+    nivel del juego (rango N de una basica requiere nivel >= 2N-1).
+    Devuelve una lista de 18 letras (Q/W/E/R). Es heuristica, no data pro real.
+    """
+    prio = [s for s in orden_maxeo.replace(">", " ").split() if s in ("Q", "W", "E")]
+    if len(prio) < 3:
+        prio = ["Q", "W", "E"]
+    pts = {"Q": 0, "W": 0, "E": 0, "R": 0}
+    seq = []
+    for lvl in range(1, 19):
+        if lvl in (6, 11, 16):
+            pts["R"] += 1
+            seq.append("R")
+            continue
+        chosen = None
+        if lvl <= 3:
+            # Asegurar las 3 basicas temprano, en orden de prioridad
+            for ab in prio:
+                if pts[ab] == 0:
+                    chosen = ab
+                    break
+        if chosen is None:
+            allowed = min(5, (lvl + 1) // 2)  # rango maximo permitido a este nivel
+            for ab in prio:
+                if pts[ab] < allowed:
+                    chosen = ab
+                    break
+            if chosen is None:  # ninguna puede subir por el cap -> la primera con < 5
+                for ab in prio:
+                    if pts[ab] < 5:
+                        chosen = ab
+                        break
+        if chosen is None:
+            chosen = prio[0]
+        pts[chosen] += 1
+        seq.append(chosen)
+    return seq
+
 # ─── PATHING DE JUNGLA ───────────────────────────────────────
 JUNGLA_ESTILO = {
     "early_gank": {
@@ -195,10 +238,19 @@ def ajustar_shards_adaptativos(ids_runas: list, mi_champ: str, enemigo_lane: str
 
     result = list(ids_runas)
 
+    # ── EXCEPCION ADC: los tiradores casi siempre llevan los mismos shards.
+    # No adaptamos a la composicion (no tiene sentido armadura+tenacidad en un ADC):
+    # Velocidad de Ataque + Fuerza Adaptativa + Vida.
+    if es_tirador(champ_sanitized):
+        result[8] = _SHARD_ATT_SPEED
+        result[9] = _SHARD_ADAPTIVE
+        result[10] = _SHARD_HEALTH
+        return result
+
     # Shard 8 (row 1): adaptive / att speed / haste
     if champ_sanitized in _HASTE_PREF or es_mago(champ_sanitized):
         result[8] = _SHARD_HASTE
-    elif champ_sanitized in _AA_HEAVY or es_tirador(champ_sanitized):
+    elif champ_sanitized in _AA_HEAVY:
         result[8] = _SHARD_ATT_SPEED
     else:
         result[8] = _SHARD_ADAPTIVE
@@ -254,7 +306,7 @@ MATCHUP_TIPS = {
                    "Su Q necesita segundo click — si no lo confirma, pierde la carga.",
                    "Post-6, no te pongas cerca de aliados o te usara de insec."],
     "Graves":     ["Sus perdigones hacen dano en cono — alejate en diagonal, no en linea.",
-                   "Su dash no funciona hacia obstaculos (muros) — usalos para cortarle.",
+                   "Su dash no funciona hacia obstaculos (muros) — úsalos para cortarle.",
                    "Evita el humo de E (W); reduce rango de vision y ralentiza."],
     "Kha'Zix":    ["Separarse del equipo lo hace mas peligroso — mantente agrupado.",
                    "Cada evo le da herramientas distintas; aprende que evoluciono primero.",
@@ -272,7 +324,7 @@ MATCHUP_TIPS = {
     "Renekton":   ["Matchup de rabia: cuando tenga barra llena (50+) no tradees.",
                    "Su W (combo de aturdimiento) requiere un hit previo — alejate cuando se active."],
     "Gangplank":  ["Sus barriles tienen 2 cargas por defecto — elimina el primero antes de que encadene.",
-                   "Su E le quita CC activos — usalos durante su ult para el minimo dano."],
+                   "Su E le quita CC activos — úsalos durante su ult para el minimo dano."],
     "Malphite":   ["Full AP Malphite: tratalo como un mago disfrazado de tanque.",
                    "Su R tiene CC de area — no estes agrupado contra el en teamfights."],
     "Morgana":    ["Su W tiene un delay de 0.5s — side-step apenas lo empiece a lanzar.",
@@ -294,7 +346,7 @@ MATCHUP_TIPS = {
     "Ahri":       ["Puede hacer charm en W; el Q pasa dos veces — la vuelta hace mas dano.",
                    "Sin R (3 dashes) es muy vulnerable — countergankea post ult."],
     "Leblanc":    ["Su W deja un espejo — si no pone puntos en W empuja, si no regresa.",
-                   "Con silencio le cortas la cadena de burst — usalo antes de su Q."],
+                   "Con silencio le cortas la cadena de burst — úsalo antes de su Q."],
     "Katarina":   ["Sus daggers en el suelo la resetean — evita quedarte cerca de ellas.",
                    "CC en el momento del dash la interrumpe completamente."],
     "Akali":      ["Su campo de humo (W) la hace invisible — usa AoE para forzarla a salir.",
@@ -341,22 +393,16 @@ def clear_layout(layout):
 # ─── CONFIGURACION DE USUARIO ───────────────────────────────────────
 DEFAULT_SETTINGS = {
     "auto_deteccion": True,
-    "mostrar_power_spikes": True,
-    "mostrar_explicaciones": True,
     "frecuencia_radar": 1500,
+    "frecuencia_partida": 4000,
     "sonidos": False,
-    "modo_principiante": False,
-    "modo_profesional": False,
-    "recordatorios_partida": True,
     "mostrar_dificultad": True,
-    "tooltips_grandes": False,
     "flash_en_d": True,
     "auto_runas": False,
     "auto_hechizos": False,
     "auto_habilidades": False,
     "auto_items": False,
     "auto_switch_radar": True,
-    "overlay_ingame": False,
     "notificaciones_escritorio": True,
     "auto_aceptar": False,
 }

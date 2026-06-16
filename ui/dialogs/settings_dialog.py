@@ -1,8 +1,8 @@
-"""Dialogo de configuracion de usuario. Extraido de app.py sin cambios."""
+"""Dialogo de configuracion de usuario — 3 pestañas + boton Aplicar."""
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel,
-                               QRadioButton, QCheckBox, QComboBox, QGroupBox,
-                               QButtonGroup, QSlider, QScrollArea, QDialogButtonBox)
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                QCheckBox, QComboBox, QGroupBox, QTabWidget,
+                                QWidget, QPushButton, QDialogButtonBox, QSlider)
 from PySide6.QtCore import Qt
 
 from ui.design import *
@@ -12,15 +12,12 @@ class SettingsDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.settings = settings.copy()
-        self.setWindowTitle("NEXUS — Configuración")
-        self.resize(470, 540)
+        self._applied = False
+        self.setWindowTitle("NEXUS — Configuracion")
+        self.resize(440, 420)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {BG_DARK}; }}
             QLabel {{ color: {TEXT_WHITE}; font-size: 12px; background: transparent; }}
-            QRadioButton {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 6px; padding: 6px 4px; }}
-            QRadioButton::indicator {{ width: 18px; height: 18px; }}
-            QRadioButton::indicator:checked {{ background-color: {BORDER_ACCENT}; border-radius: 9px; }}
-            QRadioButton:hover {{ background-color: #211a28; border-radius: 4px; }}
             QCheckBox {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 8px; padding: 2px 0; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; }}
             QCheckBox:hover {{ color: {BORDER_ACCENT}; }}
@@ -30,191 +27,235 @@ class SettingsDialog(QDialog):
             QGroupBox {{ color: {BORDER_ACCENT}; font-weight: bold; font-size: 12px; border: 1px solid #2a2030; border-radius: 6px; margin-top: 8px; padding-top: 14px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; }}
             QPushButton {{ color: white; }}
+            QSlider::groove:horizontal {{ height: 6px; background: #2a2030; border-radius: 3px; }}
+            QSlider::handle:horizontal {{ width: 16px; height: 16px; margin: -5px 0; background: {BORDER_ACCENT}; border-radius: 8px; }}
+            QTabWidget::pane {{ border: 1px solid #2a2030; background: transparent; }}
+            QTabBar::tab {{ color: {TEXT_SUBTLE}; background: #16121c; border: none; padding: 6px 16px; }}
+            QTabBar::tab:selected {{ color: {BORDER_ACCENT}; background: {BG_DARK}; border-bottom: 2px solid {BORDER_ACCENT}; }}
         """)
-        layout = QVBoxLayout(self); layout.setSpacing(4)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
 
-        title = QLabel("⚙️ CONFIGURACIÓN")
-        title.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 18px; padding: 6px 0 2px 0;")
+        title = QLabel("Configuracion")
+        title.setStyleSheet(f"color: {BORDER_ACCENT}; font-weight: bold; font-size: 18px; padding: 4px 0;")
         layout.addWidget(title)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        scroll_w = QWidget()
-        scroll_w.setStyleSheet("background: transparent;")
-        form = QVBoxLayout(scroll_w)
-        form.setSpacing(2)
-        form.setContentsMargins(0, 0, 0, 0)
+        tabs = QTabWidget()
+        tabs.addTab(self._tab_general(), "General")
+        tabs.addTab(self._tab_auto(), "Auto-Importar")
+        tabs.addTab(self._tab_partida(), "En Partida")
+        layout.addWidget(tabs, 1)
 
-        def _seccion(texto):
-            gb = QGroupBox(texto)
-            gl = QVBoxLayout(gb)
-            gl.setSpacing(3)
-            form.addWidget(gb)
-            return gl
+        # ── Botones: Aplicar + OK/Cancel ──
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
 
-        def _desc(texto):
-            lbl = QLabel(texto)
-            lbl.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px; padding-left: 2px;")
-            lbl.setWordWrap(True)
-            return lbl
-
-        # ── 1. ¿CUÁNTA AYUDA QUIERES? ──
-        g_modo = _seccion("🎯 MODO DE AYUDA")
-        self.rb_basico = QRadioButton("🟢 Básico — Todo explicado, guiado paso a paso")
-        self.rb_normal = QRadioButton("🟡 Normal — Datos útiles sin vueltas, ideal para la mayoría")
-        self.rb_avanzado = QRadioButton("🔴 Avanzado — Análisis táctico completo, tú decides")
-
-        self.grupo_modo = QButtonGroup(self)
-        self.grupo_modo.addButton(self.rb_basico, 1)
-        self.grupo_modo.addButton(self.rb_normal, 2)
-        self.grupo_modo.addButton(self.rb_avanzado, 3)
-
-        modo_actual = "normal"
-        if self.settings.get("modo_principiante", False): modo_actual = "basico"
-        elif self.settings.get("modo_profesional", False): modo_actual = "avanzado"
-
-        if modo_actual == "basico":
-            self.rb_basico.setChecked(True)
-        elif modo_actual == "avanzado":
-            self.rb_avanzado.setChecked(True)
-        else:
-            self.rb_normal.setChecked(True)
-
-        self.grupo_modo.buttonClicked.connect(lambda btn: setattr(self, '_modo',
-            'basico' if btn == self.rb_basico else 'avanzado' if btn == self.rb_avanzado else 'normal'))
-        self._modo = modo_actual
-
-        g_modo.addWidget(self.rb_basico)
-        g_modo.addWidget(self.rb_normal)
-        g_modo.addWidget(self.rb_avanzado)
-        self._lbl_modo_desc = _desc(
-            "Básico: explicaciones amplias y tooltips grandes. "
-            "Normal: información compacta pero completa. "
-            "Avanzado: solo datos crudos, máximo rendimiento visual."
-        )
-        g_modo.addWidget(self._lbl_modo_desc)
-
-        # ── 2. TECLA DE FLASH ──
-        g_flash = _seccion("⌨️ TECLA DE FLASH")
-        fl = QHBoxLayout()
-        fl.addWidget(QLabel("¿En qué tecla tienes Flash?"))
-        self.cb_flash_tecla = QComboBox()
-        self.cb_flash_tecla.addItems(["D", "F"])
-        self.cb_flash_tecla.setCurrentText("D" if self.settings.get("flash_en_d", True) else "F")
-        fl.addWidget(self.cb_flash_tecla)
-        fl.addStretch()
-        g_flash.addLayout(fl)
-
-        # ── 3. IMPORTACIÓN AUTOMÁTICA ──
-        g_auto = _seccion("🤖 IMPORTACIÓN AUTOMÁTICA")
-        g_auto.addWidget(_desc(
-            "Al elegir un campeón en Champ Select, NEXUS puede importar "
-            "automáticamente estas configuraciones al cliente de LoL."
-        ))
-        self.cb_auto_runas = QCheckBox("📜 Importar runas automáticamente")
-        self.cb_auto_runas.setChecked(self.settings.get("auto_runas", False))
-        self.cb_auto_runas.setToolTip("Crea una página de runas con la configuración recomendada para tu campeón.")
-        g_auto.addWidget(self.cb_auto_runas)
-
-        self.cb_auto_hechizos = QCheckBox("✨ Importar hechizos automáticamente")
-        self.cb_auto_hechizos.setChecked(self.settings.get("auto_hechizos", False))
-        self.cb_auto_hechizos.setToolTip("Selecciona los hechizos recomendados (respeta tu tecla de Flash).")
-        g_auto.addWidget(self.cb_auto_hechizos)
-
-        self.cb_auto_habilidades = QCheckBox("⚡ Importar orden de habilidades automáticamente")
-        self.cb_auto_habilidades.setChecked(self.settings.get("auto_habilidades", False))
-        self.cb_auto_habilidades.setToolTip("Configura el orden de skills Q>E>W según la recomendación.")
-        g_auto.addWidget(self.cb_auto_habilidades)
-
-        self.cb_auto_items = QCheckBox("🛡️ Crear set de objetos automáticamente")
-        self.cb_auto_items.setChecked(self.settings.get("auto_items", False))
-        self.cb_auto_items.setToolTip("Crea un set de objetos con el core build y early game recomendados.")
-        g_auto.addWidget(self.cb_auto_items)
-
-        # ── 4. OVERLAY ──
-        g_overlay = _seccion("🖥️ OVERLAY IN-GAME")
-        self.cb_overlay = QCheckBox("📡 Mostrar overlay flotante durante la partida (KDA, CS, jugadores)")
-        self.cb_overlay.setChecked(self.settings.get("overlay_ingame", False))
-        self.cb_overlay.setToolTip("Ventana flotante sobre el juego con tu KDA, CS y estado de todos los jugadores.\nAtajo: Ctrl+Shift+I para mostrar/ocultar.")
-        g_overlay.addWidget(self.cb_overlay)
-
-        # ── 5. COMPORTAMIENTO ──
-        g_comp = _seccion("🎮 COMPORTAMIENTO")
-        self.cb_auto_switch = QCheckBox("🔄 Cambiar automáticamente a la pestaña Radar en Champ Select")
-        self.cb_auto_switch.setChecked(self.settings.get("auto_switch_radar", True))
-        self.cb_auto_switch.setToolTip("NEXUS cambiará a Radar en Vivo cuando detecte una sesión de draft.")
-        g_comp.addWidget(self.cb_auto_switch)
-
-        self.cb_auto_aceptar = QCheckBox("✅ Auto-aceptar partida (ReadyCheck)")
-        self.cb_auto_aceptar.setChecked(self.settings.get("auto_aceptar", False))
-        self.cb_auto_aceptar.setToolTip("Acepta automáticamente cuando salta la cola. ¡No te pierdas partidas!")
-        g_comp.addWidget(self.cb_auto_aceptar)
-
-        # Frecuencia del radar
-        freq_layout = QHBoxLayout()
-        freq_layout.addWidget(QLabel("Frecuencia del radar:"))
-        self.slider_freq = QSlider(Qt.Horizontal)
-        self.slider_freq.setRange(500, 3000)
-        self.slider_freq.setSingleStep(250)
-        self.slider_freq.setValue(self.settings.get("frecuencia_radar", 1500))
-        self.slider_freq.setToolTip("Cada cuántos ms se actualiza el Radar en Vivo.")
-        freq_layout.addWidget(self.slider_freq)
-        self.lbl_freq_val = QLabel(f"{self.slider_freq.value()}ms")
-        self.lbl_freq_val.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; min-width: 50px;")
-        self.slider_freq.valueChanged.connect(lambda v: self.lbl_freq_val.setText(f"{v}ms"))
-        freq_layout.addWidget(self.lbl_freq_val)
-        g_comp.addLayout(freq_layout)
-
-        # ── 6. NOTIFICACIONES ──
-        g_notif = _seccion("🔔 NOTIFICACIONES")
-        self.cb_sonido = QCheckBox("🔔 Sonidos al conectar, encontrar partida o terminar")
-        self.cb_sonido.setChecked(self.settings.get("sonidos", False))
-        self.cb_sonido.setToolTip("Avisos sonoros para que sepas qué pasa sin mirar la app.")
-        g_notif.addWidget(self.cb_sonido)
-
-        self.cb_notificaciones = QCheckBox("💬 Notificaciones de escritorio (cola, draft, fin de partida)")
-        self.cb_notificaciones.setChecked(self.settings.get("notificaciones_escritorio", True))
-        self.cb_notificaciones.setToolTip("Muestra avisos emergentes de Windows en eventos clave.")
-        g_notif.addWidget(self.cb_notificaciones)
-
-        # ── 7. EXTRAS ──
-        g_extra = _seccion("🎨 EXTRAS")
-        self.cb_dificultad = QCheckBox("⭐ Estrellas de dificultad en campeones (Garen ⭐, Zed ⭐⭐⭐)")
-        self.cb_dificultad.setChecked(self.settings.get("mostrar_dificultad", True))
-        self.cb_dificultad.setToolTip("Identifica de un vistazo qué tan difícil es un campeón.")
-        g_extra.addWidget(self.cb_dificultad)
-        self.cb_recordatorios = QCheckBox("💬 Recordatorios en partida (wardear, objetivos, etc.)")
-        self.cb_recordatorios.setChecked(self.settings.get("recordatorios_partida", True))
-        self.cb_recordatorios.setToolTip("Consejos que aparecen durante la partida para no perder el foco.")
-        g_extra.addWidget(self.cb_recordatorios)
-
-        form.addStretch()
-        scroll.setWidget(scroll_w)
-        layout.addWidget(scroll, 1)
+        self.btn_apply = QPushButton("Aplicar")
+        self.btn_apply.setFixedWidth(90)
+        self.btn_apply.setStyleSheet(f"""
+            QPushButton {{ background-color: #2a2030; color: {BORDER_ACCENT}; border: 1px solid {BORDER_ACCENT}; border-radius: 4px; padding: 6px 12px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: {BORDER_ACCENT}; color: #000; }}
+        """)
+        self.btn_apply.clicked.connect(self._on_apply)
+        btn_row.addWidget(self.btn_apply)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        btn_row.addWidget(btns)
+
+        layout.addLayout(btn_row)
+
+    # ═══════════════════════════════════════════
+    # TAB 1: General
+    # ═══════════════════════════════════════════
+    def _tab_general(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setSpacing(6)
+
+        gb = QGroupBox("Notificaciones")
+        gl = QVBoxLayout(gb)
+        gl.setSpacing(4)
+
+        self.cb_sonido = QCheckBox("Sonidos (cola, partida encontrada, fin de juego)")
+        self.cb_sonido.setChecked(self.settings.get("sonidos", False))
+        gl.addWidget(self.cb_sonido)
+
+        self.cb_notif = QCheckBox("Notificaciones de escritorio")
+        self.cb_notif.setChecked(self.settings.get("notificaciones_escritorio", True))
+        gl.addWidget(self.cb_notif)
+
+        l.addWidget(gb)
+
+        gb2 = QGroupBox("Interfaz")
+        gl2 = QVBoxLayout(gb2)
+        gl2.setSpacing(4)
+
+        self.cb_dificultad = QCheckBox("Mostrar dificultad en campeones (Garen *, Zed ***)")
+        self.cb_dificultad.setChecked(self.settings.get("mostrar_dificultad", True))
+        gl2.addWidget(self.cb_dificultad)
+
+        l.addWidget(gb2)
+        l.addStretch()
+        return w
+
+    # ═══════════════════════════════════════════
+    # TAB 2: Auto-Importar
+    # ═══════════════════════════════════════════
+    def _tab_auto(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setSpacing(6)
+
+        desc = QLabel("Al elegir un campeon en Champ Select, NEXUS puede\n"
+                       "importar automaticamente estas opciones al cliente de LoL.")
+        desc.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px; padding: 2px 0 8px 0;")
+        desc.setWordWrap(True)
+        l.addWidget(desc)
+
+        self.cb_auto_runas = QCheckBox("Pagina de runas recomendada")
+        self.cb_auto_runas.setChecked(self.settings.get("auto_runas", False))
+        l.addWidget(self.cb_auto_runas)
+
+        self.cb_auto_hechizos = QCheckBox("Hechizos de invocador")
+        self.cb_auto_hechizos.setChecked(self.settings.get("auto_hechizos", False))
+        l.addWidget(self.cb_auto_hechizos)
+
+        self.cb_auto_habilidades = QCheckBox("Orden de habilidades")
+        self.cb_auto_habilidades.setChecked(self.settings.get("auto_habilidades", False))
+        l.addWidget(self.cb_auto_habilidades)
+
+        self.cb_auto_items = QCheckBox("Set de objetos recomendados")
+        self.cb_auto_items.setChecked(self.settings.get("auto_items", False))
+        l.addWidget(self.cb_auto_items)
+
+        gb = QGroupBox("Tecla de Flash")
+        fl = QHBoxLayout(gb)
+        fl.addWidget(QLabel("Tu Flash esta en:"))
+        self.cb_flash = QComboBox()
+        self.cb_flash.addItems(["D", "F"])
+        self.cb_flash.setCurrentText("D" if self.settings.get("flash_en_d", True) else "F")
+        fl.addWidget(self.cb_flash)
+        fl.addStretch()
+        l.addWidget(gb)
+
+        l.addStretch()
+        return w
+
+    # ═══════════════════════════════════════════
+    # TAB 3: En Partida
+    # ═══════════════════════════════════════════
+    def _tab_partida(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setSpacing(6)
+
+        gb = QGroupBox("Automatizaciones")
+        gl = QVBoxLayout(gb)
+        gl.setSpacing(4)
+
+        self.cb_auto_switch = QCheckBox("Cambiar a la pestana Radar al entrar en Champ Select")
+        self.cb_auto_switch.setChecked(self.settings.get("auto_switch_radar", True))
+        gl.addWidget(self.cb_auto_switch)
+
+        self.cb_auto_aceptar = QCheckBox("Aceptar partida automaticamente")
+        self.cb_auto_aceptar.setChecked(self.settings.get("auto_aceptar", False))
+        gl.addWidget(self.cb_auto_aceptar)
+
+        l.addWidget(gb)
+
+        # ── Actualizacion del radar ──
+        gb2 = QGroupBox("Frecuencia de actualizacion")
+        gl2 = QVBoxLayout(gb2)
+        gl2.setSpacing(2)
+
+        gl2.addWidget(QLabel("Durante el draft (Radar):"))
+        self._slider_row(gl2, "radar", "frecuencia_radar", 1500,
+                         [(1000, "Rapida (1s)"), (1500, "Normal (1.5s)"), (3000, "Lenta (3s)")])
+
+        gl2.addWidget(QLabel("Durante la partida:"))
+        self._slider_row(gl2, "partida", "frecuencia_partida", 4000,
+                         [(2000, "Rapida (2s)"), (4000, "Normal (4s)"), (6000, "Lenta (6s)")])
+
+        l.addWidget(gb2)
+        l.addStretch()
+        return w
+
+    def _slider_row(self, layout, attr_name, setting_key, default, steps):
+        """Crea un slider con labels descriptivas."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(steps[0][0], steps[-1][0])
+        step_values = [s[0] for s in steps]
+        # snap to steps
+        slider.setSingleStep(min(b - a for a, b in zip(step_values, step_values[1:])))
+        slider.setPageStep(step_values[1] - step_values[0])
+
+        lbl = QLabel()
+        lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; min-width: 80px;")
+
+        current = self.settings.get(setting_key, default)
+
+        def _on_change(v):
+            # snap to nearest step
+            nearest = min(steps, key=lambda s: abs(s[0] - v))
+            slider.setValue(nearest[0])
+            lbl.setText(nearest[1])
+
+        _on_change(current)
+        slider.setValue(current)
+        slider.valueChanged.connect(_on_change)
+        row.addWidget(slider)
+        row.addWidget(lbl)
+
+        setattr(self, f"_slider_{attr_name}", slider)
+        setattr(self, f"_lbl_{attr_name}", lbl)
+        layout.addLayout(row)
+
+    # ═══════════════════════════════════════════
+    # Apply / OK handlers
+    # ═══════════════════════════════════════════
+    def _on_apply(self):
+        s = self._collect()
+        self.settings = s
+        self._applied = True
+        # Notificar al parent para que aplique inmediatamente
+        if self.parent() and hasattr(self.parent(), '_aplicar_settings'):
+            self.parent().user_settings = s
+            from ui.helpers import guardar_settings
+            guardar_settings(s)
+            self.parent()._aplicar_settings()
+
+    def accept(self):
+        s = self._collect()
+        self.settings = s
+        self._applied = True
+        from ui.helpers import guardar_settings
+        guardar_settings(s)
+        if self.parent() and hasattr(self.parent(), '_aplicar_settings'):
+            self.parent().user_settings = s
+            self.parent()._aplicar_settings()
+        super().accept()
+
+    def _collect(self):
+        return {
+            "auto_deteccion": True,
+            "sonidos": self.cb_sonido.isChecked(),
+            "frecuencia_radar": self._slider_radar.value(),
+            "frecuencia_partida": self._slider_partida.value(),
+            "mostrar_dificultad": self.cb_dificultad.isChecked(),
+            "flash_en_d": self.cb_flash.currentText() == "D",
+            "auto_runas": self.cb_auto_runas.isChecked(),
+            "auto_hechizos": self.cb_auto_hechizos.isChecked(),
+            "auto_habilidades": self.cb_auto_habilidades.isChecked(),
+            "auto_items": self.cb_auto_items.isChecked(),
+            "auto_switch_radar": self.cb_auto_switch.isChecked(),
+            "auto_aceptar": self.cb_auto_aceptar.isChecked(),
+            "notificaciones_escritorio": self.cb_notif.isChecked(),
+        }
 
     def get_settings(self):
-        return {"auto_deteccion": True,
-                "mostrar_power_spikes": self._modo != "avanzado",
-                "mostrar_explicaciones": self._modo == "basico",
-                "sonidos": self.cb_sonido.isChecked(),
-                "frecuencia_radar": self.slider_freq.value(),
-                "modo_principiante": self._modo == "basico",
-                "modo_profesional": self._modo == "avanzado",
-                "recordatorios_partida": self.cb_recordatorios.isChecked(),
-                "mostrar_dificultad": self.cb_dificultad.isChecked(),
-                "tooltips_grandes": self._modo == "basico",
-                "flash_en_d": self.cb_flash_tecla.currentText() == "D",
-                "auto_runas": self.cb_auto_runas.isChecked(),
-                "auto_hechizos": self.cb_auto_hechizos.isChecked(),
-                "auto_habilidades": self.cb_auto_habilidades.isChecked(),
-                "auto_items": self.cb_auto_items.isChecked(),
-                "auto_switch_radar": self.cb_auto_switch.isChecked(),
-                "auto_aceptar": self.cb_auto_aceptar.isChecked(),
-                "overlay_ingame": self.cb_overlay.isChecked(),
-                "notificaciones_escritorio": self.cb_notificaciones.isChecked(),
-                }
+        return self._collect()

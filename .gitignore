@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.spec
+!build_nexus.spec
 
 # Datos descargados por setup.py
 data/*.db
@@ -60,6 +61,7 @@ dist/
 installer_output/
 test_install/
 installer.iss
+!installer.iss
 
 # Iconos / assets fuente
 Icono_app.jpg
@@ -74,3 +76,6 @@ season_cache_*.json
 ui/tabs/data/
 
 coaching_cache.json
+
+# Migracion: URL temporal de Supabase (secreto)
+supabase_url.txt

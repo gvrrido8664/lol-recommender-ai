@@ -61,6 +61,7 @@ dist/
 installer_output/
 test_install/
 installer.iss
+!installer.iss
 
 # Iconos / assets fuente
 Icono_app.jpg

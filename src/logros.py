@@ -207,3 +207,208 @@ def obtener_logros_faltantes(logros_dict):
         if not logros_dict.get(lid):
             faltantes.append(lg)
     return faltantes
+
+
+# ═══════════════════════════════════════════════════════════════
+# INSIGHTS ESTILO POROFESSOR — cards profesionales con stats reales
+# ═══════════════════════════════════════════════════════════════
+
+_EMOJIS = {
+    "main_champ": "🎯", "kda": "📊", "cs": "🌾", "wr_trend": "📈",
+    "kp": "🤝", "vision": "👁️", "fb": "⚡", "roles": "📚",
+    "deaths": "🛡️", "tilt": "🧘", "racha": "🔥", "otp": "🦄",
+}
+
+_TIPOS_COLOR = {
+    "positivo": ("#2ecc71", "#1a3a2a"),
+    "neutral": ("#f1c40f", "#3a2f1a"),
+    "warning": ("#e74c3c", "#3a1a1a"),
+}
+
+
+def generar_insights_jugador(games):
+    """Genera insights estilo Porofessor a partir de las partidas del jugador.
+    Devuelve lista de dicts con 'id', 'icono', 'titulo', 'mensaje', 'tipo', 'color_borde', 'color_fondo'.
+    """
+    if not games:
+        return []
+    flat = [_extraer_stats(g) for g in games]
+    recent = list(reversed(flat))  # mas reciente primero
+    insights = []
+
+    if not any(g.get("championName") for g in flat):
+        return insights
+
+    # ── Main champion ──
+    champ_stats = {}
+    for g in flat:
+        c = g.get("championName") or "SinNombre"
+        if c not in champ_stats:
+            champ_stats[c] = {"picks": 0, "wins": 0}
+        champ_stats[c]["picks"] += 1
+        if g.get("win"):
+            champ_stats[c]["wins"] += 1
+    main = max(champ_stats.items(), key=lambda x: x[1]["picks"])
+    main_name, main_data = main
+    main_wr = round(main_data["wins"] / main_data["picks"] * 100, 1) if main_data["picks"] > 0 else 0
+    if main_data["picks"] >= 3:
+        insights.append({
+            "id": "main_champ", "icono": _EMOJIS["main_champ"],
+            "titulo": f"Main {main_name}",
+            "mensaje": f"{main_data['picks']} partidas — {main_wr}% WR",
+            "tipo": "positivo" if main_wr >= 50 else "neutral", "color_borde": _TIPOS_COLOR["positivo" if main_wr >= 50 else "neutral"][0],
+            "color_fondo": _TIPOS_COLOR["positivo" if main_wr >= 50 else "neutral"][1],
+        })
+    # Second main if player has two champs
+    if len(champ_stats) >= 2:
+        second = sorted(champ_stats.items(), key=lambda x: x[1]["picks"], reverse=True)[1]
+        s_name, s_data = second
+        s_wr = round(s_data["wins"] / s_data["picks"] * 100, 1) if s_data["picks"] > 0 else 0
+        if s_data["picks"] >= 3:
+            insights.append({
+                "id": "main_champ", "icono": _EMOJIS["main_champ"],
+                "titulo": f"Alternativa {s_name}",
+                "mensaje": f"{s_data['picks']} partidas — {s_wr}% WR",
+                "tipo": "positivo" if s_wr >= 50 else "neutral", "color_borde": _TIPOS_COLOR["positivo" if s_wr >= 50 else "neutral"][0],
+                "color_fondo": _TIPOS_COLOR["positivo" if s_wr >= 50 else "neutral"][1],
+            })
+
+    # ── KDA ──
+    kdas = []
+    for g in flat:
+        k = g.get("kills", 0) or 0
+        d = max(1, g.get("deaths", 0) or 0)
+        a = g.get("assists", 0) or 0
+        kdas.append((k + a) / d)
+    avg_kda = round(sum(kdas) / len(kdas), 1)
+    tipo_kda = "positivo" if avg_kda >= 4 else ("neutral" if avg_kda >= 2.5 else "warning")
+    label_kda = "Muy alto" if avg_kda >= 5 else ("Alto" if avg_kda >= 4 else ("Normal" if avg_kda >= 2.5 else "Bajo"))
+    insights.append({
+        "id": "kda", "icono": _EMOJIS["kda"],
+        "titulo": f"KDA {label_kda}",
+        "mensaje": f"KDA promedio de {avg_kda} en {len(flat)} partidas",
+        "tipo": tipo_kda, "color_borde": _TIPOS_COLOR[tipo_kda][0],
+        "color_fondo": _TIPOS_COLOR[tipo_kda][1],
+    })
+
+    # ── CS ──
+    cs_vals = []
+    for g in flat:
+        dur = g.get("gameDuration", 0) or 0
+        cs = (g.get("totalMinionsKilled", 0) or 0) + (g.get("neutralMinionsKilled", 0) or 0)
+        if dur >= 600:
+            cs_vals.append(cs / (dur / 60))
+    if cs_vals:
+        avg_cs = round(sum(cs_vals) / len(cs_vals), 1)
+        tipo_cs = "positivo" if avg_cs >= 7 else ("neutral" if avg_cs >= 5 else "warning")
+        label_cs = "Excelente" if avg_cs >= 8 else ("Bueno" if avg_cs >= 7 else ("Normal" if avg_cs >= 5 else "Bajo"))
+        insights.append({
+            "id": "cs", "icono": _EMOJIS["cs"],
+            "titulo": f"Farm {label_cs}",
+            "mensaje": f"{avg_cs} CS/min en tus últimas {len(cs_vals)} partidas",
+            "tipo": tipo_cs, "color_borde": _TIPOS_COLOR[tipo_cs][0],
+            "color_fondo": _TIPOS_COLOR[tipo_cs][1],
+        })
+
+    # ── Winrate trend (últimas 10 vs total) ──
+    if len(flat) >= 15:
+        last_10 = flat[:10]
+        rest = flat[10:]
+        wr_recent = round(sum(1 for g in last_10 if g.get("win")) / len(last_10) * 100, 1)
+        wr_old = round(sum(1 for g in rest if g.get("win")) / len(rest) * 100, 1) if rest else 0
+        diff = round(wr_recent - wr_old, 1)
+        tipo_wr = "positivo" if diff > 3 else ("warning" if diff < -3 else "neutral")
+        if diff > 0:
+            msg = f"Subiendo: {wr_old}% → {wr_recent}% (+{diff}%)"
+        elif diff < 0:
+            msg = f"Bajando: {wr_old}% → {wr_recent}% ({diff}%)"
+        else:
+            msg = f"Estable en {wr_recent}%"
+        insights.append({
+            "id": "wr_trend", "icono": _EMOJIS["wr_trend"],
+            "titulo": "Tendencia de WR",
+            "mensaje": msg,
+            "tipo": tipo_wr, "color_borde": _TIPOS_COLOR[tipo_wr][0],
+            "color_fondo": _TIPOS_COLOR[tipo_wr][1],
+        })
+
+    # ── Muertes ──
+    avg_deaths = round(sum((g.get("deaths", 0) or 0) for g in flat) / len(flat), 1)
+    tipo_death = "positivo" if avg_deaths <= 4 else ("neutral" if avg_deaths <= 6 else "warning")
+    label_death = "Muy pocas" if avg_deaths <= 3 else ("Controladas" if avg_deaths <= 4 else ("Normal" if avg_deaths <= 6 else "Altas"))
+    insights.append({
+        "id": "deaths", "icono": _EMOJIS["deaths"],
+        "titulo": f"Muertes {label_death}",
+        "mensaje": f"{avg_deaths} muertes/partida en promedio",
+        "tipo": tipo_death, "color_borde": _TIPOS_COLOR[tipo_death][0],
+        "color_fondo": _TIPOS_COLOR[tipo_death][1],
+    })
+
+    # ── Racha ──
+    wins_streak = 0
+    for g in recent:
+        if g.get("win"):
+            wins_streak += 1
+        else:
+            break
+    if wins_streak >= 5:
+        insights.append({
+            "id": "racha", "icono": _EMOJIS["racha"],
+            "titulo": "¡En racha!",
+            "mensaje": f"{wins_streak} victorias consecutivas",
+            "tipo": "positivo", "color_borde": _TIPOS_COLOR["positivo"][0],
+            "color_fondo": _TIPOS_COLOR["positivo"][1],
+        })
+    else:
+        loss_streak = 0
+        for g in recent:
+            if not g.get("win"):
+                loss_streak += 1
+            else:
+                break
+        if loss_streak >= 3:
+            insights.append({
+                "id": "racha", "icono": _EMOJIS["tilt"],
+                "titulo": "Mala racha",
+                "mensaje": f"{loss_streak} derrotas seguidas — considera un descanso",
+                "tipo": "warning", "color_borde": _TIPOS_COLOR["warning"][0],
+                "color_fondo": _TIPOS_COLOR["warning"][1],
+            })
+
+    # ── Flexibilidad de roles ──
+    roles_set = set()
+    for g in flat:
+        r = (g.get("role") or g.get("lane") or "").upper()
+        if r in ("TOP", "JUNGLE", "JUNGLA", "MIDDLE", "MID", "BOTTOM", "BOT", "ADC", "UTILITY", "SUPPORT"):
+            if r in ("JUNGLA",): r = "JUNGLE"
+            if r in ("MID",): r = "MIDDLE"
+            if r in ("BOT", "ADC"): r = "BOTTOM"
+            if r in ("SUPPORT",): r = "UTILITY"
+            roles_set.add(r)
+    if len(roles_set) >= 4:
+        insights.append({
+            "id": "roles", "icono": _EMOJIS["roles"],
+            "titulo": "Jugador flexible",
+            "mensaje": f"Juegas en {len(roles_set)} roles distintos",
+            "tipo": "neutral", "color_borde": _TIPOS_COLOR["neutral"][0],
+            "color_fondo": _TIPOS_COLOR["neutral"][1],
+        })
+
+    # ── OTP check ──
+    if len(flat) >= 10:
+        top_picks = max(champ_stats.values(), key=lambda x: x["picks"])
+        if top_picks["picks"] >= len(flat) * 0.7:
+            insights.append({
+                "id": "otp", "icono": _EMOJIS["otp"],
+                "titulo": "One Trick Pony",
+                "mensaje": f"Juegas solo {len(champ_stats)} campeones distintos",
+                "tipo": "neutral", "color_borde": _TIPOS_COLOR["neutral"][0],
+                "color_fondo": _TIPOS_COLOR["neutral"][1],
+            })
+
+    return insights
+
+
+def formatear_insight(insight: dict) -> str:
+    """Version texto plano para debug / tooltip."""
+    return f"{insight['icono']} {insight['titulo']}: {insight['mensaje']}"

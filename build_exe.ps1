@@ -1,9 +1,12 @@
 # build_exe.ps1 - Build de NEXUS con PyInstaller (onedir, sin UPX, anti-falsos-positivos).
 # Uso:
-#   powershell ./build_exe.ps1            # build limpio
-#   powershell ./build_exe.ps1 -Sign      # build + firma self-signed (crea cert si no existe)
+#   powershell ./build_exe.ps1                  # build limpio
+#   powershell ./build_exe.ps1 -Sign            # build + firma self-signed
+#   powershell ./build_exe.ps1 -Installer       # build + instalador Inno Setup
+#   powershell ./build_exe.ps1 -Sign -Installer # firma + instalador
 param(
-    [switch]$Sign
+    [switch]$Sign,
+    [switch]$Installer
 )
 # OJO: NO usar ErrorActionPreference='Stop'. PyInstaller escribe sus logs INFO en
 # stderr y, con 'Stop', PowerShell los trata como error terminante y aborta el
@@ -50,6 +53,36 @@ if ($Sign) {
     Write-Host "NOTA: una firma self-signed NO quita el aviso de SmartScreen en otras PCs." -ForegroundColor Yellow
 }
 
+# ── Instalador con Inno Setup ──
+if ($Installer) {
+    $isccPaths = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    )
+    $iscc = $isccPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($iscc) {
+        Write-Host "== Generando instalador con Inno Setup ==" -ForegroundColor Cyan
+        & $iscc installer.iss
+        if ($LASTEXITCODE -eq 0) {
+            $setup = Get-ChildItem "build_onedir\NEXUS_Setup_*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($setup) {
+                $setupSize = [math]::Round($setup.Length / 1MB, 1)
+                Write-Host "OK: $($setup.Name) ($setupSize MB)" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "AVISO: Inno Setup fallo. Revisa installer.iss." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "AVISO: Inno Setup 6 no encontrado. Salteando instalador." -ForegroundColor Yellow
+        Write-Host "  Descargalo: https://jrsoftware.org/isdl.php" -ForegroundColor Yellow
+        Write-Host "  Luego ejecuta: ISCC.exe installer.iss" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "`n== LISTO ==" -ForegroundColor Green
 Write-Host "Probar:   & '$ExePath'"
+if ($Installer) {
+    Write-Host "Instalador en: build_onedir\NEXUS_Setup_*.exe"
+}
 Write-Host "VirusTotal: subir el .exe a https://www.virustotal.com/ y revisar detecciones."

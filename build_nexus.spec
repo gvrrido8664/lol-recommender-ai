@@ -2,6 +2,11 @@
 # Spec de PyInstaller para NEXUS. Optimizado para reducir falsos positivos de
 # antivirus: modo onedir (no onefile), SIN UPX, con icono y metadata de version.
 # Build:  pyinstaller build_nexus.spec   (o usar build_exe.ps1)
+#
+# OPTIMIZACION: solo collect_all para PySide6 (necesita DLLs/Qt plugins/binarios).
+# numpy, pandas, scipy y sklearn usan hooks estandar de PyInstaller (ya incluidos
+# en pyinstaller-hooks-contrib).  Esto evita el analisis recursivo de ~10.000
+# modulos de tests y reduce el build de 6 min a ~2-3 min.
 import os
 import glob
 from PyInstaller.utils.hooks import collect_all
@@ -18,9 +23,10 @@ for _f in glob.glob("data/*"):
 for _f in glob.glob("assets/*.json"):
     _datas.append((_f, "assets"))
 
-# collect_all para paquetes con datos/binarios que PyInstaller no detecta solo
+# Solo PySide6 necesita collect_all (DLLs, shiboken, Qt plugins, QML, translations).
+# numpy, pandas, scipy, sklearn -> hooks estandar (pyinstaller-hooks-contrib).
 _binaries, _collected_datas, _hidden = [], [], []
-for _pkg in ("PySide6", "numpy", "pandas", "scipy", "sklearn"):
+for _pkg in ("PySide6",):
     try:
         b, d, h = collect_all(_pkg)
         _binaries += b; _collected_datas += d; _hidden += h
@@ -29,8 +35,14 @@ for _pkg in ("PySide6", "numpy", "pandas", "scipy", "sklearn"):
 
 hiddenimports = list(set(_hidden + [
     "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets",
-    "psycopg2", "joblib",
-    "sklearn.ensemble", "sklearn.tree", "sklearn.preprocessing", "sklearn.utils._typedefs",
+    "psycopg2", "psycopg2.pool", "psycopg2.extras", "psycopg2.errors",
+    "joblib",
+    "sklearn.ensemble", "sklearn.ensemble._forest",
+    "sklearn.tree", "sklearn.tree._tree",
+    "sklearn.preprocessing", "sklearn.preprocessing._label",
+    "sklearn.utils._typedefs",
+    "sklearn.neighbors", "sklearn.linear_model",
+    "sklearn.model_selection", "sklearn.feature_extraction",
     "pypresence", "requests", "urllib3",
 ]))
 

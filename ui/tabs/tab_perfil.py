@@ -291,13 +291,13 @@ class PerfilTabMixin:
 
         self.col_hist.addWidget(self.historial_stack, 1)
 
-        # Logros row
-        self.lbl_logros_title = QLabel("LOGROS")
-        self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 8px;")
+        # Insights estilo Porofessor
+        self.lbl_logros_title = QLabel("PERFIL DE JUGADOR")
+        self.lbl_logros_title.setStyleSheet(f"color: {ACCENT_TEAL}; font-weight: bold; font-size: 13px; margin-top: 8px;")
         self.col_hist.addWidget(self.lbl_logros_title)
-        self.fr_logros = QHBoxLayout()
+        self.fr_logros = QVBoxLayout()
         self.fr_logros.setSpacing(4)
-        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus logros...")
+        self.lbl_logros_text = QLabel("Conecta al cliente para ver tus insights...")
         self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
         self.lbl_logros_text.setWordWrap(True)
         self.fr_logros.addWidget(self.lbl_logros_text)
@@ -709,13 +709,8 @@ class PerfilTabMixin:
         """Se ejecuta en el hilo principal. Actualiza la UI con los datos ya recogidos."""
         self._cargando_perfil = False
 
-        # Si no hay API key, no habra descarga de season -> ocultar la barra de progreso
         if hasattr(self, "pb_historial"):
-            try:
-                if not self._riot_get_config()[0]:
-                    self.pb_historial.setVisible(False)
-            except Exception:
-                self.pb_historial.setVisible(False)
+            self.pb_historial.setVisible(False)
 
         if not data.get("ok") or not data.get("perfil"):
             print(f"[_on_perfil_listo] Datos insuficientes (ok={data.get('ok')}), se reintentará.")

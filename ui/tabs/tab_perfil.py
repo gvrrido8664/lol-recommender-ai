@@ -873,9 +873,37 @@ class PerfilTabMixin:
         except Exception:
             pass
 
+        # Maximo 50 partidas en la tabla
+        games = games[:50]
+
+        # ── Stats de temporada (usando all_games_season, no solo las 50 visibles) ──
+        season_games = [g for g in (self.all_games_season or games) if self._es_ranked(g)]
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
         champ_stats = {}
-        
+        for g in season_games:
+            part_info = g.get("participants", [{}])[0]
+            stats = part_info.get("stats", {})
+            champ_id = str(part_info.get("championId", "0"))
+            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
+
+            win = stats.get("win", False)
+            k = stats.get("kills", 0)
+            d = stats.get("deaths", 0)
+            a = stats.get("assists", 0)
+
+            total_k += k; total_d += d; total_a += a; total_games += 1
+            if win: victorias += 1
+
+            if champ_name not in champ_stats:
+                champ_stats[champ_name] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
+            cs_entry = champ_stats[champ_name]
+            cs_entry["games"] += 1
+            if win: cs_entry["wins"] += 1
+            cs_entry["kills"] += k
+            cs_entry["deaths"] += d
+            cs_entry["assists"] += a
+
+        # ── Tabla de historial (loop separado para las 50 mas recientes) ──
         for g in games:
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
@@ -899,18 +927,6 @@ class PerfilTabMixin:
             
             # Fecha (usa timestamp gameCreation, fallback a gameCreationDate)
             fecha = self._format_game_date(g)
-            
-            total_k += k; total_d += d; total_a += a; total_games += 1
-            if win: victorias += 1
-            
-            if champ_name not in champ_stats:
-                champ_stats[champ_name] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
-            cs_entry = champ_stats[champ_name]
-            cs_entry["games"] += 1
-            if win: cs_entry["wins"] += 1
-            cs_entry["kills"] += k
-            cs_entry["deaths"] += d
-            cs_entry["assists"] += a
             
             row = self.tb_historial.rowCount()
             self.tb_historial.insertRow(row)
@@ -945,7 +961,7 @@ class PerfilTabMixin:
             self.lbl_card_most_val.setText(most_played[:10])
             self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
             self.lbl_card_most_val.setToolTip(f"{most_g} partidas con {most_played}")
-            best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 2}
+            best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 5}
             if best_wr_champs:
                 best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
                 best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
@@ -1306,14 +1322,25 @@ class PerfilTabMixin:
             print(f"[_on_tag_emocional] Error: {e}")
 
     def filtrar_historial(self, _=None):
-        """Filtra la tabla de historial por campeón, modo y temporada."""
+        """Filtra la tabla de historial por campeón y modo (max 50 partidas)."""
         if not hasattr(self, 'historial_games') or not self.historial_games:
             return
         filtro_champ = self.cb_filtro_champ.currentText()
         filtro_modo = self.cb_filtro_modo.currentText()
 
+        # Ordenar por fecha (mas reciente primero)
+        try:
+            juegos = sorted(self.historial_games, key=lambda g: (
+                self._parse_game_date(g) or datetime(2000,1,1)
+            ), reverse=True)
+        except Exception:
+            juegos = list(self.historial_games)
+
         self.tb_historial.setRowCount(0)
-        for g in self.historial_games:
+        filas = 0
+        for g in juegos:
+            if filas >= 50:
+                break
             if not self._es_ranked(g):
                 continue
             part_info = g.get("participants", [{}])[0]
@@ -1362,4 +1389,5 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
+            filas += 1
 

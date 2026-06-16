@@ -17,6 +17,20 @@ class ConexionDBError(Exception):
     pass
 
 
+_drafts_table_creada = False
+
+
+def _garantizar_tabla_drafts():
+    global _drafts_table_creada
+    if _drafts_table_creada:
+        return
+    try:
+        _crear_tabla_drafts()
+        _drafts_table_creada = True
+    except ConexionDBError:
+        pass
+
+
 def _obtener_db_url() -> str | None:
     url = os.environ.get("DATABASE_URL", "")
     if url:
@@ -410,13 +424,8 @@ def _crear_tabla_drafts():
     conn.close()
 
 
-try:
-    _crear_tabla_drafts()
-except ConexionDBError:
-    pass
-
-
 def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
+    _garantizar_tabla_drafts()
     from datetime import date
     conn = obtener_conexion()
     cur = conn.cursor()
@@ -432,6 +441,7 @@ def guardar_draft(campeon, rol, bans, aliados, enemigos, wr_predicho):
 
 
 def completar_draft_resultado(draft_id, ganada):
+    _garantizar_tabla_drafts()
     conn = obtener_conexion()
     cur = conn.cursor()
     if ganada is None:
@@ -449,6 +459,7 @@ def completar_draft_resultado(draft_id, ganada):
 
 
 def obtener_historial_drafts(limite=20):
+    _garantizar_tabla_drafts()
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute("""

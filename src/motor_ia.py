@@ -1,8 +1,10 @@
 import os
+import warnings
 import joblib
 import json
 import numpy as np
 
+from sklearn.exceptions import InconsistentVersionWarning
 from src.tags_champions import obtener_tag
 
 _EARLY_MAP = {"weak": 1, "neutral": 2, "strong": 3}
@@ -88,6 +90,7 @@ class MotorIA:
 
     def cargar_todo_el_diccionario(self):
         if os.path.exists(self.ruta_modelo):
+            warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
             self.todos_los_modelos = joblib.load(self.ruta_modelo)
             self.cambiar_rol_activo("MIDDLE")
 

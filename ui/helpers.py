@@ -677,6 +677,17 @@ DEFAULT_SETTINGS = {
     "auto_switch_radar": True,
     "notificaciones_escritorio": True,
     "auto_aceptar": False,
+    # Umbrales de coaching
+    "min_partidas_coach": 3,
+    "umbral_cs_bajo": 4.5,
+    "umbral_cs_medio": 6.5,
+    "umbral_muertes_alto": 7,
+    "umbral_muertes_medio": 5,
+    "umbral_vision_bajo": 15,
+    "umbral_vision_medio": 28,
+    "umbral_wr_ventaja": 52,
+    "umbral_wr_desventaja": 48,
+    "umbral_pool_amplia": 5,
 }
 
 
@@ -742,3 +753,45 @@ def mostrar_toast(parent, mensaje, duracion_ms=4000, color="#22c55e"):
     toast.show()
     QTimer.singleShot(duracion_ms, toast.deleteLater)
     return toast
+
+
+def exportar_reporte_html(titulo, contenido_html, nombre_archivo="reporte_nexus"):
+    """Guarda un reporte como HTML y lo abre en el navegador para imprimir/guardar como PDF."""
+    import os
+    import tempfile
+    import webbrowser
+    from datetime import datetime
+
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+    html_completo = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{titulo}</title>
+<style>
+    body {{ background: #0d0b10; color: #e2e8f0; font-family: 'Segoe UI', Arial, sans-serif;
+           max-width: 800px; margin: 30px auto; padding: 0 20px; line-height: 1.7; }}
+    h1 {{ color: #e63946; font-size: 22px; border-bottom: 2px solid #e63946; padding-bottom: 8px; }}
+    .fecha {{ color: #64748b; font-size: 12px; margin-bottom: 20px; }}
+    .seccion {{ background: #16131c; border: 1px solid #2a2030; border-radius: 10px;
+               padding: 16px 20px; margin: 16px 0; }}
+    .seccion h2 {{ color: #f0b232; font-size: 16px; margin: 0 0 8px 0; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 8px 0; }}
+    th, td {{ padding: 8px 12px; text-align: left; border-bottom: 1px solid #1e293b; }}
+    th {{ color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }}
+    .footer {{ color: #475569; font-size: 10px; text-align: center; margin-top: 30px; }}
+    @media print {{ body {{ background: white; color: black; }} .seccion {{ border-color: #ccc; }} }}
+</style>
+</head>
+<body>
+<h1>{titulo}</h1>
+<p class="fecha">Generado el {fecha} por NEXUS — LoL Recommender</p>
+{contenido_html}
+<p class="footer">NEXUS v1.0 · League of Legends Recommender</p>
+</body>
+</html>"""
+    ruta = os.path.join(tempfile.gettempdir(), f"{nombre_archivo}.html")
+    with open(ruta, "w", encoding="utf-8") as f:
+        f.write(html_completo)
+    webbrowser.open(f"file://{ruta}")
+    return ruta

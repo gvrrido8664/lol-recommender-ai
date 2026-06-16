@@ -60,6 +60,19 @@ class CoachingTabMixin:
 
         layout.addWidget(self.coaching_tabs)
 
+        self.btn_export = QPushButton("📄 Exportar Como HTML")
+        self.btn_export.setStyleSheet(f"""
+            QPushButton {{ background: {BG_CARD}; color: {ACCENT_TEAL}; border: 1px solid {ACCENT_TEAL};
+                          border-radius: 4px; padding: 5px 12px; font-size: 10px; }}
+            QPushButton:hover {{ background: {ACCENT_TEAL}; color: #000; }}
+        """)
+        self.btn_export.clicked.connect(self._exportar_coaching)
+        self.btn_export.setVisible(False)
+        layout.addWidget(self.btn_export, alignment=Qt.AlignRight)
+
+        self._last_coaching_report = None
+        self._last_coaching_nombre = ""
+
         self._mostrar_placeholder()
 
     def _mostrar_placeholder(self):
@@ -90,6 +103,28 @@ class CoachingTabMixin:
         for layout in self._coaching_tab_widgets.values():
             layout.addStretch()
 
+        # Mostrar boton de exportar
+        self._last_coaching_report = reporte
+        self.btn_export.setVisible(True)
+
+    def _exportar_coaching(self):
+        if not self._last_coaching_report:
+            return
+        reporte = self._last_coaching_report
+        secciones = reporte.get("secciones", [])
+        resumen = reporte.get("resumen", "")
+        consejo = reporte.get("consejo_final", "")
+
+        contenido = resumen + "\n"
+        for sec in secciones:
+            contenido += f"<div class=\"seccion\"><h2>{sec.get('titulo', '')}</h2>{sec.get('html', '')}</div>\n"
+        if consejo:
+            contenido += f"<div class=\"seccion\"><h2>💬 Mensaje final</h2><p>{consejo}</p></div>\n"
+
+        nombre = getattr(self, "summoner_name", "Invocador")
+        ruta = exportar_reporte_html(f"Coaching NEXUS — {nombre}", contenido, f"coaching_{nombre}")
+        if ruta:
+            mostrar_toast(self, "Reporte abierto en el navegador", duracion_ms=5000, color=ACCENT_TEAL)
     def _load_coaching_cache(self):
         puuid = getattr(self, "_coaching_puuid", None)
         if not puuid:

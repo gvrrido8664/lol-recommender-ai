@@ -143,6 +143,7 @@ from ui.helpers import (
     clear_layout,
     ejecutar_en_hilo,
     expandir_skill_order,
+    exportar_reporte_html,
     guardar_settings,
     obtener_tip_matchup,
     obtener_tips_matchup,

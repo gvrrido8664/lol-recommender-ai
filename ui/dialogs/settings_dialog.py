@@ -6,11 +6,13 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSlider,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -55,6 +57,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._tab_general(), "General")
         tabs.addTab(self._tab_auto(), "Auto-Importar")
         tabs.addTab(self._tab_partida(), "En Partida")
+        tabs.addTab(self._tab_coaching(), "Coaching")
         layout.addWidget(tabs, 1)
 
         # ── Botones: Aplicar + OK/Cancel ──
@@ -235,6 +238,71 @@ class SettingsDialog(QDialog):
         layout.addLayout(row)
 
     # ═══════════════════════════════════════════
+    # TAB 4: Coaching
+    # ═══════════════════════════════════════════
+    def _tab_coaching(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setSpacing(6)
+
+        gb = QGroupBox("Umbrales de rendimiento")
+        gl = QVBoxLayout(gb)
+        gl.setSpacing(4)
+
+        def _row(label, attr, val_min, val_max, step=0.5, suffix=""):
+            r = QHBoxLayout()
+            r.addWidget(QLabel(label))
+            sb = QDoubleSpinBox()
+            sb.setRange(val_min, val_max)
+            sb.setSingleStep(step)
+            sb.setDecimals(1)
+            sb.setValue(self.settings.get(attr, val_max / 2))
+            sb.setSuffix(suffix)
+            sb.setFixedWidth(90)
+            setattr(self, f"sb_{attr}", sb)
+            r.addStretch()
+            r.addWidget(sb)
+            gl.addLayout(r)
+            return r
+
+        _row("CS/min — Umbral bajo (rojo)", "umbral_cs_bajo", 1, 10, 0.5)
+        _row("CS/min — Umbral medio (amarillo)", "umbral_cs_medio", 1, 10, 0.5)
+        _row("Muertes — Umbral alto (rojo)", "umbral_muertes_alto", 2, 15, 0.5)
+        _row("Muertes — Umbral medio (amarillo)", "umbral_muertes_medio", 2, 12, 0.5)
+        _row("Vision — Umbral bajo (rojo)", "umbral_vision_bajo", 5, 60, 1)
+        _row("Vision — Umbral medio (amarillo)", "umbral_vision_medio", 5, 60, 1)
+
+        l.addWidget(gb)
+
+        gb2 = QGroupBox("Umbrales de draft")
+        gl2 = QVBoxLayout(gb2)
+        gl2.setSpacing(4)
+
+        _row("WR Ventaja (verde)", "umbral_wr_ventaja", 50, 70, 1, "%")
+        _row("WR Desventaja (rojo)", "umbral_wr_desventaja", 30, 50, 1, "%")
+
+        l.addWidget(gb2)
+
+        gb3 = QGroupBox("General")
+        gl3 = QVBoxLayout(gb3)
+        gl3.setSpacing(4)
+
+        _row("Máx. campeones en pool (aviso)", "umbral_pool_amplia", 2, 15, 1)
+
+        rp = QHBoxLayout()
+        rp.addWidget(QLabel("Mínimo de partidas para análisis"))
+        self.sb_min_coach = QSpinBox()
+        self.sb_min_coach.setRange(2, 20)
+        self.sb_min_coach.setValue(self.settings.get("min_partidas_coach", 3))
+        rp.addStretch()
+        rp.addWidget(self.sb_min_coach)
+        gl3.addLayout(rp)
+
+        l.addWidget(gb3)
+        l.addStretch()
+        return w
+
+    # ═══════════════════════════════════════════
     # Apply / OK handlers
     # ═══════════════════════════════════════════
     def _on_apply(self):
@@ -275,6 +343,16 @@ class SettingsDialog(QDialog):
             "auto_switch_radar": self.cb_auto_switch.isChecked(),
             "auto_aceptar": self.cb_auto_aceptar.isChecked(),
             "notificaciones_escritorio": self.cb_notif.isChecked(),
+            "min_partidas_coach": self.sb_min_coach.value(),
+            "umbral_cs_bajo": self.sb_umbral_cs_bajo.value(),
+            "umbral_cs_medio": self.sb_umbral_cs_medio.value(),
+            "umbral_muertes_alto": self.sb_umbral_muertes_alto.value(),
+            "umbral_muertes_medio": self.sb_umbral_muertes_medio.value(),
+            "umbral_vision_bajo": self.sb_umbral_vision_bajo.value(),
+            "umbral_vision_medio": self.sb_umbral_vision_medio.value(),
+            "umbral_wr_ventaja": int(self.sb_umbral_wr_ventaja.value()),
+            "umbral_wr_desventaja": int(self.sb_umbral_wr_desventaja.value()),
+            "umbral_pool_amplia": int(self.sb_umbral_pool_amplia.value()),
         }
 
     def get_settings(self):

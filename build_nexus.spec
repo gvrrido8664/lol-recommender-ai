@@ -3,15 +3,20 @@
 # antivirus: modo onedir (no onefile), SIN UPX, con icono y metadata de version.
 # Build:  pyinstaller build_nexus.spec   (o usar build_exe.ps1)
 import os
+import glob
 from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 
-# Datos a empaquetar: solo los que existen en el repo (data = modelos/tags; assets = estaticos)
+# Datos a empaquetar: en data/ van modelos (.pkl), tags y json. Se EXCLUYEN los
+# SQLite (*.db) porque la app usa PostgreSQL (no se necesitan y pesan ~18MB).
+# De assets/ solo los .json: las imagenes son cache que se baja a %APPDATA% en runtime.
 _datas = []
-for _d in ("data", "assets"):
-    if os.path.isdir(_d):
-        _datas.append((_d, _d))
+for _f in glob.glob("data/*"):
+    if os.path.isfile(_f) and not _f.endswith(".db"):
+        _datas.append((_f, "data"))
+for _f in glob.glob("assets/*.json"):
+    _datas.append((_f, "assets"))
 
 # collect_all para paquetes con datos/binarios que PyInstaller no detecta solo
 _binaries, _collected_datas, _hidden = [], [], []

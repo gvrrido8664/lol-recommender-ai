@@ -61,7 +61,6 @@ class BansTabMixin:
             if not hasattr(self, 'historial_games') or not self.historial_games:
                 return
 
-            # Limpiar logros anteriores
             while self.fr_logros.count():
                 item = self.fr_logros.takeAt(0)
                 if item.widget():
@@ -78,48 +77,23 @@ class BansTabMixin:
                 self.lbl_logros_text = QLabel("Sigue jugando para desbloquear insights...")
                 self.lbl_logros_text.setStyleSheet(f"color: {TEXT_SUBTLE}; font-size: 11px;")
                 self.lbl_logros_text.setWordWrap(True)
-                self.fr_logros.addWidget(self.lbl_logros_text)
-                self.fr_logros.addStretch()
+                self.fr_logros.addWidget(self.lbl_logros_text, 0, 0, 1, 2)
                 return
 
-            for ins in insights[:10]:
-                card = QFrame()
-                card.setStyleSheet(
-                    f"background: {ins['color_fondo']}; "
-                    f"border-left: 3px solid {ins['color_borde']}; "
-                    f"border-radius: 4px; padding: 4px 8px;"
+            for idx, ins in enumerate(insights[:5]):
+                row = idx // 2
+                col = idx % 2
+                lbl = QLabel(f"{ins['icono']}  {ins['texto']}")
+                lbl.setWordWrap(True)
+                lbl.setMinimumHeight(28)
+                lbl.setStyleSheet(
+                    f"color: {TEXT_LIGHT}; font-size: 9px; padding: 3px 7px; "
+                    f"background: {ins['fondo']}; "
+                    f"border-left: 2px solid {ins['color']}; "
+                    f"border-radius: 3px;"
                 )
-                card_layout = QHBoxLayout(card)
-                card_layout.setContentsMargins(6, 4, 6, 4)
-                card_layout.setSpacing(6)
+                self.fr_logros.addWidget(lbl, row, col)
 
-                icon_lbl = QLabel(ins["icono"])
-                icon_lbl.setStyleSheet("font-size: 16px; background: transparent; border: none;")
-                icon_lbl.setFixedWidth(24)
-                card_layout.addWidget(icon_lbl)
-
-                text_col = QVBoxLayout()
-                text_col.setSpacing(0)
-
-                title_lbl = QLabel(ins["titulo"])
-                title_lbl.setStyleSheet(
-                    f"color: {ins['color_borde']}; font-weight: bold; font-size: 11px; "
-                    f"background: transparent; border: none;"
-                )
-                text_col.addWidget(title_lbl)
-
-                msg_lbl = QLabel(ins["mensaje"])
-                msg_lbl.setStyleSheet(
-                    f"color: {TEXT_SUBTLE}; font-size: 10px; "
-                    f"background: transparent; border: none;"
-                )
-                msg_lbl.setWordWrap(True)
-                text_col.addWidget(msg_lbl)
-
-                card_layout.addLayout(text_col, 1)
-                self.fr_logros.addWidget(card)
-
-            self.fr_logros.addStretch()
         except Exception as e:
             print(f"[Logros] Error: {e}")
 

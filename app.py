@@ -130,10 +130,10 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.timer_lcu.timeout.connect(self.auto_detectar_lcu)
         self.timer_lcu.start(1500)
         
-        # Timer para partida en vivo (cada 4s)
+        # Timer para partida en vivo (configurable en settings)
         self.timer_partida = QTimer(self)
         self.timer_partida.timeout.connect(self.actualizar_partida_vivo)
-        self.timer_partida.start(4000)
+        self.timer_partida.start(self.user_settings.get("frecuencia_partida", 4000))
         
         # In-game timer and hotkeys removed — feature was too buggy
         

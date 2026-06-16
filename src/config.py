@@ -22,6 +22,10 @@ def _obtener_dir_datos():
 BASE_DIR = _obtener_dir_base()
 DATA_DIR = _obtener_dir_datos()
 
+# ─── Supabase Storage (modelos IA) ─────────────────────────────────────────
+SUPABASE_PROJECT_URL = "https://qqtxohmqkdlupuexgjuf.supabase.co"
+STORAGE_MODELOS_URL = f"{SUPABASE_PROJECT_URL}/storage/v1/object/public/nexus-ml"
+
 
 def cargar_config():
     config = {}

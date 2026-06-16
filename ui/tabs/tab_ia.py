@@ -57,10 +57,10 @@ class IATabMixin:
         # Boton swap (dar vuelta el matchup)
         btn_swap = QPushButton("⇄")
         btn_swap.setToolTip("Intercambiar campeones y recalcular")
-        btn_swap.setFixedWidth(38)
+        btn_swap.setFixedWidth(48)
         btn_swap.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD}; color: {ACCENT_RED}; border: 1px solid {ACCENT_RED};
-                           border-radius: 6px; font-weight: bold; font-size: 15px; padding: 6px; }}
+                           border-radius: 6px; font-weight: bold; font-size: 16px; padding: 8px; }}
             QPushButton:hover {{ background-color: {ACCENT_RED}; color: white; }}
         """)
         btn_swap.clicked.connect(self.intercambiar_picks_1v1)

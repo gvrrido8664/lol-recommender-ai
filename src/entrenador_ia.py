@@ -422,6 +422,7 @@ def entrenar_modelos():
     if modelos_guardados:
         joblib.dump(modelos_guardados, MODELO_PATH, compress=3)
         print(f"Modelo IA de Draft guardado en {MODELO_PATH}")
+        _sube_a_storage("modelo_ia.pkl", MODELO_PATH)
         print(f"Tiempo total: {time.time() - t0:.1f}s")
     else:
         print("No se pudo entrenar ningun modelo Draft.")
@@ -532,9 +533,42 @@ def entrenar_modelo_1v1():
     if modelos_binarios:
         joblib.dump(modelos_binarios, MODELO_1V1_PATH, compress=3)
         print(f"Modelo IA 1v1 guardado en {MODELO_1V1_PATH}")
+        _sube_a_storage("modelo_1v1.pkl", MODELO_1V1_PATH)
         print(f"Tiempo total: {time.time() - t0:.1f}s\n")
     else:
         print("No se pudo entrenar el modelo 1v1.\n")
+
+
+def _sube_a_storage(nombre_archivo, ruta_local):
+    """Sube un .pkl a Supabase Storage tras el entrenamiento."""
+    try:
+        from src.config import STORAGE_MODELOS_URL, SUPABASE_PROJECT_URL
+        from src.config import cargar_config as _cargar_cfg
+
+        cfg = _cargar_cfg()
+        service_key = cfg.get("SUPABASE_SERVICE_KEY")
+        if not service_key:
+            print(f"  AVISO: No hay SUPABASE_SERVICE_KEY en config. Saltando upload de {nombre_archivo}.")
+            return
+
+        url_upload = f"{SUPABASE_PROJECT_URL}/storage/v1/object/nexus-ml/{nombre_archivo}"
+
+        with open(ruta_local, "rb") as f:
+            data = f.read()
+
+        import requests
+
+        headers = {
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/octet-stream",
+        }
+        r = requests.put(url_upload, data=data, headers=headers, timeout=60)
+        if r.status_code in (200, 201):
+            print(f"  Subido a Supabase Storage: {nombre_archivo} ({len(data) / 1024:.1f} KB)")
+        else:
+            print(f"  Error subiendo {nombre_archivo}: HTTP {r.status_code} {r.text[:100]}")
+    except Exception as e:
+        print(f"  Error subiendo {nombre_archivo} a storage: {e}")
 
 
 if __name__ == "__main__":

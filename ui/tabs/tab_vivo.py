@@ -185,12 +185,12 @@ class VivoTabMixin:
             cl.setSpacing(1)
             lbl_lvl = QLabel(str(lvl))
             lbl_lvl.setAlignment(Qt.AlignCenter)
-            lbl_lvl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 7px;")
+            lbl_lvl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px;")
             lbl_ab = QLabel(ab)
             lbl_ab.setAlignment(Qt.AlignCenter)
-            lbl_ab.setFixedSize(18, 18)
+            lbl_ab.setFixedSize(24, 24)
             lbl_ab.setStyleSheet(
-                f"color: #fff; background-color: {color}; border-radius: 3px; font-size: 10px; font-weight: bold;"
+                f"color: #fff; background-color: {color}; border-radius: 4px; font-size: 11px; font-weight: bold;"
             )
             cl.addWidget(lbl_lvl)
             cl.addWidget(lbl_ab, alignment=Qt.AlignCenter)

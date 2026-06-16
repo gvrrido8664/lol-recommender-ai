@@ -19,7 +19,7 @@ class PerfilTabMixin:
             QPushButton {{ background-color: {BG_CARD}; color: {ACCENT_TEAL};
                            border: 1px solid {ACCENT_TEAL}; border-radius: 4px;
                            font-size: 11px; padding: 4px 12px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: #1a3a3a; }}
+            QPushButton:hover {{ background-color: {BG_DARK_TEAL}; }}
             QPushButton:disabled {{ color: {BG_BORDER}; border-color: {BG_CARD_HOVER}; }}
         """)
         self.btn_refrescar.clicked.connect(self.refrescar_perfil)
@@ -277,8 +277,8 @@ class PerfilTabMixin:
 
         self.tb_historial = QTableWidget()
         self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
-        self.tb_historial.setColumnCount(8)
-        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha", "Estado"])
+        self.tb_historial.setColumnCount(7)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha"])
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tb_historial.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tb_historial.horizontalHeader().setMinimumSectionSize(80)
@@ -326,14 +326,12 @@ class PerfilTabMixin:
         outer.addWidget(self.crear_scroll_responsive(cont, 1080))
 
     def _riot_resolve_puuid(self, game_name: str, tag_line: str):
-        """Obtiene el PUUID nuevo (match v5) desde el riot id (gameName#tagLine).
-        Si no hay tag_line, no hace fallback falso — devuelve None."""
-        api_key, region, routing = self._riot_get_config()
-        if not api_key or not game_name:
+        """Obtiene el PUUID desde la Edge Function."""
+        from src.backend_client import riot_get
+
+        if not game_name:
             return None
         if not tag_line:
-            # El LCU a veces viene con "gameName#tagLine" en displayName
-            # y tag_line separado vacio. Intentar extraerlo.
             if game_name and "#" in game_name:
                 parts = game_name.split("#", 1)
                 game_name, tag_line = parts[0], parts[1]
@@ -341,23 +339,18 @@ class PerfilTabMixin:
                 return None
         tag = tag_line
         try:
-            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag}"
-            res = requests.get(url, headers={"X-Riot-Token": api_key}, timeout=10)
-            if res.status_code == 200:
-                puuid = res.json().get("puuid")
-                print(f"[RiotAPI] PUUID resuelto: {game_name}#{tag} -> {puuid}")
+            _, routing = self._riot_get_config()
+            data = riot_get(f"/account/by-riot-id/{game_name}/{tag}", {"routing": routing})
+            if data and data.get("puuid"):
+                puuid = data["puuid"]
+                print(f"[Edge] PUUID resuelto: {game_name}#{tag} -> {puuid}")
                 return puuid
-            else:
-                print(f"[RiotAPI] HTTP {res.status_code} resolviendo PUUID para {game_name}#{tag}")
         except Exception as e:
-            print(f"[RiotAPI] Error resolviendo PUUID: {e}")
+            print(f"[Edge] Error resolviendo PUUID: {e}")
         return None
 
     def _riot_get_config(self):
-        """Obtiene api_key, region y routing para llamadas a Riot API."""
-        api_key = self.lcu.obtener_api_key_local()
-        if not api_key:
-            return None, None, None
+        """Obtiene region y routing para llamadas a la Edge Function."""
         region = (self.lcu.obtener_region_local() or "la2").lower()
         routing = (
             "americas"
@@ -368,63 +361,40 @@ class PerfilTabMixin:
             if region in ("ph2", "sg2", "th2", "tw2", "vn2")
             else "asia"
         )
-        print(f"[RiotAPI] Region={region}, Routing={routing}")
-        return api_key, region, routing
+        return region, routing
 
     def _riot_fetch_match_ids(self, puuid: str):
-        """Pagina la API de Riot para obtener TODOS los match IDs de la temporada actual.
-        Usa count=100, start desde 0 incrementando de 100 en 100, con filtro startTime.
-        Rompe cuando la API devuelve []."""
-        api_key, region, routing = self._riot_get_config()
-        if not api_key:
-            return []
+        """Pagina la Edge Function para obtener TODOS los match IDs de la temporada actual."""
+        from src.backend_client import riot_get
+
         from datetime import timezone as tz
 
         ahora = datetime.now(tz.utc)
         start_time = int(datetime(ahora.year, 1, 1, tzinfo=tz.utc).timestamp())
         all_ids = []
         offset = 0
-        base_url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
-        hdrs = {"X-Riot-Token": api_key}
-        print(f"[RiotAPI] Paginando IDs (region={region}, routing={routing}, startTime={start_time})")
+        _, routing = self._riot_get_config()
+        print(f"[Edge] Paginando IDs (routing={routing}, startTime={start_time})")
         while True:
-            url = f"{base_url}?start={offset}&count=100&startTime={start_time}"
             try:
-                res = requests.get(url, headers=hdrs, timeout=15)
-                if res.status_code == 429:
-                    retry_after = res.headers.get("Retry-After", "10")
-                    print(f"[RiotAPI] Rate limit, esperando {retry_after}s...")
-                    time.sleep(int(retry_after))
-                    continue
-                if res.status_code == 400:
-                    body = res.text[:300]
-                    print(f"[RiotAPI] HTTP 400: {body}")
-                    if "startTime" in body.lower() or "parameter" in body.lower():
-                        url = f"{base_url}?start={offset}&count=100"
-                        print("[RiotAPI] Reintentando sin startTime...")
-                        res = requests.get(url, headers=hdrs, timeout=15)
-                    else:
-                        break
-                if res.status_code == 403:
-                    print("[RiotAPI] HTTP 403 — API key invalida o expirada")
-                    self.riot_error.emit(
-                        "API key de Riot invalida o expirada. Ve a Configuracion > General para actualizarla."
-                    )
+                data = riot_get(
+                    f"/match/by-puuid/{puuid}",
+                    {"start": offset, "count": 100, "start_time": start_time, "routing": routing},
+                )
+                if data is None:
                     break
-                if res.status_code != 200:
-                    print(f"[RiotAPI] HTTP {res.status_code} en listado (start={offset})")
+                if not isinstance(data, list):
                     break
-                batch = res.json()
-                if not batch:
+                if not data:
                     break
-                all_ids.extend(batch)
-                if len(batch) < 100:
+                all_ids.extend(data)
+                if len(data) < 100:
                     break
                 offset += 100
             except Exception as e:
-                print(f"[RiotAPI] Error obteniendo IDs (start={offset}): {e}")
+                print(f"[Edge] Error obteniendo IDs (start={offset}): {e}")
                 break
-        print(f"[RiotAPI] {len(all_ids)} IDs de partida obtenidos")
+        print(f"[Edge] {len(all_ids)} IDs de partida obtenidos")
         return all_ids
 
     def _riot_convert_match(self, raw: dict, my_puuid: str = ""):
@@ -480,34 +450,25 @@ class PerfilTabMixin:
         }
 
     def _riot_fetch_one_match(self, match_id: str, my_puuid: str = ""):
-        """Descarga UNA partida de Riot API. Con backoff exponencial + Retry-After."""
-        api_key, region, routing = self._riot_get_config()
-        if not api_key:
-            return None
-        hdrs = {"X-Riot-Token": api_key}
-        url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+        """Descarga UNA partida vía Edge Function. Con backoff."""
+        from src.backend_client import riot_get
+
+        _, routing = self._riot_get_config()
         for intento in range(4):
             try:
-                res = requests.get(url, headers=hdrs, timeout=10)
-                if res.status_code == 429:
-                    retry = int(res.headers.get("Retry-After", 2**intento))
-                    time.sleep(min(retry, 15))
-                    continue
-                if res.status_code == 200:
-                    return self._riot_convert_match(res.json(), my_puuid)
-                if res.status_code == 403:
-                    return None
-                if res.status_code == 404:
-                    return None
+                data = riot_get(f"/match/detail/{match_id}", {"routing": routing})
+                if data:
+                    return self._riot_convert_match(data, my_puuid)
+                return None
             except Exception:
-                time.sleep(2**intento)
+                if intento < 3:
+                    time.sleep(2**intento)
         return None
 
     def _riot_fetch_matches(self, match_ids: list, my_puuid: str = "", max_matches: int = None):
-        """Descarga partidas de Riot API en PARALELO (6 workers).
+        """Descarga partidas vía Edge Function en PARALELO (3 workers).
         my_puuid filtra SOLO al jugador correcto. max_matches=None = todas."""
-        api_key, region, routing = self._riot_get_config()
-        if not api_key:
+        if not match_ids:
             return []
         total_ids = len(match_ids)
         if max_matches:
@@ -583,11 +544,8 @@ class PerfilTabMixin:
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
         Usa streaming via season_partial para mostrar datos mientras llegan."""
         try:
-            # Verificar API key primero
-            api_key, _, _ = self._riot_get_config()
-            if not api_key:
-                self.riot_error.emit("API Key de Riot no configurada. Ve a Configuracion > General para ingresarla.")
-                return
+            # Verificar config
+            _ = self._riot_get_config()
 
             # Emitir cache si existe
             cached = self._load_season_cache(puuid)
@@ -1067,10 +1025,6 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
-            # Widget de estado emocional
-            gid = self._gid_or_fallback(g)
-            estado_actual = obtener_estado_emocional(gid) if gid else None
-            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid or "", champ_name, estado_actual))
 
         # --- Tarjetas de estadisticas (segun filtro SoloQ/Flex) ---
         self._recalc_stats_cards()
@@ -1204,20 +1158,7 @@ class PerfilTabMixin:
                 self.lbl_objetivos_title.setText("🎯 OBJETIVOS SEMANALES")
                 self.lbl_objetivos.setText("\n".join(objetivos))
 
-            # 4. Cruce emocional vs WR
-            emocional = analizar_emocional_vs_wr(games)
-            if emocional:
-                self.lbl_emocional_title.setText("📊 RENDIMIENTO POR ESTADO")
-                lineas = []
-                emoji_map = {"Concentrado": "🔥", "Normal": "😐", "Tilted": "😤", "Cansado": "😴"}
-                for estado, data in sorted(emocional.items(), key=lambda x: x[1].get("wr", 0), reverse=True):
-                    wr_e = data.get("wr", 0)
-                    n = data.get("partidas", 0)
-                    emoji = emoji_map.get(estado, "❓")
-                    lineas.append(f"{emoji} {estado}: {wr_e}% WR ({n} partidas)")
-                self.lbl_emocional_stats.setText(
-                    "\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas"
-                )
+            # 4. (eliminado: cruce emocional vs WR)
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
 
@@ -1372,64 +1313,6 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
-            gid2 = self._gid_or_fallback(g)
-            estado_actual2 = obtener_estado_emocional(gid2) if gid2 else None
-            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid2 or "", champ_name, estado_actual2))
-
-    # ═══════════════════════════════════════════════════════════
-    # MOTOR EMOCIONAL — ETIQUETADO DE PARTIDAS (NEXUS)
-    # ═══════════════════════════════════════════════════════════
-
-    def _crear_widget_emocional(self, game_id: str, champ_name: str, estado_actual: str = None):
-        """Crea un widget con 4 botones de estado emocional para una fila del historial."""
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        layout.setAlignment(Qt.AlignCenter)
-
-        estados = [
-            ("🔥", "Concentrado", "#ef4444", "Concentrado: enfoque total"),
-            ("😐", "Normal", "#7a6f68", "Normal: estado neutro"),
-            ("😤", "Tilted", "#f59e0b", "Tilted: frustrado"),
-            ("😴", "Cansado", "#f0b232", "Cansado: fatiga"),
-        ]
-
-        for emoji, estado, color, tooltip in estados:
-            btn = QPushButton(emoji)
-            btn.setFixedSize(28, 24)
-            btn.setToolTip(tooltip)
-            if estado_actual == estado:
-                btn.setStyleSheet(f"""
-                    QPushButton {{ background-color: {color}; color: #fff; border: 1px solid {color};
-                                   border-radius: 3px; font-size: 13px; padding: 0px; }}
-                """)
-            else:
-                btn.setStyleSheet(f"""
-                    QPushButton {{ background-color: transparent; color: {BG_BORDER}; border: 1px solid #251d2b;
-                                   border-radius: 3px; font-size: 13px; padding: 0px; }}
-                    QPushButton:hover {{ background-color: {color}; color: #fff; border: 1px solid {color}; }}
-                """)
-            btn.clicked.connect(
-                lambda checked, gid=game_id, est=estado, ch=champ_name: self._on_tag_emocional(gid, est, ch)
-            )
-            layout.addWidget(btn)
-
-        return widget
-
-    def _on_tag_emocional(self, game_id: str, estado: str, champion: str):
-        """Guarda el estado emocional y refresca la fila."""
-        try:
-            # Obtener puuid del perfil actual
-            puuid = ""
-            if hasattr(self, "perfil_data") and self.perfil_data:
-                puuid = self.perfil_data.get("puuid", "")
-            etiquetar_estado_emocional(game_id, estado, puuid, champion)
-            # Refrescar solo el historial para mostrar el nuevo estado
-            if hasattr(self, "historial_games"):
-                self._renderizar_historial(self.historial_games)
-        except Exception as e:
-            print(f"[_on_tag_emocional] Error: {e}")
 
     def filtrar_historial(self, _=None):
         """Filtra la tabla de historial por campeón y modo (max 50 partidas)."""
@@ -1503,7 +1386,4 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
-            gid3 = self._gid_or_fallback(g)
-            estado_actual3 = obtener_estado_emocional(gid3) if gid3 else None
-            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid3 or "", champ_name, estado_actual3))
             filas += 1

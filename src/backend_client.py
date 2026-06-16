@@ -55,9 +55,15 @@ def _get(path, params=None):
         return None
 
 
+def _headers_edge():
+    return {
+        "X-App-Token": TOKEN,
+        "Content-Type": "application/json",
+    }
+
 def _get_edge(path, params=None):
     try:
-        r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers(), timeout=15)
+        r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers_edge(), timeout=15)
         r.raise_for_status()
         return r.json()
     except Exception:

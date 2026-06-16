@@ -1,4 +1,4 @@
-"""Pestania TIER LIST DE BANS — mejorada con ELO, min partidas y refresco."""
+"""Pestania TIER LIST DE BANS — datos de elo alto."""
 
 from ui.contexto import *
 
@@ -15,31 +15,9 @@ class BansTabMixin:
         self.cbbanrol.addItems(UI_ROLES)
         ctrls.addWidget(self.cbbanrol)
 
-        ctrls.addWidget(QLabel("  ELO:"))
-
-        self.cbbanelo = QComboBox()
-        self.cbbanelo.addItems([
-            "Todos", "Iron", "Bronze", "Silver", "Gold",
-            "Platinum", "Emerald", "Diamond", "Master+",
-        ])
-        ctrls.addWidget(self.cbbanelo)
-
-        ctrls.addWidget(QLabel("  Mín. partidas:"))
-
-        self.spb_min = QSpinBox()
-        self.spb_min.setRange(5, 200)
-        self.spb_min.setValue(20)
-        self.spb_min.setSingleStep(10)
-        self.spb_min.setFixedWidth(60)
-        ctrls.addWidget(self.spb_min)
-
         btn_analizar = QPushButton("ANALIZAR BANS")
         btn_analizar.clicked.connect(self.buscar_baneos)
         ctrls.addWidget(btn_analizar)
-
-        self.btn_refresh = QPushButton("⟳ Refrescar")
-        self.btn_refresh.clicked.connect(self.buscar_baneos)
-        ctrls.addWidget(self.btn_refresh)
 
         ctrls.addStretch()
         layout.addLayout(ctrls)
@@ -74,27 +52,18 @@ class BansTabMixin:
         self.treebans.setRowCount(0)
         self.bans_empty.setVisible(False)
         self.treebans.setVisible(True)
-        self.btn_refresh.setEnabled(False)
-        self.btn_refresh.setText("⟳ Cargando...")
 
         rol = self.cbbanrol.currentText()
-        elo = self.cbbanelo.currentText()
-        min_partidas = self.spb_min.value()
-
-        results = obtenermejoresbaneos(ROL_TO_API.get(rol, rol), min_partidas=min_partidas)
-
-        self.btn_refresh.setEnabled(True)
-        self.btn_refresh.setText("⟳ Refrescar")
+        results = obtenermejoresbaneos(ROL_TO_API.get(rol, rol))
 
         if not results:
             self.bans_empty.setVisible(True)
             self.treebans.setVisible(False)
-            self.lbl_ban_info.setText(f"Sin datos para {rol} con ≥{min_partidas} partidas.")
-            QMessageBox.information(self, "Aviso", f"No hay datos suficientes para {rol}.\nPrueba con un mínimo de partidas más bajo.")
+            self.lbl_ban_info.setText(f"Sin datos para {rol}.")
+            QMessageBox.information(self, "Aviso", f"No hay datos suficientes para {rol}.")
             return
 
-        elo_texto = f" · ELO: {elo}" if elo != "Todos" else ""
-        self.lbl_ban_info.setText(f"{len(results[:15])} campeones sugeridos para banear en {rol}{elo_texto} (≥{min_partidas} partidas)")
+        self.lbl_ban_info.setText(f"{len(results[:15])} campeones sugeridos para banear en {rol}")
 
         for _idx, (champ, banrate, partidas) in enumerate(results[:15]):
             row = self.treebans.rowCount()

@@ -19,7 +19,7 @@ class PostGameDialog(QDialog):
         self.setWindowTitle("Revisión de Partida")
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(500)
+        self.setMinimumWidth(500)
         self._build_ui(stats)
         if parent:
             pr = parent.frameGeometry()

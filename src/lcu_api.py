@@ -323,7 +323,8 @@ class LCUConnector:
         needs_lvl = not perfil.get("summonerLevel")
         if puuid and (needs_name or needs_icon or needs_lvl):
             try:
-                api_key = self.obtener_api_key_local()
+                from src.backend_client import riot_get
+
                 region = self.obtener_region_local() or "la2"
                 routing = (
                     "americas"
@@ -332,14 +333,11 @@ class LCUConnector:
                     if region in ("euw1", "eun1", "tr1", "ru")
                     else "asia"
                 )
-                hdrs = {"X-Riot-Token": api_key}
 
                 # Summoner API — icono + nivel + summonerId
                 if needs_icon or needs_lvl:
-                    url = f"https://{region}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-                    r = requests.get(url, headers=hdrs, timeout=5, verify=True)
-                    if r.status_code == 200:
-                        sd = r.json()
+                    sd = riot_get(f"/summoner/by-puuid/{puuid}", {"region": region})
+                    if sd:
                         if needs_icon:
                             perfil["profileIconId"] = sd.get("profileIconId", 0)
                         if needs_lvl:
@@ -354,10 +352,8 @@ class LCUConnector:
 
                 # Account API — gameName#tagLine (Riot ID)
                 if needs_name:
-                    url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
-                    r = requests.get(url, headers=hdrs, timeout=5, verify=True)
-                    if r.status_code == 200:
-                        ad = r.json()
+                    ad = riot_get(f"/account/by-puuid/{puuid}", {"routing": routing})
+                    if ad:
                         perfil["gameName"] = ad.get("gameName", "")
                         perfil["tagLine"] = ad.get("tagLine", "")
                         perfil["displayName"] = ad.get("gameName", "")
@@ -401,14 +397,14 @@ class LCUConnector:
         return (cargar_config() or {}).get("API_KEY")
 
     def obtener_encrypted_summoner_id(self, puuid, region):
-        api_key = self.obtener_api_key_local()
-        if not api_key or not region or not puuid:
+        if not region or not puuid:
             return None
         try:
-            url = f"https://{region.lower()}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-            res = requests.get(url, headers={"X-Riot-Token": api_key}, timeout=5)
-            if res.status_code == 200:
-                return res.json().get("id")
+            from src.backend_client import riot_get
+
+            sd = riot_get(f"/summoner/by-puuid/{puuid}", {"region": region})
+            if sd:
+                return sd.get("id")
         except Exception:
             pass
         return None
@@ -467,10 +463,9 @@ class LCUConnector:
                 print(f"[LCU] Error en {endpoint}: {e}")
                 continue
 
-        # ===== FALLBACK: Riot API =====
+        # ===== FALLBACK: Supabase Edge Function =====
         region = self.obtener_region_local()
-        api_key = self.obtener_api_key_local()
-        if region and api_key:
+        if region:
             perfil = self.obtener_perfil()
             if perfil:
                 encrypted_id = perfil.get("summonerId") or perfil.get("accountId")
@@ -479,17 +474,16 @@ class LCUConnector:
                     encrypted_id = self.obtener_encrypted_summoner_id(puuid, region)
                 if encrypted_id:
                     try:
-                        league_url = f"https://{region.lower()}.api.riotgames.com/lol/league/v4/entries/by-summoner/{encrypted_id}"
-                        res = requests.get(league_url, headers={"X-Riot-Token": api_key}, timeout=5)
-                        if res.status_code == 200:
-                            entries = res.json()
-                            # Riot API usa "rank" en vez de "division", normalizar
+                        from src.backend_client import riot_get
+
+                        entries = riot_get(f"/league/by-summoner/{encrypted_id}", {"region": region})
+                        if entries and isinstance(entries, list):
                             for e in entries:
                                 e["division"] = e.get("rank", "")
                                 if e["division"] and e["division"].upper() == "NA":
                                     e["division"] = ""
                             print(
-                                f"[RiotAPI] Ligas encontradas: {[(e.get('queueType', '?'), e.get('tier', '?')) for e in entries]}"
+                                f"[Edge] Ligas encontradas: {[(e.get('queueType', '?'), e.get('tier', '?')) for e in entries]}"
                             )
                             return {"queues": entries}
                     except Exception as e:

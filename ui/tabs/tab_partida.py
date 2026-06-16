@@ -1187,7 +1187,7 @@ class PartidaTabMixin:
         bar.setTextVisible(False)
         bar.setFixedHeight(3)
         bar.setStyleSheet(f"""
-            QProgressBar {{ background: #1a2332; border: none; border-radius: 1px; }}
+            QProgressBar {{ background: {CARD_DARK_BLUE}; border: none; border-radius: 1px; }}
             QProgressBar::chunk {{ background: {ACCENT_TEAL}; border-radius: 1px; }}
         """)
         l1.addWidget(bar)

@@ -100,8 +100,8 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     for idx in orden:
         partes_html += f"""
         <div style="background:{bgs[idx]}; border-radius:6px; padding:10px 14px; margin:6px 0;">
-        <p style="font-size:10px; color:{PURPLE_LIGHT}; margin:0 0 4px 0; letter-spacing:0.5px;">{titulos[idx]}</p>
-        <p style="font-size:11px; color:{TEXT_SECONDARY}; margin:0; line-height:1.55;">{principios[idx]}</p>
+        <p style="font-size:12px; color:{PURPLE_LIGHT}; margin:0 0 4px 0; letter-spacing:0.5px;">{titulos[idx]}</p>
+        <p style="font-size:12px; color:{TEXT_SECONDARY}; margin:0; line-height:1.55;">{principios[idx]}</p>
         </div>"""
 
     # Cierre accionable, distinto según el nivel
@@ -125,7 +125,7 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
 
     return f"""
     <div style="font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;">
-    <p style="font-size:13px;color:{PURPLE_VIOLET};margin:0 0 6px 0;"><b>Antes de los números: cómo pensar el juego</b></p>
+    <p style="font-size:12px;color:{PURPLE_VIOLET};margin:0 0 6px 0;"><b>Antes de los números: cómo pensar el juego</b></p>
     <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 10px 0;">
     El 90% de lo que frena a un jugador no es la mecánica, es la cabeza. Estos seis principios
     son la base mental sobre la que se construye todo lo demás. No son frases motivacionales:
@@ -133,9 +133,9 @@ def _generar_filosofia_juego(nombre, nivel, wr, avg_d, total):
     </p>
     {partes_html}
     <div style="background:#15131c; border-left:3px solid {PURPLE_VIOLET}; border-radius:6px; padding:10px 14px; margin:10px 0 0 0;">
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0;line-height:1.55;">🧭 <b>Cómo aplicarlo:</b> {cierre}</p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0;line-height:1.55;">🧭 <b>Cómo aplicarlo:</b> {cierre}</p>
     </div>
-    <p style="font-size:10px;color:{TEXT_SUBTLE};margin:10px 0 0 0;font-style:italic;">
+    <p style="font-size:12px;color:{TEXT_SUBTLE};margin:10px 0 0 0;font-style:italic;">
     "Cuando cambia tu forma de pensar el LoL, cambia todo lo demás."
     </p>
     </div>"""
@@ -177,14 +177,14 @@ def _generar_practica_deliberada(nombre, nivel, avg_cs, avg_d, avg_vision):
     </p>
     <p style="font-size:12px;color:{TEXT_PRIMARY};margin:0 0 4px 0;"><b>🎯 Esta semana practica: {habilidad}</b></p>
     <div style="background:#1a1525;border-radius:6px;padding:10px 14px;margin:8px 0;">
-    <p style="font-size:11px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>📚 1. Aprende la teoría</b></p>
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">{teoria}</p>
-    <p style="font-size:11px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>🎮 2. Aplica activamente</b></p>
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">{practica}</p>
-    <p style="font-size:11px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>🔍 3. Revisa y ajusta</b></p>
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:0 0 0 0;">{revision}</p>
+    <p style="font-size:12px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>📚 1. Aprende la teoría</b></p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">{teoria}</p>
+    <p style="font-size:12px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>🎮 2. Aplica activamente</b></p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 8px 0;">{practica}</p>
+    <p style="font-size:12px;color:{PURPLE_LIGHT};margin:0 0 4px 0;"><b>🔍 3. Revisa y ajusta</b></p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:0 0 0 0;">{revision}</p>
     </div>
-    <p style="font-size:11px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
+    <p style="font-size:12px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
     💡 Dato: jugar 3 partidas con foco en UNA habilidad enseña más que 15 partidas en automático.
     El cerebro aprende cuando prestas atención, no cuando repites sin pensar.
     </p>
@@ -202,17 +202,17 @@ def _generar_tips_salud():
     Estos micro-hábitos son fáciles de empezar hoy y tienen impacto real en tu concentración.
     </p>
     <div style="background:#0d1f17;border-radius:6px;padding:10px 14px;margin:8px 0;">
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:2px 0;"><b>🌱 Día a día</b></p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• 5 min de contenido sobre salud mental (puede ser un video, un artículo).</p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• 6 min de movimiento físico diario (mejor poco y constante que nada).</p>
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:8px 0 2px;"><b>🎓 Antes de jugar</b></p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Elimina distracciones: silencia notificaciones, aleja el celular, cierra redes sociales.</p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Prepara tu espacio: escritorio limpio, agua cerca, periféricos cómodos.</p>
-    <p style="font-size:11px;color:{TEXT_SECONDARY};margin:8px 0 2px;"><b>🧾 Durante el juego</b></p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Cada 10-15 min: suelta mouse/teclado, estira los dedos y las muñecas.</p>
-    <p style="font-size:11px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• En momentos tranquilos: mira a lo lejos unos segundos para descansar la vista.</p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:2px 0;"><b>🌱 Día a día</b></p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• 5 min de contenido sobre salud mental (puede ser un video, un artículo).</p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• 6 min de movimiento físico diario (mejor poco y constante que nada).</p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 2px;"><b>🎓 Antes de jugar</b></p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Elimina distracciones: silencia notificaciones, aleja el celular, cierra redes sociales.</p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Prepara tu espacio: escritorio limpio, agua cerca, periféricos cómodos.</p>
+    <p style="font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 2px;"><b>🧾 Durante el juego</b></p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• Cada 10-15 min: suelta mouse/teclado, estira los dedos y las muñecas.</p>
+    <p style="font-size:12px;color:{TEXT_MUTED};margin:0 0 2px 12px;">• En momentos tranquilos: mira a lo lejos unos segundos para descansar la vista.</p>
     </div>
-    <p style="font-size:11px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
+    <p style="font-size:12px;color:{TEXT_SUBTLE};margin:8px 0 0 0;">
     💡 No se trata de hacer todo perfecto. Se trata de <b>pequeños cambios sostenibles</b>.
     Dormir 7-9 horas con horarios regulares ya mejora tu rendimiento más que muchas otras cosas.
     </p>
@@ -404,8 +404,8 @@ def generar_reporte_coach(
 
     resumen_html = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7;">
-    <p style="font-size: 16px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>👋 Hola, {nombre}!</b></p>
-    <p style="font-size: 13px; color: {TEXT_SECONDARY}; margin: 0 0 12px 0;">{tono}</p>
+    <p style="font-size: 14px; color: {TEXT_PRIMARY}; margin: 0 0 8px 0;"><b>👋 Hola, {nombre}!</b></p>
+    <p style="font-size: 12px; color: {TEXT_SECONDARY}; margin: 0 0 12px 0;">{tono}</p>
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 4px 0;">
     📊 <b>{total_all}</b> partidas analizadas · WR <b style="color:{GREEN_SUCCESS if wr >= 50 else RED_DANGER};">{wr:.0f}%</b> ·
     KDA <b>{avg_k:.1f}/{avg_d:.1f}/{avg_a:.1f}</b> ({kda:.2f}) · CS/min <b>{avg_cs:.1f}</b>
@@ -416,22 +416,6 @@ def generar_reporte_coach(
     <p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0 0 0 0;">{estado_mental}</p>
     </div>
     """
-
-    # ═══════════════════════════════════════════════════
-    # SECCIÓN 0.5: FILOSOFÍA DE JUEGO (basado en el curso del coach)
-    # ═══════════════════════════════════════════════════
-    filo_html = _generar_filosofia_juego(nombre, nivel, wr, avg_d, total)
-    secciones.append(
-        {
-            "titulo": "FILOSOFÍA DE JUEGO — Tu Mentalidad",
-            "icono": "🧘",
-            "color": "#c084fc",
-            "html": filo_html,
-            "prioridad": 0,  # Siempre primero
-        }
-    )
-
-    # ═══════════════════════════════════════════════════
 
     # ── Métricas adicionales ──
     top3_wr = sum(c["wins"] for _, c in top3) / max(1, sum(c["games"] for _, c in top3)) * 100

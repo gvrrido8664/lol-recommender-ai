@@ -4,6 +4,7 @@
   "NEXUS_BACKEND_URL": "http://localhost:8000",
   "NEXUS_EDGE_URL": "https://<project-ref>.supabase.co/functions/v1/riot-proxy",
   "NEXUS_APP_TOKEN": "NXS-xxxxxxxx-xxxxxxxx-xxxxxxxx",
+  "SUPABASE_SERVICE_KEY": "sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "user_settings": {
     "auto_deteccion": true,
     "sonidos": true,

@@ -153,17 +153,49 @@ from ui.helpers import (
 
 log = get_logger(__name__)
 
-# ─── Datos estaticos cargados una sola vez ───────────────────────────────
-modelo_1v1 = {}
-ruta_modelo = os.path.join(BASE_DIR, "data", "modelo_1v1.pkl")
-if os.path.exists(ruta_modelo):
+# ─── Modelos IA (disco local + fallback Supabase Storage) ────────────────
+from src.config import STORAGE_MODELOS_URL
+
+
+def _cargar_modelo(nombre_archivo, etiqueta):
+    modelo = {}
+    ruta_data = os.path.join(DATA_DIR, nombre_archivo)
+    ruta_bundle = os.path.join(BASE_DIR, "data", nombre_archivo)
+
+    # 1) Intentar desde DATA_DIR (writable cache — descargas)
+    for ruta, origen in [(ruta_data, "data"), (ruta_bundle, "bundle")]:
+        if os.path.exists(ruta):
+            try:
+                modelo = joblib.load(ruta)
+                n = len(modelo) if isinstance(modelo, dict) else 1
+                log.info("%s cargado desde %s: %d roles", etiqueta, origen, n)
+                return modelo
+            except Exception as e:
+                log.warning("Error cargando %s desde %s: %s", nombre_archivo, origen, e)
+
+    # 2) Descargar desde Supabase Storage a DATA_DIR
     try:
-        modelo_1v1 = joblib.load(ruta_modelo)
-        log.info("Modelo 1v1 cargado: %d roles", len(modelo_1v1))
+        url = f"{STORAGE_MODELOS_URL}/{nombre_archivo}"
+        log.info("Descargando %s desde %s ...", etiqueta, url)
+        r = requests.get(url, timeout=30)
+        if r.status_code == 200:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(ruta_data, "wb") as f:
+                f.write(r.content)
+            modelo = joblib.load(ruta_data)
+            n = len(modelo) if isinstance(modelo, dict) else 1
+            log.info("%s descargado y cargado: %d roles", etiqueta, n)
+        else:
+            log.warning("No se pudo descargar %s: HTTP %d", nombre_archivo, r.status_code)
     except Exception as e:
-        log.warning("Error cargando modelo 1v1: %s", e)
-else:
-    log.warning("No se encuentra %s. El simulador 1v1 no funcionara.", ruta_modelo)
+        log.warning("No se pudo descargar %s: %s", nombre_archivo, e)
+
+    if not modelo:
+        log.warning("%s no disponible. El simulador 1v1 no funcionara.", etiqueta)
+    return modelo
+
+
+modelo_1v1 = _cargar_modelo("modelo_1v1.pkl", "Modelo 1v1")
 
 ITEMS_DICT = cargar_objetos()
 RUNAS_DICT = cargar_runas()

@@ -465,7 +465,7 @@ def obtener_top_hechizos(campeon, carril, conn=None):
     return max(conteo, key=conteo.get).split(",") if conteo else ["4", "14"]
 
 
-def obtenermejoresbaneos(carril, min_partidas=20):
+def obtenermejoresbaneos(carril, min_partidas=5):
     conn = obtener_conexion()
     cur = conn.cursor()
     cur.execute(

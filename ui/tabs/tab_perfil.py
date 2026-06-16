@@ -321,7 +321,13 @@ class PerfilTabMixin:
         if not api_key or not game_name:
             return None
         if not tag_line:
-            return None
+            # El LCU a veces viene con "gameName#tagLine" en displayName
+            # y tag_line separado vacio. Intentar extraerlo.
+            if game_name and "#" in game_name:
+                parts = game_name.split("#", 1)
+                game_name, tag_line = parts[0], parts[1]
+            else:
+                return None
         tag = tag_line
         try:
             url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag}"
@@ -544,8 +550,12 @@ class PerfilTabMixin:
             if new_puuid and new_puuid != puuid:
                 riot_puuid = new_puuid
 
-            # Descargar IDs + partidas (my_puuid = el usado para obtener IDs)
-            riot_ids = self._riot_fetch_match_ids(riot_puuid)
+            # Descargar IDs + partidas
+            if riot_puuid and len(riot_puuid) > 40:
+                riot_ids = self._riot_fetch_match_ids(riot_puuid)
+            else:
+                print(f"[RiotAPI] PUUID invalido ({str(riot_puuid)[:30]}...), saltando Riot API")
+                return
             if riot_ids:
                 riot_games = self._riot_fetch_matches(riot_ids, my_puuid=riot_puuid)
                 # Guardar cache (usar puuid original del LCU, no el resuelto)

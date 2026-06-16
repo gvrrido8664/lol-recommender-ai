@@ -647,6 +647,14 @@ class PerfilTabMixin:
                         puuid=puuid, inicio=0, cantidad=100
                     )
                     print(f"[LP] Mini-fetch LCU: {len(historial_lp or [])} partidas")
+                    if historial_lp:
+                        g0 = historial_lp[0]
+                        print(f"[LP] Keys 1ra partida: {sorted(g0.keys())}")
+                        if "participants" in g0 and g0["participants"]:
+                            p0 = g0["participants"][0]
+                            print(f"[LP] Keys participants[0]: {sorted(p0.keys())}")
+                            if "stats" in p0:
+                                print(f"[LP] Keys stats: {sorted(p0['stats'].keys())}")
                 except Exception as e:
                     print(f"[LP] Mini-fetch LCU error: {e}")
             data["historial_lp"] = historial_lp or []

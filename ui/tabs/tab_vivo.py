@@ -24,7 +24,14 @@ class VivoTabMixin:
 
         self.lbl_wr_numero = QLabel("--%")
         self.lbl_wr_numero.setStyleSheet("color: gray; font-family: Impact; font-size: 42px;")
-        top_bar.addWidget(self.lbl_wr_numero)
+        self.lbl_wr_title = QLabel("WINRATE DE COMPOSICIÓN")
+        self.lbl_wr_title.setAlignment(Qt.AlignCenter)
+        self.lbl_wr_title.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; font-weight: bold; letter-spacing: 0.5px;")
+        wr_col = QVBoxLayout()
+        wr_col.setSpacing(0)
+        wr_col.addWidget(self.lbl_wr_title, alignment=Qt.AlignCenter)
+        wr_col.addWidget(self.lbl_wr_numero, alignment=Qt.AlignCenter)
+        top_bar.addLayout(wr_col)
         self.lbl_wr_razon = QLabel("Esperando equipos...")
         self.lbl_wr_razon.setStyleSheet("color: gray; font-style: italic;")
         top_bar.addWidget(self.lbl_wr_razon)
@@ -46,7 +53,7 @@ class VivoTabMixin:
         self.lbl_matchup_tips.setWordWrap(True)
         self.lbl_matchup_tips.setTextFormat(Qt.RichText)
         self.lbl_matchup_tips.setStyleSheet(
-            f"color: {YELLOW_WR}; font-size: 10px; padding: 5px 10px; background-color: #1a1200; border: 1px solid #3d2e00; border-left: 3px solid {YELLOW_WR}; border-radius: 4px; margin-bottom: 2px;"
+            f"color: {YELLOW_WR}; font-size: 10px; padding: 5px 10px; background-color: {BG_DARK_YELLOW}; border: 1px solid {BG_DARK_BROWN}; border-left: 3px solid {YELLOW_WR}; border-radius: 4px; margin-bottom: 2px;"
         )
         self.lbl_matchup_tips.setVisible(False)
         layout.addWidget(self.lbl_matchup_tips)
@@ -110,7 +117,7 @@ class VivoTabMixin:
         self.btn_export_skills = QPushButton("📤 Subir orden al Cliente")
         self.btn_export_skills.setStyleSheet(f"""
             QPushButton {{ background-color: {BG_CARD}; border: 1px solid {ACCENT_TEAL}; border-radius: 4px; color: {ACCENT_TEAL}; font-size: 11px; padding: 6px 16px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: #1a3a3a; }}
+            QPushButton:hover {{ background-color: {BG_DARK_TEAL}; }}
             QPushButton:disabled {{ color: {BG_BORDER}; border-color: {BG_CARD_HOVER}; }}
         """)
         self.btn_export_skills.clicked.connect(lambda: self.accion_importar_skill_order(self.btn_export_skills))
@@ -249,15 +256,18 @@ class VivoTabMixin:
             self._reproducir_sonido("info")
             self.lbl_estado_lcu.setText("✓ ENLAZADO AL CLIENTE DE LOL")
             self.lbl_estado_lcu.setStyleSheet(f"color: {GREEN_WR}; font-weight: bold; font-size: 14px;")
-            # Pequeña pausa: la API HTTP del cliente tarda ~2s en estar lista tras
-            # aparecer el lockfile. Sin esto, el primer fetch falla y el usuario
-            # pensaría que la app no funciona.
-            time.sleep(1.5)
 
         # Cargar perfil en hilo secundario (si no está ya cargándose)
+        # La primera vez se retrasa 1.5s para que la API del cliente esté lista.
         if not self.perfil_cargado and not self._cargando_perfil:
             self._cargando_perfil = True
-            ejecutar_en_hilo(self._fetch_perfil)
+            if not hasattr(self, '_perfil_delayed'):
+                self._perfil_delayed = False
+            if not self._perfil_delayed:
+                self._perfil_delayed = True
+                QTimer.singleShot(1500, lambda: ejecutar_en_hilo(self._fetch_perfil))
+            else:
+                ejecutar_en_hilo(self._fetch_perfil)
 
         # Actualizar radar/draft en hilo secundario (si no está ya actualizándose)
         if not self._actualizando_radar:
@@ -893,8 +903,10 @@ class VivoTabMixin:
                             size=35,
                         )
                 else:
-                    lbl_noban = QLabel("Sin recomendaciones")
-                    lbl_noban.setStyleSheet("color: gray;")
+                    lbl_noban = EmptyStateWidget(
+                        "🚫", "SIN RECOMENDACIONES",
+                        "No se encontraron bans sugeridos para esta situación."
+                    )
                     self.fr_bans_icons_vivo.addWidget(lbl_noban)
 
                 # ── COUNTER PICKS contra el rival de linea ──

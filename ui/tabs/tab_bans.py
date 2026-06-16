@@ -62,8 +62,18 @@ class BansTabMixin:
         self.treebans.verticalHeader().setVisible(False)
         layout.addWidget(self.treebans, 1)
 
+        self.bans_empty = EmptyStateWidget(
+            "🚫", "BANS DEL META",
+            "Selecciona una línea y presiona ANALIZAR para ver los bans sugeridos."
+        )
+        self.bans_empty.setVisible(True)
+        self.treebans.setVisible(False)
+        layout.addWidget(self.bans_empty)
+
     def buscar_baneos(self):
         self.treebans.setRowCount(0)
+        self.bans_empty.setVisible(False)
+        self.treebans.setVisible(True)
         self.btn_refresh.setEnabled(False)
         self.btn_refresh.setText("⟳ Cargando...")
 
@@ -77,6 +87,8 @@ class BansTabMixin:
         self.btn_refresh.setText("⟳ Refrescar")
 
         if not results:
+            self.bans_empty.setVisible(True)
+            self.treebans.setVisible(False)
             self.lbl_ban_info.setText(f"Sin datos para {rol} con ≥{min_partidas} partidas.")
             QMessageBox.information(self, "Aviso", f"No hay datos suficientes para {rol}.\nPrueba con un mínimo de partidas más bajo.")
             return

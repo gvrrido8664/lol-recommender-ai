@@ -57,7 +57,7 @@ class PerfilTabMixin:
         self.lbl_sum_name.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 18px; font-weight: bold;")
         center_info.addWidget(self.lbl_sum_name)
         self.lbl_sum_lvl = QLabel("Nivel: --")
-        self.lbl_sum_lvl.setStyleSheet("color: #8fa3b8; font-size: 12px;")
+        self.lbl_sum_lvl.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 12px;")
         center_info.addWidget(self.lbl_sum_lvl)
         id_card_layout.addLayout(center_info, 1)
 
@@ -68,20 +68,20 @@ class PerfilTabMixin:
         self.lbl_soloq_tier.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px;")
         ranks_info.addWidget(self.lbl_soloq_tier)
         self.lbl_soloq_stats = QLabel("")
-        self.lbl_soloq_stats.setStyleSheet("color: #8fa3b8; font-size: 11px;")
+        self.lbl_soloq_stats.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px;")
         ranks_info.addWidget(self.lbl_soloq_stats)
         self.lbl_flex_tier = QLabel("Flex 🛡️ --")
         self.lbl_flex_tier.setStyleSheet(f"color: {TEXT_GOLD}; font-weight: bold; font-size: 13px;")
         ranks_info.addWidget(self.lbl_flex_tier)
         self.lbl_flex_stats = QLabel("")
-        self.lbl_flex_stats.setStyleSheet("color: #8fa3b8; font-size: 11px;")
+        self.lbl_flex_stats.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px;")
         ranks_info.addWidget(self.lbl_flex_stats)
         id_card_layout.addLayout(ranks_info)
 
         # Etiqueta de error de Riot API (oculta por defecto)
         self.lbl_riot_error = QLabel("")
         self.lbl_riot_error.setStyleSheet(
-            f"color: {RED_WR}; font-size: 12px; font-weight: bold; padding: 4px 8px; background-color: #1a0a0a; border: 1px solid #3a1a1a; border-radius: 4px; margin-top: 4px;"
+            f"color: {RED_WR}; font-size: 12px; font-weight: bold; padding: 4px 8px; background-color: {BG_DARK_RED}; border: 1px solid {BG_DARK_RED2}; border-radius: 4px; margin-top: 4px;"
         )
         self.lbl_riot_error.setVisible(False)
         self.lbl_riot_error.setWordWrap(True)
@@ -127,10 +127,10 @@ class PerfilTabMixin:
         self.tb_season_champs.setMaximumHeight(340)
         self.tb_season_champs.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
         self.tb_season_champs.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.tb_season_champs.setStyleSheet("""
-            QTableWidget { border: none; background-color: transparent; }
-            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #c89b3c; color: #c89b3c; font-weight: bold; padding: 4px; font-size: 12px; }
-            QTableWidget::item { border-bottom: 1px solid #1f1a26; padding: 0px; }
+        self.tb_season_champs.setStyleSheet(f"""
+            QTableWidget {{ border: none; background-color: transparent; }}
+            QHeaderView::section {{ background-color: {BG_TABLE_HEADER}; border: none; border-bottom: 1px solid {GOLD_DARK}; color: {GOLD_DARK}; font-weight: bold; padding: 4px; font-size: 12px; }}
+            QTableWidget::item {{ border-bottom: 1px solid {BORDER_TABLE_ITEM}; padding: 0px; }}
         """)
         self.tb_season_champs.verticalScrollBar().valueChanged.connect(self._on_scroll_season)
         self.l_season.addWidget(self.tb_season_champs)
@@ -162,20 +162,25 @@ class PerfilTabMixin:
 
         self.lbl_fatiga_estado = QLabel("ANALIZANDO...")
         self.lbl_fatiga_estado.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 16px; font-weight: bold;")
+        self.lbl_fatiga_estado.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 16px; font-weight: bold;")
         l_texto_estado.addWidget(self.lbl_fatiga_estado)
 
         self.lbl_fatiga_barra = QFrame()
-        self.lbl_fatiga_barra.setFixedHeight(4)
-        self.lbl_fatiga_barra.setStyleSheet("background-color: #2f2535; border-radius: 2px;")
+        self.lbl_fatiga_barra.setFixedHeight(10)
+        self.lbl_fatiga_barra.setStyleSheet(f"background-color: {BG_CARD_ELEVATED}; border: 1px solid {BG_BORDER}; border-radius: 4px;")
         l_texto_estado.addWidget(self.lbl_fatiga_barra)
+
+        self.lbl_fatiga_pct = QLabel("--%")
+        self.lbl_fatiga_pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_fatiga_pct.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 9px; font-weight: bold;")
+        l_texto_estado.addWidget(self.lbl_fatiga_pct)
 
         l_estado.addWidget(fr_texto_estado, 1)
         self.l_fatiga.addWidget(fr_estado)
 
         self.lbl_fatiga_consejo = QLabel("Esperando datos del cliente.")
         self.lbl_fatiga_consejo.setAlignment(Qt.AlignLeft)
-        self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
+        self.lbl_fatiga_consejo.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px; padding: 2px 6px 4px 6px;")
         self.lbl_fatiga_consejo.setWordWrap(True)
         self.l_fatiga.addWidget(self.lbl_fatiga_consejo)
 
@@ -226,7 +231,7 @@ class PerfilTabMixin:
         for rol in UI_ROLES:
             lbl = QLabel(f"{rol}\n--")
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet("font-size: 10px; color: #8fa3b8; padding: 4px;")
+            lbl.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED_ALT}; padding: 4px;")
             self.fr_wr_rol.addWidget(lbl)
             self.labels_wr_rol[rol] = lbl
         self.l_wr_rol.addLayout(self.fr_wr_rol)
@@ -235,7 +240,7 @@ class PerfilTabMixin:
         # Filtro por campeón, modo y temporada
         self.fr_filtro = QHBoxLayout()
         lbl_filtro = QLabel("Filtrar:")
-        lbl_filtro.setStyleSheet("color: #8fa3b8; font-size: 11px;")
+        lbl_filtro.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px;")
         self.fr_filtro.addWidget(lbl_filtro)
         self.cb_filtro_champ = QComboBox()
         self.cb_filtro_champ.setMinimumWidth(140)
@@ -1128,7 +1133,7 @@ class PerfilTabMixin:
                 lbl.setToolTip(f"{s['wins']}V / {s['games'] - s['wins']}D en {s['games']} partidas")
             else:
                 lbl.setText(f"{rol}\n--")
-                lbl.setStyleSheet("font-size: 11px; color: #8fa3b8; padding: 4px;")
+                lbl.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED_ALT}; padding: 4px;")
                 lbl.setToolTip("Sin datos en el historial reciente")
 
         # --- ESTADÍSTICAS DE LA SEASON + FATIGA ---
@@ -1222,9 +1227,9 @@ class PerfilTabMixin:
             self.lbl_fatiga_icono.setText("📊")
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
             self.lbl_fatiga_estado.setText("SIN DATOS")
-            self.lbl_fatiga_estado.setStyleSheet("color: #8fa3b8; font-size: 16px; font-weight: bold;")
+            self.lbl_fatiga_estado.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 16px; font-weight: bold;")
             self.lbl_fatiga_consejo.setText("Esperando datos del cliente.")
-            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
+            self.lbl_fatiga_consejo.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px; padding: 2px 6px 4px 6px;")
             return
         try:
             # Solo considerar partidas de hoy para no detectar fatiga de sesiones viejas
@@ -1255,17 +1260,22 @@ class PerfilTabMixin:
             textos_color.get(estado, "#064e3b")
             estado_txt = textos.get(estado, "ÓPTIMO")
 
+            fat_pct_map = {"fresh": "20%", "neutral": "50%", "tired": "75%", "tilted": "95%"}
+            fat_pct = fat_pct_map.get(estado, "50%")
+
             self.lbl_fatiga_icono.setText(emoji)
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
             self.lbl_fatiga_estado.setText(estado_txt)
             self.lbl_fatiga_estado.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
-            self.lbl_fatiga_barra.setStyleSheet(f"background-color: {bar_color}; border-radius: 2px;")
+            self.lbl_fatiga_barra.setStyleSheet(f"background-color: {bar_color}; border: 1px solid {bar_color}; border-radius: 4px;")
+            self.lbl_fatiga_pct.setText(fat_pct)
+            self.lbl_fatiga_pct.setStyleSheet(f"color: {color}; font-size: 9px; font-weight: bold;")
 
             if recomendacion:
                 self.lbl_fatiga_consejo.setText(f"💡 {recomendacion}")
             else:
                 self.lbl_fatiga_consejo.setText(mensaje)
-            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 11px; padding: 2px 6px 4px 6px;")
+            self.lbl_fatiga_consejo.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px; padding: 2px 6px 4px 6px;")
         except Exception as e:
             print(f"[_analizar_fatiga] Error: {e}")
             self.lbl_fatiga_icono.setText("❌")
@@ -1273,7 +1283,7 @@ class PerfilTabMixin:
             self.lbl_fatiga_estado.setText("ERROR")
             self.lbl_fatiga_estado.setStyleSheet(f"color: {RED_WR}; font-size: 16px; font-weight: bold;")
             self.lbl_fatiga_consejo.setText("No se pudo analizar el estado mental.")
-            self.lbl_fatiga_consejo.setStyleSheet("color: #8fa3b8; font-size: 10px; padding: 2px 6px 4px 6px;")
+            self.lbl_fatiga_consejo.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 10px; padding: 2px 6px 4px 6px;")
 
     def _on_scroll_historial(self, value):
         """Scroll infinito: carga mas partidas cuando el usuario llega al final."""

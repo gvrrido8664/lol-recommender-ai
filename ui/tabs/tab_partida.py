@@ -28,9 +28,17 @@ class PartidaTabMixin:
         self._riot_api = None
 
         # Header
-        self.lbl_partida_header = QLabel("🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta")
+        self.partida_empty = EmptyStateWidget(
+            "🎮", "ESPERANDO PARTIDA",
+            "Los datos aparecerán cuando entres a la Grieta.\nAsegúrate de que el cliente de LoL esté abierto.",
+            cta_text="Actualizar", cta_callback=None,
+        )
+        layout.addWidget(self.partida_empty)
+
+        self.lbl_partida_header = QLabel("")
         self.lbl_partida_header.setAlignment(Qt.AlignCenter)
         self.lbl_partida_header.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 16px; padding: 20px;")
+        self.lbl_partida_header.setVisible(False)
         layout.addWidget(self.lbl_partida_header)
 
         # Dashboard compacto
@@ -67,14 +75,14 @@ class PartidaTabMixin:
         self.tb_partida_aliados = QTableWidget()
         self.tb_partida_aliados.setColumnCount(len(_COLS))
         self.tb_partida_aliados.setHorizontalHeaderLabels(_COLS)
-        self._estilizar_tabla_partida(self.tb_partida_aliados, "#0d0b10")
+        self._estilizar_tabla_partida(self.tb_partida_aliados, BG_DARK)
         tablas_layout.addWidget(self.tb_partida_aliados)
 
         # ── Enemigos ──
         self.tb_partida_enemigos = QTableWidget()
         self.tb_partida_enemigos.setColumnCount(len(_COLS))
         self.tb_partida_enemigos.setHorizontalHeaderLabels(_COLS)
-        self._estilizar_tabla_partida(self.tb_partida_enemigos, "#1a0a0f")
+        self._estilizar_tabla_partida(self.tb_partida_enemigos, BG_DARK_RED)
         tablas_layout.addWidget(self.tb_partida_enemigos)
 
         layout.addLayout(tablas_layout, 1)
@@ -102,7 +110,7 @@ class PartidaTabMixin:
         tabla.verticalHeader().setVisible(False)
         tabla.setStyleSheet(f"""
             QTableWidget {{ background-color: {bg_color}; border: 1px solid {BORDER_SUBTLE}; border-radius: 6px; font-size: 11px; }}
-            QTableWidget::item {{ padding: 2px 6px; border-bottom: 1px solid #1a2236; }}
+            QTableWidget::item {{ padding: 2px 6px; border-bottom: 1px solid {CARD_DARK_BLUE}; }}
             QHeaderView::section {{ background-color: {BG_DARK}; color: {TEXT_MUTED}; font-size: 12px; padding: 3px; border: none; }}
         """)
 
@@ -116,8 +124,9 @@ class PartidaTabMixin:
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)
             self.tb_partida_enemigos.setVisible(False)
-            self.lbl_partida_header.setVisible(True)
             if fase in ("WaitingForStats", "PreEndOfGame", "EndOfGame"):
+                self.partida_empty.setVisible(False)
+                self.lbl_partida_header.setVisible(True)
                 self.lbl_partida_header.setText("🏁 Partida terminada\n\nRevisa tu perfil para ver el analisis")
                 # Mostrar post-game una sola vez por partida (al transicionar desde InProgress)
                 if not self._postgame_shown and self._last_fase in ("InProgress", "GameStart"):
@@ -128,9 +137,8 @@ class PartidaTabMixin:
                 if self._postgame_shown:
                     self.refrescar_perfil()
                 self._postgame_shown = False
-                self.lbl_partida_header.setText(
-                    "🎮 Esperando partida...\n\nLos datos apareceran cuando entres a la Grieta"
-                )
+                self.lbl_partida_header.setVisible(False)
+                self.partida_empty.setVisible(True)
             self._last_fase = fase
             return
 
@@ -155,6 +163,7 @@ class PartidaTabMixin:
 
         # Loading
         if isinstance(game_info, dict) and game_info.get("status") == "loading":
+            self.partida_empty.setVisible(False)
             self.lbl_partida_header.setVisible(True)
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)
@@ -164,6 +173,7 @@ class PartidaTabMixin:
     def _renderizar_partida_live(self, jugadores, game_info):
         """Renderiza la partida con datos del LiveClient (KDA, CS, etc.)."""
         self.lbl_partida_header.setVisible(False)
+        self.partida_empty.setVisible(False)
         self.pnl_partida_dash.setVisible(True)
         self.tb_partida_aliados.setVisible(True)
         self.tb_partida_enemigos.setVisible(True)
@@ -223,7 +233,7 @@ class PartidaTabMixin:
 
         # Tablas aliados/enemigos
         self._llenar_tabla_partida(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK, yo)
-        self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f", yo)
+        self._llenar_tabla_partida(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", BG_DARK_RED, yo)
 
         # Composicion
         a_nombres = [j.get("championName", "") for j in aliados if j.get("championName")]
@@ -244,6 +254,7 @@ class PartidaTabMixin:
     def _renderizar_partida_lcu(self, jugadores):
         """Renderiza la partida usando solo datos LCU (campeones, sin KDA)."""
         self.lbl_partida_header.setVisible(False)
+        self.partida_empty.setVisible(False)
         self.pnl_partida_dash.setVisible(True)
         self.tb_partida_aliados.setVisible(True)
         self.tb_partida_enemigos.setVisible(True)
@@ -287,8 +298,8 @@ class PartidaTabMixin:
                     target=self._precargar_cache_partida_db, args=(champions_actuales,), daemon=True
                 ).start()
 
-        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK)
-        self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", "#1a0a0f")
+        self._llenar_tabla_partida_lcu(self.tb_partida_aliados, aliados, "🔵 ALIADOS", BG_DARK, yo)
+        self._llenar_tabla_partida_lcu(self.tb_partida_enemigos, enemigos, "🔴 ENEMIGOS", BG_DARK_RED, yo)
 
         a_nombres = [
             self.procesar_nombre_champ(str(j.get("championId", 0)), "0")
@@ -696,7 +707,10 @@ class PartidaTabMixin:
             icon_p = self.descargar_imagen(cname, "champ")
             if icon_p:
                 item_c.setIcon(QIcon(icon_p))
-            item_c.setForeground(QColor(TEXT_GOLD if j == yo else TEXT_WHITE))
+            soy_yo = j == yo
+            item_c.setForeground(QColor(TEXT_GOLD if soy_yo else TEXT_WHITE))
+            if soy_yo:
+                item_c.setBackground(QColor(BG_DARK_GREEN))
             item_c.setToolTip(f"{nombre_usuario} — {cname}")
             tabla.setItem(row, 0, item_c)
 
@@ -734,7 +748,7 @@ class PartidaTabMixin:
             item_perf.setForeground(QColor(perfil_col))
             tabla.setItem(row, 4, item_perf)
 
-    def _llenar_tabla_partida_lcu(self, tabla, jugadores, team_label, bg):
+    def _llenar_tabla_partida_lcu(self, tabla, jugadores, team_label, bg, yo=None):
         """Llena una tabla con datos de jugadores (LCU, sin KDA). Lee de cache sin BD."""
         tabla.setRowCount(0)
 
@@ -764,10 +778,10 @@ class PartidaTabMixin:
             recent_wins = cache_entry.get("recent_wins", [])
 
             comentarios = []
-            color = "#a39a93"
+            color = TEXT_MUTED
             if total < 5:
                 comentarios.append("1a vez?")
-                color = "#7a6f68"
+                color = TEXT_SUBTLE
             else:
                 if avg_d and avg_d >= 6:
                     comentarios.append("Muchas muertes")
@@ -789,6 +803,8 @@ class PartidaTabMixin:
             icon_p = self.descargar_imagen(cname, "champ")
             if icon_p:
                 item_c.setIcon(QIcon(icon_p))
+            if j == yo:
+                item_c.setBackground(QColor(BG_DARK_GREEN))
             tabla.setItem(row, 0, item_c)
             tabla.setItem(row, 1, QTableWidgetItem("--/--/--"))
             tabla.setItem(row, 2, QTableWidgetItem("--"))
@@ -817,11 +833,11 @@ class PartidaTabMixin:
                 total, avg_k, avg_d = 0, 0.0, 0.0
 
             comentarios = []
-            color = "#a39a93"  # default gray
+            color = TEXT_MUTED
 
             if total < 5:
                 comentarios.append("1a vez?")
-                color = "#7a6f68"
+                color = TEXT_SUBTLE
             else:
                 if avg_d and avg_d >= 6:
                     comentarios.append("Muchas muertes")
@@ -961,8 +977,10 @@ class PartidaTabMixin:
                     size=35,
                 )
             if not counters_filtrados:
-                lbl = QLabel("Sin datos suficientes")
-                lbl.setStyleSheet("color: gray;")
+                lbl = EmptyStateWidget(
+                    "🔍", "SIN DATOS",
+                    "No hay datos suficientes de counters para este matchup."
+                )
                 self.fr_counters_vivo.addWidget(lbl)
         else:
             self.panel_counters_vivo.label_title.setText("COUNTERS (esperando rival...)")
@@ -983,8 +1001,10 @@ class PartidaTabMixin:
                 c, "champ", self.fr_counters_vivo, 0, i, f"{self._nombre_display(c)}\nWR: {wr}% ({p} partidas)", size=35
             )
         if not counters_filtrados:
-            lbl = QLabel("Sin datos")
-            lbl.setStyleSheet("color: gray;")
+            lbl = EmptyStateWidget(
+                "🔍", "SIN DATOS",
+                "No hay datos de counters disponibles para este rival."
+            )
             self.fr_counters_vivo.addWidget(lbl)
 
     def mostrar_equipo_vivo(self, layout, picks, is_ally=True):

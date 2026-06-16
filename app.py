@@ -888,14 +888,17 @@ class LoLRecommenderApp(
 
     def _crear_stat_card(self, titulo, valor, color):
         card = QFrame()
-        card.setObjectName("BuildCard")
-        card.setFixedHeight(82)
+        card.setObjectName("StatCard")
+        card.setStyleSheet(
+            f"QFrame#StatCard {{ background-color: {BG_CARD}; border: 1px solid {BORDER_SUBTLE}; "
+            f"border-radius: 10px; border-bottom: 3px solid {color}; padding: 12px; }}"
+        )
         l = QVBoxLayout(card)
         l.setContentsMargins(8, 6, 8, 6)
         l.setSpacing(2)
         l.setAlignment(Qt.AlignCenter)
         lbl_titulo = QLabel(titulo)
-        lbl_titulo.setStyleSheet("color: #8fa3b8; font-size: 10px; font-weight: bold;")
+        lbl_titulo.setStyleSheet(f"color: {TEXT_MUTED_ALT}; font-size: 11px; font-weight: bold;")
         lbl_titulo.setAlignment(Qt.AlignCenter)
         l.addWidget(lbl_titulo)
         lbl_valor = QLabel(valor)

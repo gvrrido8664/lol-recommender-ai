@@ -108,7 +108,7 @@ class IATabMixin:
 
         # Columna 1: Aliado
         col_aliado, self.img_aliado_1v1, self.lbl_nombre_aliado_1v1, self.stats_aliado = self._crear_columna_campeon(
-            GREEN_WR, "#0a1a0f"
+            GREEN_WR, BG_DARK_GREEN, badge="TU PICK"
         )
         batalla_layout.addLayout(col_aliado, 1)
 
@@ -178,7 +178,7 @@ class IATabMixin:
 
         # Columna 3: Enemigo
         col_enemigo, self.img_enemigo_1v1, self.lbl_nombre_enemigo_1v1, self.stats_enemigo = (
-            self._crear_columna_campeon(RED_WR, "#1a0a0f")
+            self._crear_columna_campeon(RED_WR, BG_DARK_RED)
         )
         batalla_layout.addLayout(col_enemigo, 1)
 
@@ -208,7 +208,7 @@ class IATabMixin:
 
         self.actualizar_listas_ia(UI_ROLES[0])
 
-    def _crear_columna_campeon(self, color_acento, bg_card):
+    def _crear_columna_campeon(self, color_acento, bg_card, badge=""):
         """Construye una columna de campeon: imagen + nombre + tarjeta de stats.
 
         Devuelve (layout, img_label, nombre_label, dict_de_labels_de_valor).
@@ -231,6 +231,11 @@ class IATabMixin:
         img.setAlignment(Qt.AlignCenter)
         img.setFixedSize(96, 96)
         l_fr.addWidget(img, alignment=Qt.AlignCenter)
+
+        if badge:
+            from ui.components import BadgeLabel
+            badge_w = BadgeLabel(badge, color_acento)
+            l_fr.addWidget(badge_w, alignment=Qt.AlignCenter)
 
         nombre = QLabel("--")
         nombre.setAlignment(Qt.AlignCenter)
@@ -264,12 +269,12 @@ class IATabMixin:
         """Estilo para barras de tira y afloja: >50 verde (aliado gana), <50 rojo (enemigo gana)."""
         if valor >= 50:
             return f"""
-                QProgressBar {{ background-color: #3b1018; border: 1px solid #5a1a28; border-radius: 4px; }}
+                QProgressBar {{ background-color: {BG_DARK_RED2}; border: 1px solid {RED_DARK_CARD}; border-radius: 4px; }}
                 QProgressBar::chunk {{ background-color: {GREEN_WR}; border-radius: 3px; }}
             """
         else:
             return f"""
-                QProgressBar {{ background-color: {BG_DARK}; border: 1px solid #211a28; border-radius: 4px; }}
+                QProgressBar {{ background-color: {BG_DARK}; border: 1px solid {CARD_DARK_BLUE}; border-radius: 4px; }}
                 QProgressBar::chunk {{ background-color: {RED_WR}; border-radius: 3px; }}
             """
 

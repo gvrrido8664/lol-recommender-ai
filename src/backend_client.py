@@ -27,6 +27,7 @@ def _cargar_config_json():
 _cfg = _cargar_config_json()
 URL_BASE = os.environ.get("NEXUS_BACKEND_URL", _cfg.get("NEXUS_BACKEND_URL", "http://localhost:8000"))
 TOKEN = os.environ.get("NEXUS_APP_TOKEN", _cfg.get("NEXUS_APP_TOKEN", ""))
+EDGE_URL = os.environ.get("NEXUS_EDGE_URL", _cfg.get("NEXUS_EDGE_URL", "https://qqtxohmqkdlupuexgjuf.supabase.co/functions/v1/riot-proxy"))
 
 
 def _headers():
@@ -48,6 +49,15 @@ def _post(path, json_data):
 def _get(path, params=None):
     try:
         r = requests.get(f"{URL_BASE}{path}", params=params, headers=_headers(), timeout=15)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+def _get_edge(path, params=None):
+    try:
+        r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers(), timeout=15)
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -141,10 +151,10 @@ def cargar_coaching_cache(puuid):
     return None
 
 
-# ─── Riot API Proxy ───────────────────────────────────────────────────────────
+# ─── Riot API Proxy (Supabase Edge Function) ──────────────────────────────────
 
 def riot_get(url_path, params=None):
-    return _get(f"/riot{url_path}", params)
+    return _get_edge(url_path, params)
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
   "API_KEY": "RGAPI-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
   "DATABASE_URL": "postgresql://user:password@host:5432/dbname",
   "NEXUS_BACKEND_URL": "http://localhost:8000",
+  "NEXUS_EDGE_URL": "https://<project-ref>.supabase.co/functions/v1/riot-proxy",
   "NEXUS_APP_TOKEN": "NXS-xxxxxxxx-xxxxxxxx-xxxxxxxx",
   "user_settings": {
     "auto_deteccion": true,

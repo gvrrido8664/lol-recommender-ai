@@ -97,3 +97,13 @@ GRAY_BORDER = "#6b5d5d"
 
 PURPLE_VIOLET2 = "#b44cc6"
 PURPLE_LAVENDER = "#b9a0ff"
+
+# Aliases semanticos (nombres claros, mismos valores)
+ACCENT_GOLD = TEAL_EMERALD
+GOLD_DARK = TEAL_DARK
+AMBER_ACCENT = TEAL_EMERALD
+
+# Constantes nuevas para reemplazar hex inline
+TEXT_MUTED_ALT = "#8fa3b8"
+BG_TABLE_HEADER = "#1b1620"
+BORDER_TABLE_ITEM = "#1f1a26"

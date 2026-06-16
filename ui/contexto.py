@@ -127,6 +127,7 @@ from src.roles import ROLES_UI as UI_ROLES
 from src.roles import UI_TO_API as ROL_TO_API
 from src.tags_champions import es_soporte, es_tanque, obtener_dano, obtener_nivel_cc, obtener_tag
 from src.updater import check_for_update, set_current_version
+from ui.components import BadgeLabel, EmptyStateWidget, ErrorBanner, LoadingOverlay
 from ui.design import *
 from ui.dialogs.lp_graph import LPGraphWidget
 from ui.dialogs.postgame_dialog import PostGameDialog

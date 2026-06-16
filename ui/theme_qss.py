@@ -32,7 +32,7 @@ def hoja_estilos_global() -> str:
             QFrame#CardAlly:hover {{ border: 1px solid {ACCENT_TEAL}; }}
             QFrame#CardEnemy {{
                 background-color: {ENEMY_BG};
-                border: 1px solid #3b1018;
+                border: 1px solid {BG_DARK_RED2};
                 border-radius: 8px;
             }}
             QFrame#CardEnemy:hover {{ border: 1px solid {RED_WR}; }}
@@ -43,7 +43,7 @@ def hoja_estilos_global() -> str:
             }}
             QFrame#BuildCard:hover {{
                 border: 1px solid {BORDER_ACCENT};
-                background-color: #1a1520;
+                background-color: {BG_DARK_PURPLE};
             }}
             QFrame#StatCard {{
                 background-color: {BG_CARD};
@@ -74,12 +74,12 @@ def hoja_estilos_global() -> str:
                 border: 1px solid {ACCENT_RED};
             }}
             QPushButton:pressed {{
-                background-color: #be123c;
+                background-color: {RED_DARK};
             }}
             QPushButton:disabled {{
                 background-color: {BG_CARD_HOVER};
                 color: {BG_BORDER};
-                border: 1px solid #2f2535;
+                border: 1px solid {BG_CARD_ELEVATED};
             }}
 
             /* ═══ PESTAÑAS ═══ */
@@ -152,14 +152,14 @@ def hoja_estilos_global() -> str:
             }}
             QTableWidget::item {{
                 padding: 8px 12px;
-                border-bottom: 1px solid #1a2236;
+                border-bottom: 1px solid {CARD_DARK_BLUE};
             }}
             QTableWidget::item:selected {{
                 background-color: {ACCENT_RED};
-                color: #ffffff;
+                color: white;
             }}
             QTableWidget::item:hover {{
-                background-color: #211a28;
+                background-color: {CARD_DARK_BLUE};
             }}
             QHeaderView::section {{
                 background-color: {BG_CARD};
@@ -197,7 +197,7 @@ def hoja_estilos_global() -> str:
                 margin: 4px 2px 4px 2px;
             }}
             QScrollBar::handle:vertical {{
-                background: #382a40;
+                background: {CARD_MID_BLUE2};
                 border-radius: 3px;
                 min-height: 30px;
             }}
@@ -205,7 +205,7 @@ def hoja_estilos_global() -> str:
                 background: {ACCENT_RED};
             }}
             QScrollBar::handle:vertical:pressed {{
-                background: #be123c;
+                background-color: {RED_DARK};
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
@@ -219,24 +219,18 @@ def hoja_estilos_global() -> str:
                 margin: 2px 4px 2px 4px;
             }}
             QScrollBar::handle:horizontal {{
-                background: #382a40;
+                background: {CARD_MID_BLUE2};
                 border-radius: 3px;
                 min-width: 30px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background: {ACCENT_RED};
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-                width: 0px;
-            }}
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-                background: transparent;
             }}
             QScrollBar::handle:horizontal:hover {{
                 background: {BORDER_ACCENT};
             }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
                 width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: transparent;
             }}
 
             /* ═══ TOOLTIP ═══ */

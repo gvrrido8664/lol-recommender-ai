@@ -34,16 +34,16 @@ class SettingsDialog(QDialog):
             QCheckBox {{ color: {TEXT_WHITE}; font-size: 12px; spacing: 8px; padding: 2px 0; }}
             QCheckBox::indicator {{ width: 16px; height: 16px; }}
             QCheckBox:hover {{ color: {BORDER_ACCENT}; }}
-            QComboBox {{ background-color: #251d2b; color: {TEXT_WHITE}; border: 1px solid #2f2535; border-radius: 4px; padding: 4px 8px; min-width: 50px; }}
+            QComboBox {{ background-color: {BG_CARD_HOVER}; color: {TEXT_WHITE}; border: 1px solid {BG_CARD_ELEVATED}; border-radius: 4px; padding: 4px 8px; min-width: 50px; }}
             QComboBox::drop-down {{ border: none; }}
             QComboBox:hover {{ border: 1px solid {BORDER_ACCENT}; }}
-            QGroupBox {{ color: {BORDER_ACCENT}; font-weight: bold; font-size: 12px; border: 1px solid #2a2030; border-radius: 6px; margin-top: 8px; padding-top: 14px; }}
+            QGroupBox {{ color: {BORDER_ACCENT}; font-weight: bold; font-size: 12px; border: 1px solid {CARD_DARKER_BLUE}; border-radius: 6px; margin-top: 8px; padding-top: 14px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; }}
             QPushButton {{ color: white; }}
-            QSlider::groove:horizontal {{ height: 6px; background: #2a2030; border-radius: 3px; }}
+            QSlider::groove:horizontal {{ height: 6px; background: {CARD_DARKER_BLUE}; border-radius: 3px; }}
             QSlider::handle:horizontal {{ width: 16px; height: 16px; margin: -5px 0; background: {BORDER_ACCENT}; border-radius: 8px; }}
-            QTabWidget::pane {{ border: 1px solid #2a2030; background: transparent; }}
-            QTabBar::tab {{ color: {TEXT_SUBTLE}; background: #16121c; border: none; padding: 6px 16px; }}
+            QTabWidget::pane {{ border: 1px solid {CARD_DARKER_BLUE}; background: transparent; }}
+            QTabBar::tab {{ color: {TEXT_SUBTLE}; background: {BG_DARK}; border: none; padding: 6px 16px; }}
             QTabBar::tab:selected {{ color: {BORDER_ACCENT}; background: {BG_DARK}; border-bottom: 2px solid {BORDER_ACCENT}; }}
         """)
         layout = QVBoxLayout(self)
@@ -67,7 +67,7 @@ class SettingsDialog(QDialog):
         self.btn_apply = QPushButton("Aplicar")
         self.btn_apply.setFixedWidth(90)
         self.btn_apply.setStyleSheet(f"""
-            QPushButton {{ background-color: #2a2030; color: {BORDER_ACCENT}; border: 1px solid {BORDER_ACCENT}; border-radius: 4px; padding: 6px 12px; font-weight: bold; }}
+            QPushButton {{ background-color: {CARD_DARKER_BLUE}; color: {BORDER_ACCENT}; border: 1px solid {BORDER_ACCENT}; border-radius: 4px; padding: 6px 12px; font-weight: bold; }}
             QPushButton:hover {{ background-color: {BORDER_ACCENT}; color: #000; }}
         """)
         self.btn_apply.clicked.connect(self._on_apply)

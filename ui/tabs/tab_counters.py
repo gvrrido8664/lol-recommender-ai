@@ -49,21 +49,32 @@ class CountersTabMixin:
         self.tree_counters.verticalHeader().setDefaultSectionSize(40)
         self.tree_counters.setIconSize(QSize(28, 28))
         self.tree_counters.verticalHeader().setVisible(False)
-        self.tree_counters.setStyleSheet("""
-            QTableWidget { border: 1px solid #251d2b; border-radius: 4px; background-color: transparent; }
-            QTableWidget::item { padding: 2px 6px; }
-            QHeaderView::section { background-color: #1b1620; border: none; border-bottom: 1px solid #e63946; color: #e63946; font-weight: bold; padding: 6px; }
-            QTableWidget::item:selected { background-color: #251d2b; }
+        self.tree_counters.setStyleSheet(f"""
+            QTableWidget {{ border: 1px solid {BG_CARD_HOVER}; border-radius: 4px; background-color: transparent; }}
+            QTableWidget::item {{ padding: 2px 6px; }}
+            QHeaderView::section {{ background-color: {BG_TABLE_HEADER}; border: none; border-bottom: 1px solid {ACCENT_RED}; color: {ACCENT_RED}; font-weight: bold; padding: 6px; }}
+            QTableWidget::item:selected {{ background-color: {BG_CARD_HOVER}; }}
         """)
         split_layout.addWidget(self.tree_counters, 1)
 
         self.panel_visual, self.l_visual = self.crear_panel("SETUP & BUILD ÓPTIMAS")
         self.frame_setup_visual = QVBoxLayout()
         self.frame_setup_visual.setAlignment(Qt.AlignTop)
+        self.counters_build_empty = EmptyStateWidget(
+            "📋", "SETUP ÓPTIMO",
+            "Selecciona un campeón de la tabla para ver su setup óptimo."
+        )
+        self.frame_setup_visual.addWidget(self.counters_build_empty)
         self.l_visual.addLayout(self.frame_setup_visual)
         split_layout.addWidget(self.panel_visual, 1)
 
         layout.addLayout(split_layout, 1)
+
+        self.counters_table_empty = EmptyStateWidget(
+            "🔍", "META & BUILDS",
+            "Selecciona línea y rival, luego ANALIZA para ver counters y builds."
+        )
+        layout.addWidget(self.counters_table_empty)
 
         outer = QVBoxLayout(self.tab_counters)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -76,6 +87,8 @@ class CountersTabMixin:
         if self._cargando_meta:
             return
         self._cargando_meta = True
+        self.counters_table_empty.setVisible(False)
+        self.tree_counters.setVisible(True)
         rol_api = ROL_TO_API[self.cb_rol_counter.currentText()]
         enemigo = self.cb_enemigo.currentText()
         ejecutar_en_hilo(self._fetch_meta_builds, rol_api, enemigo)
@@ -108,8 +121,15 @@ class CountersTabMixin:
         self.builds_actuales.clear()
         self.tree_counters.setRowCount(0)
         clear_layout(self.frame_setup_visual)
+        self.counters_build_empty = EmptyStateWidget(
+            "📋", "SETUP ÓPTIMO",
+            "Selecciona un campeón de la tabla para ver su setup óptimo."
+        )
+        self.frame_setup_visual.addWidget(self.counters_build_empty)
 
         if not resultados:
+            self.tree_counters.setVisible(False)
+            self.counters_table_empty.setVisible(True)
             QMessageBox.information(self, "Aviso", "Datos insuficientes. Ajusta tus filtros.")
             return
 

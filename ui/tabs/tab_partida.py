@@ -1010,7 +1010,7 @@ class PartidaTabMixin:
             soloq = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 420)
             flex  = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 440)
             modo_principal = 420 if soloq >= flex else 440
-            season_games = [g for g in ranked_games if (g.get("queueId", 0) or 0) == modo_principal]
+            season_games = [g for g in ranked_games if (g.get("queueId", 0) or 0) in (0, modo_principal)]
 
             # Computar stats por campeon (todos, con CS y duracion)
             champ_stats = {}

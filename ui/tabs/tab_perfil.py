@@ -890,7 +890,7 @@ class PerfilTabMixin:
         flex  = sum(1 for g in season_games if (g.get("queueId", 0) or 0) == 440)
         modo_principal = 420 if soloq >= flex else 440
         modo_nombre = "SoloQ" if modo_principal == 420 else "Flex"
-        season_games = [g for g in season_games if (g.get("queueId", 0) or 0) == modo_principal]
+        season_games = [g for g in season_games if (g.get("queueId", 0) or 0) in (0, modo_principal)]
 
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
         champ_stats = {}

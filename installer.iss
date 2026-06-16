@@ -45,8 +45,8 @@ Name: "desktopicon"; Description: "Crear acceso directo en el Escritorio"; Group
 
 [Files]
 Source: "build_onedir\NEXUS\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Plantilla de config para que el usuario ponga su API Key y BD
-Source: "config.example.json"; DestDir: "{userappdata}\LoLRecommender"; DestName: "config.json"; Flags: onlyifdoesntexist
+; Config real empaquetada (copiada por build_exe.ps1 desde config.json)
+Source: "build_onedir\config.json"; DestDir: "{userappdata}\LoLRecommender"; DestName: "config.json"; Flags: onlyifdoesntexist
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

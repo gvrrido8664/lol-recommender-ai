@@ -55,6 +55,14 @@ if ($Sign) {
 
 # ── Instalador con Inno Setup ──
 if ($Installer) {
+    # Copiar config.json real al directorio de build para que el instalador lo incluya
+    if (Test-Path "config.json") {
+        Copy-Item "config.json" "build_onedir\config.json" -Force
+        Write-Host "OK: config.json copiado al instalador" -ForegroundColor Green
+    } else {
+        Write-Host "AVISO: no se encuentra config.json en la raiz. Usando config.example.json como fallback." -ForegroundColor Yellow
+        Copy-Item "config.example.json" "build_onedir\config.json" -Force
+    }
     $isccPaths = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",

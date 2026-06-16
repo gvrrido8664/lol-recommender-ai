@@ -841,9 +841,15 @@ class PerfilTabMixin:
             self.perfil_cargado = False
 
     def _es_ranked(self, g):
-        """True si la partida es ranked (SoloQ 420 / Flex 440)."""
+        """True si la partida es ranked (SoloQ 420 / Flex 440).
+        Las partidas del LCU sin queueId se asumen ranked (la mayoria lo son);
+        las de queueId conocido no-ranked se excluyen."""
         q = g.get("queueId", 0) or 0
-        return q in (420, 440)
+        if q in (420, 440):
+            return True
+        if q in (400, 430, 450, 700, 1700):  # Normal, ARAM, Clash, Arena
+            return False
+        return (g.get("gameMode") or "").upper() not in ("ARAM", "URF", "PRACTICETOOL")
 
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
@@ -878,6 +884,14 @@ class PerfilTabMixin:
 
         # ── Stats de temporada (usando all_games_season, no solo las 50 visibles) ──
         season_games = [g for g in (self.all_games_season or games) if self._es_ranked(g)]
+
+        # Determinar modo mas jugado (SoloQ vs Flex)
+        soloq = sum(1 for g in season_games if (g.get("queueId", 0) or 0) == 420)
+        flex  = sum(1 for g in season_games if (g.get("queueId", 0) or 0) == 440)
+        modo_principal = 420 if soloq >= flex else 440
+        modo_nombre = "SoloQ" if modo_principal == 420 else "Flex"
+        season_games = [g for g in season_games if (g.get("queueId", 0) or 0) == modo_principal]
+
         total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
         champ_stats = {}
         for g in season_games:
@@ -953,7 +967,7 @@ class PerfilTabMixin:
             avg_d = round(total_d / total_games, 1)
             avg_a = round(total_a / total_games, 1)
             self.lbl_card_wr_val.setText(f"{wr}%")
-            self.lbl_card_wr_val.setToolTip(f"{victorias}V / {total_games - victorias}D en {total_games} partidas")
+            self.lbl_card_wr_val.setToolTip(f"{modo_nombre}: {victorias}V / {total_games - victorias}D en {total_games} partidas")
             self.lbl_card_kda_val.setText(f"{kda}")
             self.lbl_card_kda_val.setToolTip(f"Promedio: {avg_k}/{avg_d}/{avg_a} por partida")
             most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])

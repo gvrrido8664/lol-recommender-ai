@@ -16,6 +16,12 @@ class VivoTabMixin:
         top_bar.addWidget(self.lbl_estado_lcu)
         top_bar.addStretch()
 
+        self.lbl_radar_loading = QLabel("")
+        self.lbl_radar_loading.setStyleSheet(f"color: {ACCENT_TEAL}; font-size: 11px; font-weight: bold;")
+        self.lbl_radar_loading.setVisible(False)
+        top_bar.addWidget(self.lbl_radar_loading)
+        top_bar.addSpacing(8)
+
         self.lbl_wr_numero = QLabel("--%")
         self.lbl_wr_numero.setStyleSheet("color: gray; font-family: Impact; font-size: 42px;")
         top_bar.addWidget(self.lbl_wr_numero)
@@ -229,6 +235,7 @@ class VivoTabMixin:
                 self.perfil_cargado = False
                 self._cargando_perfil = False
                 self._actualizando_radar = False
+                self.lbl_radar_loading.setVisible(False)
                 self.last_aliados = []
                 self.last_enemigos = []
                 self.last_my_champ = None
@@ -255,6 +262,8 @@ class VivoTabMixin:
         # Actualizar radar/draft en hilo secundario (si no está ya actualizándose)
         if not self._actualizando_radar:
             self._actualizando_radar = True
+            self.lbl_radar_loading.setText("⏳ Analizando draft...")
+            self.lbl_radar_loading.setVisible(True)
             ejecutar_en_hilo(self._fetch_radar)
 
         # Auto-switch de pestañas segun fase del juego + notificaciones
@@ -632,6 +641,7 @@ class VivoTabMixin:
         """Se ejecuta en el hilo principal. Si db_data viene precomputado (nuevo flujo
         anti-freeze), lo usa para saltar todas las consultas BD en el hilo principal."""
         self._actualizando_radar = False
+        self.lbl_radar_loading.setVisible(False)
 
         if not self.radar_activo:
             return
@@ -949,8 +959,6 @@ class VivoTabMixin:
                         self._auto_importar_hechizos(ids_spells)
                     if self.user_settings.get("auto_habilidades", False):
                         self._auto_importar_skill_order()
-                    if self.user_settings.get("auto_items", False):
-                        self._auto_importar_items(mi_campeon, ids_start, ids_core, ids_sit)
                 else:
                     self.current_skill_order = None
                     self.inicializar_panel_setup(self.fr_runas_icons_vivo)

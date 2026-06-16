@@ -146,6 +146,11 @@ class PostGameDialog(QDialog):
                 ch_cs = TimelineChartWidget()
                 ch_cs.set_data(timeline["cs"], "CS acumulado", ACCENT_TEAL, " CS")
                 lay.addWidget(ch_cs)
+        else:
+            aviso = QLabel("⏳ Los gráficos de evolución (oro y CS por minuto) estarán disponibles\nen unos minutos, cuando Riot procese los datos de la partida.")
+            aviso.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; padding: 8px 0;")
+            aviso.setWordWrap(True)
+            lay.addWidget(aviso)
 
         # ── Fortalezas / A mejorar ──
         positives = s.get("positives", [])

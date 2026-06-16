@@ -272,8 +272,8 @@ class PerfilTabMixin:
 
         self.tb_historial = QTableWidget()
         self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
-        self.tb_historial.setColumnCount(7)
-        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha"])
+        self.tb_historial.setColumnCount(8)
+        self.tb_historial.setHorizontalHeaderLabels(["Campeón", "Resultado", "K/D/A", "CS", "Dur.", "Modo", "Fecha", "Estado"])
         self.tb_historial.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.tb_historial.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tb_historial.horizontalHeader().setMinimumSectionSize(80)
@@ -283,6 +283,7 @@ class PerfilTabMixin:
         self.tb_historial.setColumnWidth(4, 60)
         self.tb_historial.setColumnWidth(5, 70)
         self.tb_historial.setColumnWidth(6, 90)
+        self.tb_historial.setColumnWidth(7, 130)
         self.tb_historial.horizontalHeader().setStretchLastSection(False)
         self.tb_historial.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tb_historial.setSelectionMode(QAbstractItemView.NoSelection)
@@ -1061,6 +1062,10 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
+            # Widget de estado emocional
+            gid = self._gid_or_fallback(g)
+            estado_actual = obtener_estado_emocional(gid) if gid else None
+            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid or "", champ_name, estado_actual))
 
         # --- Tarjetas de estadisticas (segun filtro SoloQ/Flex) ---
         self._recalc_stats_cards()
@@ -1357,6 +1362,9 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
+            gid2 = self._gid_or_fallback(g)
+            estado_actual2 = obtener_estado_emocional(gid2) if gid2 else None
+            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid2 or "", champ_name, estado_actual2))
 
     # ═══════════════════════════════════════════════════════════
     # MOTOR EMOCIONAL — ETIQUETADO DE PARTIDAS (NEXUS)
@@ -1485,4 +1493,7 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 4, QTableWidgetItem(duration_min))
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
+            gid3 = self._gid_or_fallback(g)
+            estado_actual3 = obtener_estado_emocional(gid3) if gid3 else None
+            self.tb_historial.setCellWidget(row, 7, self._crear_widget_emocional(gid3 or "", champ_name, estado_actual3))
             filas += 1

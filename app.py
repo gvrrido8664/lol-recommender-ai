@@ -502,12 +502,6 @@ class LoLRecommenderApp(
 
     def _format_lcu_error(self, res):
         texto = str(res)
-        if "read timed out" in texto.lower():
-            return "Tiempo de espera agotado al guardar el item set. Es posible que el item set ya se haya creado en el cliente."
-        if "404" in texto:
-            return (
-                "Endpoint de item sets no disponible en esta versión del cliente. Actualiza LoL o prueba otro método."
-            )
         if len(texto) > 240:
             return texto.splitlines()[0][:240] + "..."
         return texto
@@ -548,20 +542,6 @@ class LoLRecommenderApp(
                 s1, s2 = s2, s1
         threading.Thread(target=lambda: self.lcu.importar_hechizos(s1, s2), daemon=True).start()
 
-    def _auto_importar_items(self, campeon, ids_start, ids_core, ids_sit=None):
-        if not ids_core:
-            return
-        threading.Thread(
-            target=lambda: self.lcu.importar_item_set(
-                campeon,
-                next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
-                ids_start or [],
-                ids_core,
-                ids_sit or [],
-            ),
-            daemon=True,
-        ).start()
-
     def _auto_importar_skill_order(self):
         if not hasattr(self, "current_skill_order") or not self.current_skill_order:
             return
@@ -600,25 +580,6 @@ class LoLRecommenderApp(
                 btn,
                 "Exportar a LoL",
                 "Asegúrate de estar en una sala de Draft.",
-            ),
-            daemon=True,
-        ).start()
-
-    def accion_importar_items(self, campeon, ids_start, ids_core, btn, ids_sit=None):
-        btn.setEnabled(False)
-        threading.Thread(
-            target=self._run_lcu_task,
-            args=(
-                lambda: self.lcu.importar_item_set(
-                    campeon,
-                    next((int(k) for k, v in MAPEO_IDS_CAMPEONES.items() if v == campeon), 0),
-                    ids_start or [],
-                    ids_core,
-                    ids_sit or [],
-                ),
-                btn,
-                "Crear Item Set en LoL",
-                "No se pudo inyectar el Item Set.",
             ),
             daemon=True,
         ).start()
@@ -758,13 +719,6 @@ class LoLRecommenderApp(
                 self.renderizar_icono(i_id, "item", grid_core, idx // 3, idx % 3, size=45, numero=idx + 1)
         l_items.addWidget(w_core)
 
-        if mostrar_botones:
-            l_items.addStretch()
-            btn_items = QPushButton("Crear Item Set")
-            btn_items.clicked.connect(
-                lambda: self.accion_importar_items(campeon, ids_start, ids_core, btn_items, ids_sit)
-            )
-            l_items.addWidget(btn_items, alignment=Qt.AlignBottom)
         wrap_layout.addWidget(card_items)
 
         # ── CARD SITUACIONALES (fila completa, 2 columnas) ───────────────

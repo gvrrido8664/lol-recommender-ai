@@ -139,10 +139,6 @@ class SettingsDialog(QDialog):
         self.cb_auto_habilidades.setChecked(self.settings.get("auto_habilidades", False))
         l.addWidget(self.cb_auto_habilidades)
 
-        self.cb_auto_items = QCheckBox("Set de objetos recomendados")
-        self.cb_auto_items.setChecked(self.settings.get("auto_items", False))
-        l.addWidget(self.cb_auto_items)
-
         gb = QGroupBox("Tecla de Flash")
         fl = QHBoxLayout(gb)
         fl.addWidget(QLabel("Tu Flash esta en:"))
@@ -276,7 +272,6 @@ class SettingsDialog(QDialog):
             "auto_runas": self.cb_auto_runas.isChecked(),
             "auto_hechizos": self.cb_auto_hechizos.isChecked(),
             "auto_habilidades": self.cb_auto_habilidades.isChecked(),
-            "auto_items": self.cb_auto_items.isChecked(),
             "auto_switch_radar": self.cb_auto_switch.isChecked(),
             "auto_aceptar": self.cb_auto_aceptar.isChecked(),
             "notificaciones_escritorio": self.cb_notif.isChecked(),

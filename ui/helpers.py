@@ -674,7 +674,6 @@ DEFAULT_SETTINGS = {
     "auto_runas": False,
     "auto_hechizos": False,
     "auto_habilidades": False,
-    "auto_items": False,
     "auto_switch_radar": True,
     "notificaciones_escritorio": True,
     "auto_aceptar": False,
@@ -723,3 +722,23 @@ def ejecutar_en_hilo(func, *args, daemon=True, **kwargs):
     t = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=daemon)
     t.start()
     return t
+
+
+def mostrar_toast(parent, mensaje, duracion_ms=4000, color="#22c55e"):
+    """Muestra un toast temporal sobre el parent (QLabel estilizada que se autodestruye)."""
+    from PySide6.QtCore import Qt, QTimer
+    from PySide6.QtWidgets import QLabel
+
+    toast = QLabel(mensaje, parent)
+    toast.setStyleSheet(
+        f"background-color: #1a1520; color: {color}; border: 1px solid {color}; "
+        "border-radius: 6px; padding: 8px 16px; font-size: 12px; font-weight: bold;"
+    )
+    toast.setAlignment(Qt.AlignCenter)
+    toast.setWindowFlags(Qt.ToolTip)
+    toast.adjustSize()
+    if parent:
+        toast.move(parent.width() // 2 - toast.width() // 2, 60)
+    toast.show()
+    QTimer.singleShot(duracion_ms, toast.deleteLater)
+    return toast

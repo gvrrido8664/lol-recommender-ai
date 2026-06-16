@@ -239,7 +239,8 @@ class PerfilTabMixin:
         self.fr_filtro.addWidget(self.cb_filtro_champ)
         self.cb_filtro_modo = QComboBox()
         self.cb_filtro_modo.setMinimumWidth(120)
-        self.cb_filtro_modo.addItem("Todas las ranked")
+        self.cb_filtro_modo.addItem("Todos los modos")
+        self.cb_filtro_modo.addItems(["SoloQ", "Flex", "Normal", "ARAM"])
         self.cb_filtro_modo.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_modo)
         self.fr_filtro.addStretch()
@@ -382,7 +383,7 @@ class PerfilTabMixin:
         hdrs = {"X-Riot-Token": api_key}
         print(f"[RiotAPI] Paginando IDs (region={region}, routing={routing}, startTime={start_time})")
         while True:
-            url = f"{base_url}?type=ranked&start={offset}&count=100&startTime={start_time}"
+            url = f"{base_url}?start={offset}&count=100&startTime={start_time}"
             try:
                 res = requests.get(url, headers=hdrs, timeout=15)
                 if res.status_code == 429:
@@ -394,7 +395,7 @@ class PerfilTabMixin:
                     body = res.text[:300]
                     print(f"[RiotAPI] HTTP 400: {body}")
                     if "startTime" in body.lower() or "parameter" in body.lower():
-                        url = f"{base_url}?type=ranked&start={offset}&count=100"
+                        url = f"{base_url}?start={offset}&count=100"
                         print(f"[RiotAPI] Reintentando sin startTime...")
                         res = requests.get(url, headers=hdrs, timeout=15)
                     else:
@@ -916,9 +917,10 @@ class PerfilTabMixin:
                 unique.append(g)
         if len(unique) < len(games):
             print(f"[Historial] DEDUP: {len(games)} -> {len(unique)} partidas")
-        games = [g for g in unique if self._es_ranked(g)]  # solo ranked
 
-        # Mostrar tabla si hay partidas ranked; si no, el placeholder
+        games = unique
+
+        # Mostrar tabla si hay partidas; si no, el placeholder
         if hasattr(self, "historial_stack_layout"):
             self.historial_stack_layout.setCurrentIndex(0 if games else 1)
 
@@ -1051,12 +1053,11 @@ class PerfilTabMixin:
         
         modos_usados = sorted(set(
             self._clasificar_modo_juego(g)
-            for g in self.historial_games if self._es_ranked(g)
+            for g in self.historial_games
         ))
         self.cb_filtro_modo.blockSignals(True)
         self.cb_filtro_modo.clear()
-        self.cb_filtro_modo.addItem("Todas las ranked")
-        self.cb_filtro_modo.addItems(modos_usados)
+        self.cb_filtro_modo.addItems(["Todos los modos", "SoloQ", "Flex", "Normal", "ARAM"])
         self.cb_filtro_modo.blockSignals(False)
 
         # ─── FASE 4: COACHING PRO ───
@@ -1341,15 +1342,18 @@ class PerfilTabMixin:
         for g in juegos:
             if filas >= 50:
                 break
-            if not self._es_ranked(g):
+            modo_juego = self._clasificar_modo_juego(g)
+            if filtro_modo == "Todos los modos":
+                pass
+            elif filtro_modo in ("SoloQ", "Flex") and not self._es_ranked(g):
                 continue
+            elif filtro_modo != modo_juego:
+                continue
+
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
             champ_id = str(part_info.get("championId", "0"))
             champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
-
-            # Mismo criterio que el render y el combo (SoloQ/Flex via queueId)
-            modo_juego = self._clasificar_modo_juego(g)
 
             if filtro_champ != "Todos los campeones" and champ_name != filtro_champ:
                 continue

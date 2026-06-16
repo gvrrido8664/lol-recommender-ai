@@ -14,7 +14,7 @@
 #define MyAppExeName "NEXUS.exe"
 
 [Setup]
-AppId={B4F8A9D2-7E3C-4C5A-A1B6-9D8E7F3C2A5B}
+AppId={{B4F8A9D2-7E3C-4C5A-A1B6-9D8E7F3C2A5B}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}

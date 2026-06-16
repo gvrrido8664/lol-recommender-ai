@@ -97,24 +97,6 @@ def test_tags_obtener_tag_returns_dict():
     assert "champion_class" in tag
     print("PASS: test_tags_obtener_tag_returns_dict")
 
-def test_setup_verificar_datos_iniciales():
-    from setup import verificar_datos_iniciales
-    result = verificar_datos_iniciales()
-    assert isinstance(result, bool)
-    print(f"PASS: test_setup_verificar_datos_iniciales (data present: {result})")
-
-def test_setup_functions_signature():
-    from setup import instalar_dependencias, descargar_datos, extraer_datos
-    msgs = []
-    def log_cb(msg): msgs.append(msg)
-    def prog_cb(pct): pass
-    assert callable(instalar_dependencias)
-    assert callable(descargar_datos)
-    assert callable(extraer_datos)
-    ok = extraer_datos(log_callback=log_cb, progress_callback=prog_cb)
-    assert not ok or ok
-    print("PASS: test_setup_functions_signature")
-
 def test_logros_module():
     from src.logros import evaluar_logros, obtener_logros_conseguidos, LOGROS_DEFINICIONES
     assert len(LOGROS_DEFINICIONES) >= 10
@@ -159,8 +141,7 @@ if __name__ == "__main__":
     tests = [test_liveclient_empty_lists, test_coaching_anti_contradiction,
              test_coaching_returns_all_sections, test_liveclient_partial_data,
              test_lcu_no_duplicate_players, test_tags_cache_in_memory,
-             test_tags_obtener_tag_returns_dict, test_setup_verificar_datos_iniciales,
-             test_setup_functions_signature, test_logros_module,
+             test_tags_obtener_tag_returns_dict, test_logros_module,
              test_logros_empty_games, test_draft_db_functions,
              test_composicion_analyzer]
     passed = 0

@@ -51,6 +51,7 @@ def _extraer_stats(g):
         "totalMinionsKilled": stats.get("totalMinionsKilled", g.get("totalMinionsKilled", 0)),
         "neutralMinionsKilled": stats.get("neutralMinionsKilled", g.get("neutralMinionsKilled", 0)),
         "gameDuration": g.get("gameDuration", 0),
+        "gameCreation": g.get("gameCreation", 0),
         "championName": champion_name,
         "role": p0.get("teamPosition", p0.get("role", g.get("role", g.get("lane", "")))),
         "lane": p0.get("teamPosition", p0.get("lane", g.get("lane", g.get("role", "")))),
@@ -246,7 +247,8 @@ def generar_insights_jugador(games):
     if len(flat) < 5:
         return []
 
-    # Solo ultimas 20 partidas
+    # Ordenar por fecha (mas reciente ultimo) y tomar ultimas 20
+    flat.sort(key=lambda g: g.get("gameCreation", 0))
     flat = flat[-20:]
     wins = sum(1 for g in flat if g.get("win"))
     total = len(flat)

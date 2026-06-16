@@ -165,7 +165,7 @@ class PerfilTabMixin:
         lp_header = QHBoxLayout()
         self.cb_lp_queue = QComboBox()
         self.cb_lp_queue.addItems(["Solo/Dúo", "Flex"])
-        self.cb_lp_queue.setFixedWidth(90)
+        self.cb_lp_queue.setMinimumWidth(130)
         self.cb_lp_queue.currentIndexChanged.connect(self._actualizar_grafica_lp)
         lp_header.addWidget(QLabel("Cola:"))
         lp_header.addWidget(self.cb_lp_queue)
@@ -226,15 +226,10 @@ class PerfilTabMixin:
         self.cb_filtro_champ.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_champ)
         self.cb_filtro_modo = QComboBox()
-        self.cb_filtro_modo.setMinimumWidth(100)
-        self.cb_filtro_modo.addItem("Todos los modos")
+        self.cb_filtro_modo.setMinimumWidth(120)
+        self.cb_filtro_modo.addItem("Todas las ranked")
         self.cb_filtro_modo.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_modo)
-        self.cb_filtro_season = QComboBox()
-        self.cb_filtro_season.setMinimumWidth(110)
-        self.cb_filtro_season.addItem("Todas las temporadas")
-        self.cb_filtro_season.currentTextChanged.connect(self.filtrar_historial)
-        self.fr_filtro.addWidget(self.cb_filtro_season)
         self.fr_filtro.addStretch()
         self.col_hist.addLayout(self.fr_filtro)
         
@@ -242,11 +237,20 @@ class PerfilTabMixin:
         lbl_h = QLabel("HISTORIAL DE PARTIDAS")
         lbl_h.setStyleSheet(f"color: {ACCENT_RED}; font-weight: bold; font-size: 13px; margin-top: 4px;")
         self.col_hist.addWidget(lbl_h)
+
+        # Barra de progreso de descarga de partidas (oculta hasta que arranca la descarga)
+        self.pb_historial = QProgressBar()
+        self.pb_historial.setVisible(False)
+        self.pb_historial.setTextVisible(True)
+        self.pb_historial.setFormat("Descargando partidas… %v/%m")
+        self.pb_historial.setFixedHeight(16)
+        self.col_hist.addWidget(self.pb_historial)
         
-        # Stack: historial table + overlay vacío
+        # Stack: historial table + overlay vacío (StackOne: solo uno visible a la vez)
         self.historial_stack = QFrame()
         hs_layout = QStackedLayout(self.historial_stack)
-        hs_layout.setStackingMode(QStackedLayout.StackAll)
+        hs_layout.setStackingMode(QStackedLayout.StackOne)
+        self.historial_stack_layout = hs_layout
         
         self.tb_historial = QTableWidget()
         self.tb_historial.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
@@ -283,7 +287,8 @@ class PerfilTabMixin:
         self.lbl_historial_vacio.setStyleSheet("background: transparent;")
         self.lbl_historial_vacio.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         hs_layout.addWidget(self.lbl_historial_vacio)
-        
+        hs_layout.setCurrentIndex(1)  # arranca mostrando el placeholder (sin datos aún)
+
         self.col_hist.addWidget(self.historial_stack, 1)
 
         # Logros row
@@ -359,7 +364,7 @@ class PerfilTabMixin:
         hdrs = {"X-Riot-Token": api_key}
         print(f"[RiotAPI] Paginando IDs (region={region}, routing={routing}, startTime={start_time})")
         while True:
-            url = f"{base_url}?start={offset}&count=100&startTime={start_time}"
+            url = f"{base_url}?type=ranked&start={offset}&count=100&startTime={start_time}"
             try:
                 res = requests.get(url, headers=hdrs, timeout=15)
                 if res.status_code == 429:
@@ -371,7 +376,7 @@ class PerfilTabMixin:
                     body = res.text[:300]
                     print(f"[RiotAPI] HTTP 400: {body}")
                     if "startTime" in body.lower() or "parameter" in body.lower():
-                        url = f"{base_url}?start={offset}&count=100"
+                        url = f"{base_url}?type=ranked&start={offset}&count=100"
                         print(f"[RiotAPI] Reintentando sin startTime...")
                         res = requests.get(url, headers=hdrs, timeout=15)
                     else:
@@ -438,6 +443,7 @@ class PerfilTabMixin:
             "gameCreationDate": datetime.fromtimestamp(game_creation_ts).strftime("%b %d, %Y %I:%M:%S %p") if game_creation_ts else "",
             "gameDuration": info.get("gameDuration", 0),
             "gameMode": info.get("gameMode", "CLASSIC"),
+            "queueId": info.get("queueId", 0),
             "participants": [my_stats],
         }
 
@@ -494,6 +500,7 @@ class PerfilTabMixin:
                 except Exception:
                     errores += 1
                 total = downloaded + errores
+                self.season_progress.emit(total, len(match_ids))
                 if downloaded - last_emit >= BATCH_EMIT:
                     batch = games[last_emit:downloaded]
                     if batch:
@@ -508,6 +515,7 @@ class PerfilTabMixin:
         elapsed = time.time() - t_start
         pct = len(match_ids) / max(1, elapsed)
         print(f"[RiotAPI] {downloaded} OK, {errores} err en {elapsed:.0f}s ({pct:.0f}/s)")
+        self.season_progress.emit(len(match_ids), len(match_ids))  # 100% -> oculta la barra
         return games
 
     def _load_season_cache(self, puuid: str):
@@ -679,12 +687,36 @@ class PerfilTabMixin:
         self.perfil_cargado = False
         if not self._cargando_perfil:
             self._cargando_perfil = True
+            if hasattr(self, "pb_historial"):
+                self.pb_historial.setRange(0, 0)  # indeterminado hasta saber el total
+                self.pb_historial.setFormat("Buscando partidas…")
+                self.pb_historial.setVisible(True)
             threading.Thread(target=self._fetch_perfil, daemon=True).start()
+
+    def _on_season_progress(self, procesadas, total):
+        """Actualiza la barra de progreso de descarga de partidas (hilo principal)."""
+        if not hasattr(self, "pb_historial"):
+            return
+        if total <= 0:
+            self.pb_historial.setVisible(False)
+            return
+        self.pb_historial.setFormat("Descargando partidas… %v/%m")
+        self.pb_historial.setRange(0, total)
+        self.pb_historial.setValue(min(procesadas, total))
+        self.pb_historial.setVisible(procesadas < total)
 
     def _on_perfil_listo(self, data):
         """Se ejecuta en el hilo principal. Actualiza la UI con los datos ya recogidos."""
         self._cargando_perfil = False
-        
+
+        # Si no hay API key, no habra descarga de season -> ocultar la barra de progreso
+        if hasattr(self, "pb_historial"):
+            try:
+                if not self._riot_get_config()[0]:
+                    self.pb_historial.setVisible(False)
+            except Exception:
+                self.pb_historial.setVisible(False)
+
         if not data.get("ok") or not data.get("perfil"):
             print(f"[_on_perfil_listo] Datos insuficientes (ok={data.get('ok')}), se reintentará.")
             return
@@ -813,6 +845,17 @@ class PerfilTabMixin:
             # Si falla el renderizado, permitimos reintentar en el siguiente tick
             self.perfil_cargado = False
 
+    def _es_ranked(self, g):
+        """True si la partida es ranked (SoloQ 420 / Flex 440). Las que no tienen
+        queueId (vienen del LCU) se asumen ranked salvo ARAM; las de queueId conocido
+        no-ranked (normal/ARAM/clash/arena) se excluyen."""
+        q = g.get("queueId", 0) or 0
+        if q in (420, 440):
+            return True
+        if q == 0:
+            return (g.get("gameMode") or "").upper() != "ARAM"
+        return False
+
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
         self.tb_historial.setRowCount(0)
@@ -827,7 +870,11 @@ class PerfilTabMixin:
                 unique.append(g)
         if len(unique) < len(games):
             print(f"[Historial] DEDUP: {len(games)} -> {len(unique)} partidas")
-        games = unique
+        games = [g for g in unique if self._es_ranked(g)]  # solo ranked
+
+        # Mostrar tabla si hay partidas ranked; si no, el placeholder
+        if hasattr(self, "historial_stack_layout"):
+            self.historial_stack_layout.setCurrentIndex(0 if games else 1)
 
         # Ordenar partidas por fecha (mas reciente primero) usando timestamp
         try:
@@ -999,24 +1046,13 @@ class PerfilTabMixin:
         
         modos_usados = sorted(set(
             self._clasificar_modo_juego(g)
-            for g in self.historial_games
+            for g in self.historial_games if self._es_ranked(g)
         ))
         self.cb_filtro_modo.blockSignals(True)
         self.cb_filtro_modo.clear()
-        self.cb_filtro_modo.addItem("Todos los modos")
+        self.cb_filtro_modo.addItem("Todas las ranked")
         self.cb_filtro_modo.addItems(modos_usados)
         self.cb_filtro_modo.blockSignals(False)
-        
-        # --- Filtro por temporada ---
-        years_usados = sorted(set(
-            str(y) for y in (self._extraer_year(g) for g in self.historial_games)
-            if y is not None
-        ), reverse=True)
-        self.cb_filtro_season.blockSignals(True)
-        self.cb_filtro_season.clear()
-        self.cb_filtro_season.addItem("Todas las temporadas")
-        self.cb_filtro_season.addItems(years_usados)
-        self.cb_filtro_season.blockSignals(False)
 
         # ─── FASE 4: COACHING PRO ───
         self._actualizar_coaching()
@@ -1191,6 +1227,8 @@ class PerfilTabMixin:
     def _append_games_to_table(self, games):
         """Añade partidas a la tabla sin borrar las existentes."""
         for g in games:
+            if not self._es_ranked(g):
+                continue
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
             champ_id = str(part_info.get("championId", "0"))
@@ -1284,25 +1322,22 @@ class PerfilTabMixin:
             return
         filtro_champ = self.cb_filtro_champ.currentText()
         filtro_modo = self.cb_filtro_modo.currentText()
-        filtro_season = self.cb_filtro_season.currentText()
-        
+
         self.tb_historial.setRowCount(0)
         for g in self.historial_games:
+            if not self._es_ranked(g):
+                continue
             part_info = g.get("participants", [{}])[0]
             stats = part_info.get("stats", {})
             champ_id = str(part_info.get("championId", "0"))
             champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
-            
-            modo_juego = g.get("gameMode", "Draft")
-            if modo_juego == "CLASSIC": modo_juego = "Ranked"
+
+            # Mismo criterio que el render y el combo (SoloQ/Flex via queueId)
+            modo_juego = self._clasificar_modo_juego(g)
 
             if filtro_champ != "Todos los campeones" and champ_name != filtro_champ:
                 continue
-            if filtro_modo != "Todos los modos" and modo_juego != filtro_modo:
-                continue
-
-            season_year = self._extraer_year(g)
-            if filtro_season != "Todas las temporadas" and str(season_year) != filtro_season:
+            if filtro_modo != "Todas las ranked" and modo_juego != filtro_modo:
                 continue
 
             win = stats.get("win", False)

@@ -185,6 +185,23 @@ def inicializar_db():
         )
     """)
 
+    # ─── LP / MMR ───
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS lp_history (
+            id SERIAL PRIMARY KEY,
+            fecha TEXT NOT NULL,
+            queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
+            tier TEXT NOT NULL,
+            division TEXT NOT NULL,
+            lp INTEGER NOT NULL,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0
+        )
+    """)
+    cur.execute("DROP INDEX IF EXISTS idx_lp_fecha")
+    cur.execute("DELETE FROM lp_history WHERE id NOT IN (SELECT MAX(id) FROM lp_history GROUP BY fecha, queue_type)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lp_unique ON lp_history(fecha, queue_type)")
+
     conn.commit()
     conn.close()
     print("Base de datos PostgreSQL operativa y actualizada con KDA, Parches, Hechizos y Motor Emocional.")
@@ -316,34 +333,6 @@ def obtener_estadisticas_emocionales() -> dict:
 
 
 # ─── TRACKING DE LP / MMR ───
-
-def _crear_tabla_lp_history():
-    conn = obtener_conexion()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS lp_history (
-            id SERIAL PRIMARY KEY,
-            fecha TEXT NOT NULL,
-            queue_type TEXT NOT NULL DEFAULT 'RANKED_SOLO_5x5',
-            tier TEXT NOT NULL,
-            division TEXT NOT NULL,
-            lp INTEGER NOT NULL,
-            wins INTEGER DEFAULT 0,
-            losses INTEGER DEFAULT 0
-        )
-    """)
-    cur.execute("DROP INDEX IF EXISTS idx_lp_fecha")
-    cur.execute("DELETE FROM lp_history WHERE id NOT IN (SELECT MAX(id) FROM lp_history GROUP BY fecha, queue_type)")
-    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lp_unique ON lp_history(fecha, queue_type)")
-    conn.commit()
-    conn.close()
-
-
-try:
-    _crear_tabla_lp_history()
-except ConexionDBError:
-    pass
-
 
 def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int = 0,
                  queue_type: str = "RANKED_SOLO_5x5"):

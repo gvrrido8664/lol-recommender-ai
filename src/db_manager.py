@@ -355,7 +355,7 @@ def registrar_lp(tier: str, division: str, lp: int, wins: int = 0, losses: int =
     conn.close()
 
 
-def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) -> list:
+def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5") -> list:
     TIER_BASE = {
         "IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
         "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
@@ -367,9 +367,9 @@ def obtener_historial_lp(queue_type: str = "RANKED_SOLO_5x5", dias: int = 30) ->
     cur.execute("""
         SELECT fecha, tier, division, lp, wins, losses
         FROM lp_history
-        WHERE queue_type=%s AND fecha >= (CURRENT_DATE - (%s || ' days')::INTERVAL)::TEXT
+        WHERE queue_type=%s
         ORDER BY fecha ASC
-    """, (queue_type, str(dias)))
+    """, (queue_type,))
     rows = cur.fetchall()
     conn.close()
     resultado = []

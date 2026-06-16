@@ -443,6 +443,10 @@ class LCUConnector:
                         queues.append(data)
 
                 if queues:
+                    for q in queues:
+                        d = q.get("division") or q.get("rank") or ""
+                        if d and d.upper() == "NA":
+                            q["division"] = ""
                     print(f"[LCU] Ligas encontradas ({endpoint}): {[(q.get('queueType','?'), q.get('tier','?')) for q in queues]}")
                     return {"queues": queues}
             except Exception as e:
@@ -468,6 +472,8 @@ class LCUConnector:
                             # Riot API usa "rank" en vez de "division", normalizar
                             for e in entries:
                                 e["division"] = e.get("rank", "")
+                                if e["division"] and e["division"].upper() == "NA":
+                                    e["division"] = ""
                             print(f"[RiotAPI] Ligas encontradas: {[(e.get('queueType','?'), e.get('tier','?')) for e in entries]}")
                             return {"queues": entries}
                     except Exception as e:

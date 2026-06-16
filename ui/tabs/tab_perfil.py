@@ -555,7 +555,10 @@ class PerfilTabMixin:
                 if nuevos_cache:
                     self.season_partial.emit(nuevos_cache)
                     print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
-                return
+                # Si el cache es chico, seguir descargando de Riot API tambien
+                if len(cached) >= 500:
+                    return
+                print(f"[RiotAPI] Cache incompleto ({len(cached)} partidas), continuando descarga...")
 
             # Resolver PUUID nuevo
             riot_puuid = puuid

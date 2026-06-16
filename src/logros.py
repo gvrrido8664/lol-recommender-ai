@@ -392,7 +392,7 @@ def generar_insights_jugador(games):
         avg_dl = round(sum(d_loss) / len(d_loss), 1)
         gap_death = round(avg_dl - avg_dw, 1)
         if gap_death >= 5:
-            _add({"icono": "💀", "texto": f"Morís {avg_dl}x en L vs {avg_dw}x en W — jugá seguro al perder",
+            _add({"icono": "💀",                    "texto": f"Mueres {avg_dl}x en L vs {avg_dw}x en W — juega seguro al perder",
                    "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
                    "fondo": _TIPOS_COLOR["warning"][1], "relevancia": gap_death * 2})
         elif avg_dw <= 3 and gap_death <= 2:
@@ -461,7 +461,7 @@ def generar_insights_jugador(games):
                "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
                "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": streak * 3})
     elif streak >= 3 and not streak_w:
-        _add({"icono": "❄️", "texto": f"{streak} derrotas seguidas — tomá un descanso",
+        _add({"icono": "❄️",                    "texto": f"{streak} derrotas seguidas — toma un descanso",
                "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
                "fondo": _TIPOS_COLOR["warning"][1], "relevancia": streak * 3})
 
@@ -517,11 +517,11 @@ def generar_insights_jugador(games):
     if len(flat) >= 10:
         pct_carry = round(high_kp / len(flat) * 100, 1)
         if pct_carry >= 50:
-            _add({"icono": "👑", "texto": f"Sos el carry en {pct_carry}% de tus partidas",
+            _add({"icono": "👑",                    "texto": f"Eres el carry en {pct_carry}% de tus partidas",
                    "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
                    "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 7})
         elif pct_carry <= 25 and wr_total >= 50:
-            _add({"icono": "🤝", "texto": f"Jugás para el equipo — carry solo en {pct_carry}% de games",
+            _add({"icono": "🤝",                    "texto": f"Juegas para el equipo — carry solo en {pct_carry}% de games",
                    "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
                    "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": 5})
 
@@ -534,11 +534,11 @@ def generar_insights_jugador(games):
         wr_short = round(sum(1 for g in short if g.get("win")) / len(short) * 100, 1)
         wr_long = round(sum(1 for g in long_g if g.get("win")) / len(long_g) * 100, 1)
         if wr_short - wr_long > 20:
-            _add({"icono": "⚡", "texto": f"Early game: {wr_short}% vs late: {wr_long}% — cerrá rápido",
+            _add({"icono": "⚡",                    "texto": f"Early game: {wr_short}% vs late: {wr_long}% — cierra rápido",
                    "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
                    "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_short - wr_long})
         elif wr_long - wr_short > 20:
-            _add({"icono": "🐢", "texto": f"Late game: {wr_long}% vs early: {wr_short}% — jugá seguro al inicio",
+            _add({"icono": "🐢",                    "texto": f"Late game: {wr_long}% vs early: {wr_short}% — juega seguro al inicio",
                    "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
                    "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_long - wr_short})
 
@@ -571,7 +571,7 @@ def generar_insights_jugador(games):
         if r in ("TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"):
             roles_set.add(r)
     if len(roles_set) >= 4:
-        _add({"icono": "🎭", "texto": f"Jugás {len(roles_set)} roles — flex pick",
+        _add({"icono": "🎭",                    "texto": f"Juegas {len(roles_set)} roles — flex pick",
                "tipo": "neutral", "color": _TIPOS_COLOR["neutral"][0],
                "fondo": _TIPOS_COLOR["neutral"][1], "relevancia": len(roles_set) * 2})
 
@@ -602,7 +602,7 @@ def generar_insights_jugador(games):
                    "tipo": "positivo", "color": _TIPOS_COLOR["positivo"][0],
                    "fondo": _TIPOS_COLOR["positivo"][1], "relevancia": wr_total})
         elif wr_total <= 40:
-            _add({"icono": "📉", "texto": f"WR global: {wr_total}% — necesitás ajustar algo",
+            _add({"icono": "📉",                    "texto": f"WR global: {wr_total}% — necesitas ajustar algo",
                    "tipo": "warning", "color": _TIPOS_COLOR["warning"][0],
                    "fondo": _TIPOS_COLOR["warning"][1], "relevancia": 40 - wr_total + 10})
 

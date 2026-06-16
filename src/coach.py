@@ -816,9 +816,9 @@ def generar_reporte_coach(historial_games, nombre_invocador="Invocador", datos_p
         if avg_cc > 30:
             cc_html += f'<p style="font-size: 11px; color: {GREEN_SUCCESS};">🟢 Excelente uso de CC. Tus enemigos no se mueven.</p>'
         elif avg_cc > 10:
-            cc_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING};">🟡 Buen uso de CC. Si tu campeon tiene mucho CC, aprovechalo mas.</p>'
+            cc_html += f'<p style="font-size: 11px; color: {YELLOW_WARNING};">🟡 Buen uso de CC. Si tu campeon tiene mucho CC, aprovéchalo mas.</p>'
         else:
-            cc_html += f'<p style="font-size: 11px; color: {TEXT_MUTED};">📝 Poco CC aplicado. Si tu campeon tiene CC, usalo para peel o engage.</p>'
+            cc_html += f'<p style="font-size: 11px; color: {TEXT_MUTED};">📝 Poco CC aplicado. Si tu campeon tiene CC, úsalo para peel o engage.</p>'
         cc_html += '</div>'
         secciones.append({
             "titulo": "CONTROL DE MASAS",

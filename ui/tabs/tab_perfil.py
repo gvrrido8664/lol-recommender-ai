@@ -85,6 +85,18 @@ class PerfilTabMixin:
         self.lbl_season_stats = QLabel("")
         self.lbl_season_stats.setVisible(False)
         self.l_season.addWidget(self.lbl_season_stats)
+
+        # Filtro SoloQ / Flex
+        fr_season_filtro = QHBoxLayout()
+        fr_season_filtro.addWidget(QLabel("Modo:"))
+        self.cb_season_modo = QComboBox()
+        self.cb_season_modo.addItems(["SoloQ", "Flex"])
+        self.cb_season_modo.setFixedWidth(90)
+        self.cb_season_modo.currentIndexChanged.connect(self._on_season_modo_change)
+        fr_season_filtro.addWidget(self.cb_season_modo)
+        fr_season_filtro.addStretch()
+        self.l_season.addLayout(fr_season_filtro)
+
         self.tb_season_champs = QTableWidget()
         self.tb_season_champs.setColumnCount(4)
         self.tb_season_champs.setHorizontalHeaderLabels(["Campeón", "Partidas", "WR", "KDA"])
@@ -826,6 +838,70 @@ class PerfilTabMixin:
         elo = g.get("eloChange") or g.get("playerScoreChange")
         return elo is not None
 
+    def _on_season_modo_change(self):
+        """Actualiza stats de temporada y cards al cambiar SoloQ/Flex."""
+        self._season_modo_filtro = 420 if self.cb_season_modo.currentText() == "SoloQ" else 440
+        self._cargar_stats_season()
+        self._recalc_stats_cards()
+
+    def _recalc_stats_cards(self):
+        """Recalcula las 4 cards (WR, KDA, +Jugado, Mejor WR) segun filtro actual."""
+        if not hasattr(self, 'all_games_season') or not self.all_games_season:
+            return
+        modo = getattr(self, '_season_modo_filtro', None)
+        season_games = [g for g in self.all_games_season if self._es_ranked(g)]
+        if modo:
+            season_games = [g for g in season_games if (g.get("queueId", 0) or 0) in (0, modo)]
+        modo_nombre = "SoloQ" if modo == 420 else ("Flex" if modo == 440 else "")
+
+        total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
+        champ_stats = {}
+        for g in season_games:
+            part_info = g.get("participants", [{}])[0]
+            stats = part_info.get("stats", {})
+            champ_id = str(part_info.get("championId", "0"))
+            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
+            win = stats.get("win", False)
+            k = stats.get("kills", 0)
+            d = stats.get("deaths", 0)
+            a = stats.get("assists", 0)
+            total_k += k; total_d += d; total_a += a; total_games += 1
+            if win: victorias += 1
+            if champ_name not in champ_stats:
+                champ_stats[champ_name] = {"wins": 0, "games": 0}
+            champ_stats[champ_name]["games"] += 1
+            if win: champ_stats[champ_name]["wins"] += 1
+
+        if total_games > 0:
+            wr = round((victorias / total_games) * 100)
+            kda = round((total_k + total_a) / max(1, total_d), 2)
+            self.lbl_card_wr_val.setText(f"{wr}%")
+            tt = f"{victorias}V / {total_games - victorias}D en {total_games} partidas"
+            if modo_nombre: tt = f"{modo_nombre}: {tt}"
+            self.lbl_card_wr_val.setToolTip(tt)
+            self.lbl_card_kda_val.setText(f"{kda}")
+            wr_color = GREEN_WR if wr >= 50 else RED_WR
+            self.lbl_card_wr_val.setStyleSheet(f"color: {wr_color}; font-size: 26px; font-weight: bold;")
+
+            if champ_stats:
+                most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
+                self.lbl_card_most_val.setText(most_played[:10])
+                self.lbl_card_most_val.setToolTip(f"{champ_stats[most_played]['games']} partidas con {most_played}")
+
+                best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 5}
+                if best_wr_champs:
+                    best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
+                    best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
+                    self.lbl_card_best_val.setText(f"{best_champ[:8]} {best_wr}%")
+                    self.lbl_card_best_val.setToolTip(f"{best_wr}% WR con {best_champ}")
+                else:
+                    self.lbl_card_best_val.setText("--")
+        else:
+            self.lbl_card_wr_val.setText("--%")
+            self.lbl_card_kda_val.setText("--")
+            self.lbl_card_most_val.setText("--")
+            self.lbl_card_best_val.setText("--")
+
     def _renderizar_historial(self, games):
         """Renderiza la tabla de historial (reusable para lazy loading)."""
         self.tb_historial.setRowCount(0)
@@ -856,41 +932,6 @@ class PerfilTabMixin:
 
         # Maximo 50 partidas en la tabla
         games = games[:50]
-
-        # ── Stats de temporada (usando all_games_season, no solo las 50 visibles) ──
-        season_games = [g for g in (self.all_games_season or games) if self._es_ranked(g)]
-
-        # Determinar modo mas jugado (SoloQ vs Flex)
-        soloq = sum(1 for g in season_games if (g.get("queueId", 0) or 0) == 420)
-        flex  = sum(1 for g in season_games if (g.get("queueId", 0) or 0) == 440)
-        modo_principal = 420 if soloq >= flex else 440
-        modo_nombre = "SoloQ" if modo_principal == 420 else "Flex"
-        season_games = [g for g in season_games if (g.get("queueId", 0) or 0) in (0, modo_principal)]
-
-        total_k = 0; total_d = 0; total_a = 0; victorias = 0; total_games = 0
-        champ_stats = {}
-        for g in season_games:
-            part_info = g.get("participants", [{}])[0]
-            stats = part_info.get("stats", {})
-            champ_id = str(part_info.get("championId", "0"))
-            champ_name = self.procesar_nombre_champ(champ_id, "0") or "Desconocido"
-
-            win = stats.get("win", False)
-            k = stats.get("kills", 0)
-            d = stats.get("deaths", 0)
-            a = stats.get("assists", 0)
-
-            total_k += k; total_d += d; total_a += a; total_games += 1
-            if win: victorias += 1
-
-            if champ_name not in champ_stats:
-                champ_stats[champ_name] = {"wins": 0, "games": 0, "kills": 0, "deaths": 0, "assists": 0}
-            cs_entry = champ_stats[champ_name]
-            cs_entry["games"] += 1
-            if win: cs_entry["wins"] += 1
-            cs_entry["kills"] += k
-            cs_entry["deaths"] += d
-            cs_entry["assists"] += a
 
         # ── Tabla de historial (loop separado para las 50 mas recientes) ──
         for g in games:
@@ -934,38 +975,8 @@ class PerfilTabMixin:
             self.tb_historial.setItem(row, 5, QTableWidgetItem(modo_juego))
             self.tb_historial.setItem(row, 6, QTableWidgetItem(fecha))
 
-        # --- Tarjetas de estadisticas ---
-        if total_games > 0:
-            wr = round((victorias / total_games) * 100)
-            kda = round((total_k + total_a) / max(1, total_d), 2)
-            avg_k = round(total_k / total_games, 1)
-            avg_d = round(total_d / total_games, 1)
-            avg_a = round(total_a / total_games, 1)
-            self.lbl_card_wr_val.setText(f"{wr}%")
-            self.lbl_card_wr_val.setToolTip(f"{modo_nombre}: {victorias}V / {total_games - victorias}D en {total_games} partidas")
-            self.lbl_card_kda_val.setText(f"{kda}")
-            self.lbl_card_kda_val.setToolTip(f"Promedio: {avg_k}/{avg_d}/{avg_a} por partida")
-            most_played = max(champ_stats, key=lambda c: champ_stats[c]["games"])
-            most_g = champ_stats[most_played]["games"]
-            self.lbl_card_most_val.setText(most_played[:10])
-            self.lbl_card_most_val.setStyleSheet(f"color: {BORDER_ACCENT}; font-size: 16px; font-weight: bold;")
-            self.lbl_card_most_val.setToolTip(f"{most_g} partidas con {most_played}")
-            best_wr_champs = {c: s for c, s in champ_stats.items() if s["games"] >= 5}
-            if best_wr_champs:
-                best_champ = max(best_wr_champs, key=lambda c: best_wr_champs[c]["wins"] / best_wr_champs[c]["games"])
-                best_wr = round(champ_stats[best_champ]["wins"] / champ_stats[best_champ]["games"] * 100)
-                self.lbl_card_best_val.setText(f"{best_champ[:8]} {best_wr}%")
-                self.lbl_card_best_val.setStyleSheet(f"color: {GREEN_WR}; font-size: 14px; font-weight: bold;")
-                self.lbl_card_best_val.setToolTip(f"{best_wr}% WR con {best_champ} en {champ_stats[best_champ]['games']} partidas")
-            else:
-                self.lbl_card_best_val.setText("--")
-            wr_color = GREEN_WR if wr >= 50 else RED_WR
-            self.lbl_card_wr_val.setStyleSheet(f"color: {wr_color}; font-size: 26px; font-weight: bold;")
-        else:
-            self.lbl_card_wr_val.setText("--%")
-            self.lbl_card_kda_val.setText("--")
-            self.lbl_card_most_val.setText("--")
-            self.lbl_card_best_val.setText("--")
+        # --- Tarjetas de estadisticas (segun filtro SoloQ/Flex) ---
+        self._recalc_stats_cards()
 
         # --- WR POR LÍNEA (1 sola query para todos los campeones) ---
         conn = obtener_conexion()

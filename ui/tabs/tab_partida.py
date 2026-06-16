@@ -1006,10 +1006,10 @@ class PartidaTabMixin:
             # Filtrar solo ranked
             ranked_games = [g for g in unique_games if self._es_ranked(g)]
 
-            # Modo mas jugado (SoloQ vs Flex)
+            # Modo segun filtro del usuario (o el mas jugado si no hay filtro)
             soloq = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 420)
             flex  = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 440)
-            modo_principal = 420 if soloq >= flex else 440
+            modo_principal = getattr(self, '_season_modo_filtro', 420 if soloq >= flex else 440)
             season_games = [g for g in ranked_games if (g.get("queueId", 0) or 0) in (0, modo_principal)]
 
             # Computar stats por campeon (todos, con CS y duracion)

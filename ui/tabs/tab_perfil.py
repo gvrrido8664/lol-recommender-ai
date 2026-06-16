@@ -530,28 +530,15 @@ class PerfilTabMixin:
         """Ejecutado en hilo separado: descarga partidas de Riot SIN bloquear la UI.
         Usa streaming via season_partial para mostrar datos mientras llegan."""
         try:
-            # Intentar cache primero
+            # Emitir cache si existe (sin bloquear descarga de nuevas partidas)
             cached = self._load_season_cache(puuid)
             if cached:
-                # Si el cache no cubre la temporada completa, borrarlo y redescargar
-                if len(cached) < 200:
-                    print(f"[RiotAPI] Cache incompleto ({len(cached)} partidas), eliminando...")
-                    from src.db_manager import obtener_conexion
-                    try:
-                        conn = obtener_conexion()
-                        cur = conn.cursor()
-                        cur.execute("DELETE FROM player_cache WHERE puuid = %s", (puuid,))
-                        conn.commit()
-                        conn.close()
-                    except Exception:
-                        pass
-                else:
-                    existing_gids = {self._gid_or_fallback(g) for g in all_games}
-                    nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
-                    if nuevos_cache:
-                        self.season_partial.emit(nuevos_cache)
-                        print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
-                    return
+                existing_gids = {self._gid_or_fallback(g) for g in all_games}
+                nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
+                if nuevos_cache:
+                    self.season_partial.emit(nuevos_cache)
+                    print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
+                all_games.extend(nuevos_cache)  # para que Riot API no las vuelva a bajar
 
             # Resolver PUUID nuevo
             riot_puuid = puuid

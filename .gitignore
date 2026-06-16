@@ -75,3 +75,6 @@ season_cache_*.json
 ui/tabs/data/
 
 coaching_cache.json
+
+# Migracion: URL temporal de Supabase (secreto)
+supabase_url.txt

@@ -60,3 +60,46 @@ Documentado para responder ante un análisis de AV / reporte de falso positivo:
 - [ ] `config.json` con API_KEY + DATABASE_URL está en esa carpeta (no dentro del exe).
 - [ ] Subido a https://www.virustotal.com/ → detecciones mínimas/heurísticas (0–3 esperable
       sin cert real). Si un motor marca, reportar falso positivo con esta doc.
+
+## Cómo generar el instalador
+
+```powershell
+# Build completo + firma self-signed + instalador
+powershell ./build_exe.ps1 -Sign -Installer
+
+# Salida:
+#   build_onedir/NEXUS_Setup_1.0.0.exe   ← instalador (firmado)
+```
+
+Requisito: [Inno Setup 6](https://jrsoftware.org/isdl.php) instalado.
+
+## Cómo compartir el instalador
+
+### Opción A — Google Drive (simple, gratis)
+
+1. Subir `build_onedir\NEXUS_Setup_1.0.0.exe` a Google Drive
+2. Click derecho → Compartir → "Cualquier persona con el enlace"
+3. Compartir el link
+
+### Opción B — GitHub Releases (recomendado, público)
+
+1. Ir a https://github.com/<tu-usuario>/<tu-repo>/releases
+2. "Create a new release"
+3. Tag: `v1.0.0`, título: "NEXUS v1.0.0"
+4. Adjuntar `NEXUS_Setup_1.0.0.exe`
+5. Publicar y compartir la URL del release
+
+### Opción C — Discord / WhatsApp (rápido, amigos)
+
+Arrastrar el .exe al chat. Si Discord lo bloquea por tamaño (>25MB), usar Google Drive.
+
+## Nota sobre SmartScreen
+
+Con firma **self-signed**, SmartScreen muestra advertencia en otras PCs. El usuario debe
+hacer click en "Más información" → "Ejecutar de todas formas".
+
+Para eliminar el aviso completamente necesitás un **certificado de firma de código real**:
+- **Azure Trusted Signing** (~$10 USD/mes) — la opción más barata
+- **Sectigo / SSL.com OV** (~$100-250 USD/año)
+
+Con reputación acumulada (~1 semana), SmartScreen deja de avisar por completo.

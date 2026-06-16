@@ -550,15 +550,25 @@ class PerfilTabMixin:
             # Intentar cache primero
             cached = self._load_season_cache(puuid)
             if cached:
-                existing_gids = {self._gid_or_fallback(g) for g in all_games}
-                nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
-                if nuevos_cache:
-                    self.season_partial.emit(nuevos_cache)
-                    print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
-                # Si el cache es chico, seguir descargando de Riot API tambien
-                if len(cached) >= 500:
+                # Si el cache no cubre la temporada completa, borrarlo y redescargar
+                if len(cached) < 500:
+                    print(f"[RiotAPI] Cache incompleto ({len(cached)} partidas), eliminando...")
+                    from src.db_manager import obtener_conexion
+                    try:
+                        conn = obtener_conexion()
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM player_cache WHERE puuid = %s", (puuid,))
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass
+                else:
+                    existing_gids = {self._gid_or_fallback(g) for g in all_games}
+                    nuevos_cache = [g for g in cached if self._gid_or_fallback(g) and self._gid_or_fallback(g) not in existing_gids]
+                    if nuevos_cache:
+                        self.season_partial.emit(nuevos_cache)
+                        print(f"[RiotAPI] Cache: +{len(nuevos_cache)} partidas streaming")
                     return
-                print(f"[RiotAPI] Cache incompleto ({len(cached)} partidas), continuando descarga...")
 
             # Resolver PUUID nuevo
             riot_puuid = puuid

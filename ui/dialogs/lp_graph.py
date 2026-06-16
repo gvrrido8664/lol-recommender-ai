@@ -1,29 +1,28 @@
-"""Widget de grafica LP/MMR con QPainter nativo. Extraido de app.py sin cambios."""
+"""Widget de grafica LP estilo op.gg — curvas bezier, bandas de tier, fill degradado."""
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
+from PySide6.QtGui import QPainter, QPainterPath, QColor, QPen, QBrush, QLinearGradient, QFont
 from PySide6.QtCore import Qt
 
 from ui.design import *
 
 
 class LPGraphWidget(QWidget):
-    """Gráfica de línea LP/MMR usando QPainter nativo — sin dependencias externas."""
-
-    TIER_LABELS = [
-        (0,    "Iron"),   (400,  "Bronze"), (800,  "Silver"), (1200, "Gold"),
-        (1600, "Plat"),   (2000, "Emerald"),(2400, "Diamond"),(2800, "Master+"),
+    TIER_BANDS = [
+        (0,    400,  "Iron",     "#6b7280"),
+        (400,  800,  "Bronze",   "#b45309"),
+        (800,  1200, "Silver",   "#a39a93"),
+        (1200, 1600, "Gold",     "#f59e0b"),
+        (1600, 2000, "Plat",     "#c89b3c"),
+        (2000, 2400, "Emerald",  "#22c55e"),
+        (2400, 2800, "Diamond",  "#f0b232"),
+        (2800, 3200, "Master+",  "#e879f9"),
     ]
-    TIER_COLORS = {
-        "Iron": "#6b7280", "Bronze": "#b45309", "Silver": "#a39a93",
-        "Gold": "#f59e0b", "Plat": "#c89b3c", "Emerald": "#22c55e",
-        "Diamond": "#f0b232", "Master+": "#e879f9",
-    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._data = []
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(160)
 
     def set_data(self, history: list):
         self._data = history
@@ -33,13 +32,13 @@ class LPGraphWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        pad_l, pad_r, pad_t, pad_b = 48, 12, 10, 24
+        pad_l, pad_r, pad_t, pad_b = 52, 16, 18, 28
 
-        # Fondo
         p.fillRect(0, 0, w, h, QColor(BG_CARD))
 
         if not self._data:
             p.setPen(QColor(TEXT_MUTED))
+            p.setFont(QFont("Segoe UI", 10))
             p.drawText(0, 0, w, h, Qt.AlignCenter, "Sin datos de LP")
             p.end()
             return
@@ -47,85 +46,114 @@ class LPGraphWidget(QWidget):
         values = [d["lp_total"] for d in self._data]
         mn, mx = min(values), max(values)
         rng = max(mx - mn, 200)
+        mn -= rng * 0.08
+        mx += rng * 0.08
+        rng = mx - mn
 
         n = len(self._data)
-        def to_px(i):
+
+        def to_x(i):
             return pad_l + int(i / max(1, n - 1) * (w - pad_l - pad_r))
 
-        def to_py(val):
+        def to_y(val):
             return h - pad_b - int((val - mn) / rng * (h - pad_t - pad_b))
 
-        # 1 solo dia: mostrar punto unico con label de tier
-        if n == 1:
-            d = self._data[0]
-            py = to_py(d["lp_total"])
-            # Tier line de referencia
-            for base, name in self.TIER_LABELS:
-                if mn - 100 <= base <= mx + 100:
-                    ty = to_py(base)
-                    if pad_t <= ty <= h - pad_b:
-                        p.setPen(QPen(QColor("#251d2b"), 1, Qt.DashLine))
-                        p.drawLine(pad_l, ty, w - pad_r, ty)
-                        p.setPen(QColor(self.TIER_COLORS.get(name, "#7a6f68")))
-                        p.drawText(2, ty - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
-            # Punto
+        chart_bottom = h - pad_b
+        chart_top = pad_t
+        chart_h = chart_bottom - chart_top
+
+        # ── Bandas de tier ──
+        for lo, hi, name, color in self.TIER_BANDS:
+            if hi <= mn or lo >= mx:
+                continue
+            y1 = to_y(hi) if hi <= mx else chart_top
+            y2 = to_y(lo) if lo >= mn else chart_bottom
+            band_y = min(y1, y2)
+            band_h = abs(y2 - y1)
+            if band_h < 1:
+                continue
+            band_color = QColor(color)
+            band_color.setAlpha(18)
+            p.fillRect(pad_l, band_y, w - pad_l, band_h, band_color)
+
+            # Label del tier (minúscula, sutil)
+            p.setFont(QFont("Segoe UI", 7))
+            p.setPen(QColor(color))
+            mid_y = band_y + band_h // 2
+            p.drawText(2, mid_y - 7, pad_l - 6, 14, Qt.AlignRight | Qt.AlignVCenter, name)
+
+        # ── Curva bezier ──
+        pts = [(to_x(i), to_y(values[i])) for i in range(n)]
+
+        if n >= 2:
+            path = QPainterPath()
+            path.moveTo(pts[0][0], pts[0][1])
+
+            for i in range(1, n):
+                x0, y0 = pts[i - 1]
+                x1, y1 = pts[i]
+                dx = (x1 - x0) * 0.35
+                c1x, c1y = x0 + dx, y0
+                c2x, c2y = x1 - dx, y1
+                path.cubicTo(c1x, c1y, c2x, c2y, x1, y1)
+
+            # Fill degradado bajo la curva
+            fill_path = QPainterPath(path)
+            fill_path.lineTo(pts[-1][0], chart_bottom)
+            fill_path.lineTo(pts[0][0], chart_bottom)
+            fill_path.closeSubpath()
+
+            grad = QLinearGradient(0, chart_top, 0, chart_bottom)
+            grad.setColorAt(0.0, QColor(ACCENT_TEAL))
+            grad.setColorAt(0.35, QColor(ACCENT_TEAL))
+            grad.setColorAt(1.0, QColor(ACCENT_TEAL))
+            gcol = QColor(ACCENT_TEAL)
+            gcol_top = QColor(ACCENT_TEAL); gcol_top.setAlpha(55)
+            gcol_bot = QColor(ACCENT_TEAL); gcol_bot.setAlpha(8)
+            grad.setColorAt(0.0, gcol_top)
+            grad.setColorAt(1.0, gcol_bot)
             p.setPen(Qt.NoPen)
-            p.setBrush(QBrush(QColor(ACCENT_TEAL)))
-            p.drawEllipse(w // 2 - 5, py - 5, 10, 10)
-            # Label
-            label = f"{d['tier'].title()} {d['division'].upper()} {d['lp']} LP"
-            p.setFont(QFont("Segoe UI", 10, QFont.Bold))
-            p.setPen(QColor(ACCENT_TEAL))
-            p.drawText(0, pad_t, w, 22, Qt.AlignCenter, label)
-            # Fecha
-            p.setFont(QFont("Segoe UI", 8))
-            p.setPen(QColor(TEXT_MUTED))
-            p.drawText(0, py + 14, w, 16, Qt.AlignCenter, d["fecha"])
-            p.end()
-            return
+            p.setBrush(grad)
+            p.drawPath(fill_path)
 
-        # ── 2+ dias: grafica normal ──
+            # Línea principal
+            pen = QPen(QColor(ACCENT_TEAL), 2.2)
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            p.drawPath(path)
 
-        # Líneas de tier en gris sutil
-        p.setFont(QFont("Segoe UI", 7))
-        for base, name in self.TIER_LABELS:
-            if mn - 100 <= base <= mx + 100:
-                py = to_py(base)
-                if pad_t <= py <= h - pad_b:
-                    p.setPen(QPen(QColor("#251d2b"), 1, Qt.DashLine))
-                    p.drawLine(pad_l, py, w - pad_r, py)
-                    p.setPen(QColor(self.TIER_COLORS.get(name, "#7a6f68")))
-                    p.drawText(2, py - 6, pad_l - 4, 14, Qt.AlignRight | Qt.AlignVCenter, name)
-
-        # Línea de LP
-        points = [(to_px(i), to_py(self._data[i]["lp_total"]))
-                  for i in range(len(self._data))]
-
-        pen = QPen(QColor(ACCENT_TEAL), 2)
-        p.setPen(pen)
-        for i in range(1, len(points)):
-            p.drawLine(points[i-1][0], points[i-1][1], points[i][0], points[i][1])
-
-        # Puntos
+        # ── Puntos ──
         p.setPen(Qt.NoPen)
-        for i, (px, py) in enumerate(points):
+        for i, (px, py) in enumerate(pts):
+            outer = QColor(ACCENT_TEAL)
+            outer.setAlpha(35)
+            r = 5
+            p.setBrush(QBrush(outer))
+            p.drawEllipse(px - r, py - r, r * 2, r * 2)
             p.setBrush(QBrush(QColor(ACCENT_TEAL)))
             p.drawEllipse(px - 3, py - 3, 6, 6)
 
-        # Fechas en el eje X (cada ~5 puntos o primero/último)
-        p.setFont(QFont("Segoe UI", 7))
-        p.setPen(QColor(TEXT_MUTED))
-        indices = [0, n - 1] if n <= 4 else list(range(0, n, max(1, n // 4))) + [n - 1]
-        for i in set(indices):
-            px, _ = points[i]
-            fecha_str = self._data[i]["fecha"][5:]  # MM-DD
-            p.drawText(px - 18, h - pad_b + 4, 36, 14, Qt.AlignCenter, fecha_str)
-
-        # LP actual en esquina superior derecha
+        # ── LP actual (esquina sup derecha) ──
         last = self._data[-1]
-        label = f"{last['tier'].title()} {last['division']} {last['lp']} LP"
-        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        tier_name = last.get("tier", "").title()
+        div = last.get("division", "").strip()
+        label = f"{tier_name} {div} {last['lp']} LP"
+        p.setFont(QFont("Segoe UI", 9, QFont.Bold))
         p.setPen(QColor(ACCENT_TEAL))
-        p.drawText(w - 140, pad_t, 136, 16, Qt.AlignRight | Qt.AlignVCenter, label)
+        p.drawText(w - 160, pad_t, 152, 18, Qt.AlignRight | Qt.AlignVCenter, label)
+
+        # ── Fechas (eje X) ──
+        p.setFont(QFont("Segoe UI", 7))
+        p.setPen(QColor("#6b7a8d"))
+        step = max(1, n // 5)
+        shown = set()
+        for i in range(n):
+            if i == 0 or i == n - 1 or i % step == 0:
+                px = pts[i][0]
+                fecha = self._data[i]["fecha"][5:]  # MM-DD
+                key = fecha[:5]
+                if key not in shown:
+                    shown.add(key)
+                    p.drawText(px - 20, h - pad_b + 4, 40, 14, Qt.AlignCenter, fecha)
 
         p.end()

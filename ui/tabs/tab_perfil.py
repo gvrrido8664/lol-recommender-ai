@@ -639,6 +639,17 @@ class PerfilTabMixin:
             puuid = perfil.get("puuid")
             self._season_puuid = puuid
 
+            # ── Mini-fetch LCU: solo 100 partidas para reconstruir LP (eloChange) ──
+            historial_lp = []
+            if puuid:
+                try:
+                    historial_lp = self.lcu.obtener_historial_extendido(
+                        puuid=puuid, inicio=0, cantidad=100
+                    )
+                except Exception:
+                    pass
+            data["historial_lp"] = historial_lp or []
+
             # ── Historial y season desde Riot API (no LCU) ──
             data["historial"] = []
             data["all_games_season"] = []
@@ -786,6 +797,10 @@ class PerfilTabMixin:
                     registrar_lp(ranked_flex["tier"], ranked_flex.get("division", ""),
                                  ranked_flex.get("lp", 0), ranked_flex.get("wins", 0),
                                  ranked_flex.get("losses", 0), "RANKED_FLEX_SR")
+                # Reconstruir LP diario desde eloChange del LCU
+                historial_lp = data.get("historial_lp", [])
+                if historial_lp:
+                    self._reconstruir_lp_desde_partidas(historial_lp)
                 self._actualizar_grafica_lp()
             except Exception as _e_lp:
                 print(f"[LP] Error registrando: {_e_lp}")
@@ -1116,6 +1131,113 @@ class PerfilTabMixin:
                 self.lbl_emocional_stats.setText("\n".join(lineas) if lineas else "Etiqueta tus partidas para ver estadísticas")
         except Exception as e:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
+
+    def _reconstruir_lp_desde_partidas(self, games):
+        """Reconstruye LP diario hacia atras usando eloChange de partidas del LCU.
+        Toma el tier/LP actual como ancla y calcula el LP de cada dia restando
+        el neto diario de eloChange. Guarda el resultado en lp_history."""
+        from datetime import date, datetime as dt
+        from collections import defaultdict
+
+        # Sumar eloChange por dia (solo partidas con queueId 420/440)
+        daily_net = defaultdict(int)
+        for g in games:
+            q = g.get("queueId", 0) or 0
+            if q not in (420, 440):
+                continue
+            elo = g.get("eloChange") or g.get("playerScoreChange")
+            if elo is None:
+                continue
+            ts = g.get("gameCreation", 0)
+            if not ts:
+                continue
+            try:
+                fecha = str(date.fromtimestamp(ts / 1000 if ts > 1e12 else ts))
+            except Exception:
+                continue
+            daily_net[fecha] += int(elo)
+
+        if not daily_net:
+            return
+
+        hoy = str(date.today())
+        if hoy in daily_net:
+            del daily_net[hoy]  # ya se registro desde obtener_ligas
+
+        sorted_dates = sorted(daily_net.keys(), reverse=True)  # mas reciente primero
+
+        # Obtener tier/LP actual de cada cola como ancla
+        from src.db_manager import registrar_lp, obtener_conexion
+        conn = obtener_conexion()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT queue_type, fecha, tier, division, lp, wins, losses FROM lp_history WHERE fecha=%s", (hoy,))
+        anclas = {}
+        for r in cur.fetchall():
+            anclas[r["queue_type"]] = {
+                "tier": r["tier"], "division": r["division"], "lp": r["lp"],
+                "wins": r["wins"], "losses": r["losses"],
+            }
+        conn.close()
+
+        if not anclas:
+            return
+
+        # Determinar cola de cada partida (SoloQ=420, Flex=440)
+        # Asumimos que todas las partidas son de la cola mas jugada del dia
+        for fecha in sorted_dates:
+            net = daily_net[fecha]
+            for qt, ancla in anclas.items():
+                lp_final = ancla["lp"]
+                tier_base = {"IRON": 0, "BRONZE": 400, "SILVER": 800, "GOLD": 1200,
+                             "PLATINUM": 1600, "EMERALD": 2000, "DIAMOND": 2400,
+                             "MASTER": 2800, "GRANDMASTER": 2800, "CHALLENGER": 2800}
+                div_offset = {"I": 300, "II": 200, "III": 100, "IV": 0, "": 0}
+
+                t = tier_base.get(ancla["tier"], 0)
+                d = div_offset.get(ancla["division"], 0)
+                total = t + d + lp_final
+                prev_total = total - net
+
+                # Determinar tier/division/LP del dia anterior
+                prev_tier = ancla["tier"]
+                prev_div = ancla["division"]
+                prev_lp = prev_total - tier_base.get(prev_tier, 0) - div_offset.get(prev_div, 0)
+
+                # Navegar hacia atras entre tiers si es necesario
+                tiers_list = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"]
+                divisions = ["IV", "III", "II", "I"]
+                while prev_lp < 0:
+                    idx = tiers_list.index(prev_tier) if prev_tier in tiers_list else 0
+                    if idx > 0:
+                        prev_tier = tiers_list[idx - 1]
+                        prev_lp += 400
+                    else:
+                        prev_lp = 0
+                        break
+                while prev_lp > 100:
+                    idx = tiers_list.index(prev_tier) if prev_tier in tiers_list else -1
+                    if idx < len(tiers_list) - 1 and prev_tier != "CHALLENGER":
+                        prev_tier = tiers_list[idx + 1]
+                        prev_lp -= 100
+                    else:
+                        prev_lp = 100
+                        break
+                # Determinar division
+                if prev_lp >= 75:
+                    prev_div = "I"
+                elif prev_lp >= 50:
+                    prev_div = "II"
+                elif prev_lp >= 25:
+                    prev_div = "III"
+                else:
+                    prev_div = "IV"
+
+                registrar_lp(prev_tier, prev_div, int(prev_lp), queue_type=qt)
+                ancla["tier"] = prev_tier
+                ancla["division"] = prev_div
+                ancla["lp"] = int(prev_lp)
+
+        print(f"[LP] Reconstruidos {len(sorted_dates)} dias desde {len(games)} partidas LCU")
 
     def _actualizar_grafica_lp(self):
         """Refresca la gráfica de LP con los datos de la cola seleccionada."""

@@ -39,6 +39,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
     meta_builds_listo = Signal(list, dict, str, str)  # (resultados, builds_data, rol_api, enemigo)
     postgame_ready = Signal(dict)
     season_partial = Signal(list)  # streaming: batch de partidas de Riot descargadas
+    season_progress = Signal(int, int)  # progreso de descarga: (procesadas, total)
     db_listo = Signal(bool)  # inicializacion de la BD terminada en hilo de fondo (ok/fallo)
 
     def __init__(self):
@@ -88,6 +89,7 @@ class LoLRecommenderApp(PerfilTabMixin, CoachingTabMixin, VivoTabMixin, PartidaT
         self.meta_builds_listo.connect(self._on_meta_builds_listo)
         self.postgame_ready.connect(self._on_postgame_ready)
         self.season_partial.connect(self._on_season_partial)
+        self.season_progress.connect(self._on_season_progress)
         
         self.last_aliados = []
         self.last_enemigos = []

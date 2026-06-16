@@ -646,8 +646,9 @@ class PerfilTabMixin:
                     historial_lp = self.lcu.obtener_historial_extendido(
                         puuid=puuid, inicio=0, cantidad=100
                     )
-                except Exception:
-                    pass
+                    print(f"[LP] Mini-fetch LCU: {len(historial_lp or [])} partidas")
+                except Exception as e:
+                    print(f"[LP] Mini-fetch LCU error: {e}")
             data["historial_lp"] = historial_lp or []
 
             # ── Historial y season desde Riot API (no LCU) ──

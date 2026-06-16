@@ -69,6 +69,13 @@ if ($Installer) {
             if ($setup) {
                 $setupSize = [math]::Round($setup.Length / 1MB, 1)
                 Write-Host "OK: $($setup.Name) ($setupSize MB)" -ForegroundColor Green
+                # Firmar instalador tambien si -Sign esta activo
+                if ($Sign -and $cert) {
+                    Write-Host "Firmando instalador..." -ForegroundColor Cyan
+                    Set-AuthenticodeSignature -FilePath $setup.FullName -Certificate $cert `
+                        -TimestampServer "http://timestamp.digicert.com" | Out-Null
+                    Write-Host "Instalador firmado." -ForegroundColor Green
+                }
             }
         } else {
             Write-Host "AVISO: Inno Setup fallo. Revisa installer.iss." -ForegroundColor Yellow

@@ -30,8 +30,10 @@ def _obtener_db_url() -> str | None:
 
 _PG_POOL = None
 _PG_POOL_LOCK = threading.Lock()
-_PG_MINCONN = 2
-_PG_MAXCONN = 10
+# Supabase free (Session pooler) limita a ~15 conexiones compartidas. Mantener el
+# pool chico para no agotarlo (deja margen para otra instancia / migracion / tests).
+_PG_MINCONN = 1
+_PG_MAXCONN = 6
 
 
 def _init_pool():

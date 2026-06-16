@@ -926,19 +926,10 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    from setup import verificar_datos_iniciales
-    if not verificar_datos_iniciales():
-        from src.setup_wizard import SetupWizard
-        wizard = SetupWizard()
-        wizard.exec()
-        if not wizard.success:
-            sys.exit(1)
-        from src.db_manager import inicializar_db, ConexionDBError
-        try:
-            inicializar_db()
-        except ConexionDBError:
-            pass
-
+    # El SetupWizard era para la antigua BD LOCAL (descargaba datos + creaba la
+    # base). Ahora la BD es externa (Supabase) y los datos van empaquetados, asi
+    # que arrancamos directo. La inicializacion de la BD la hace
+    # LoLRecommenderApp.__init__ en un hilo de fondo (_inicializar_db_background).
     window = LoLRecommenderApp()
     window.show()
     sys.exit(app.exec())

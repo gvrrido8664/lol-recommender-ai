@@ -8,7 +8,7 @@ tier list de bans. Backend **PostgreSQL** en Render; APIs Riot y LCU.
 
 ```bash
 python app.py                  # ejecutar la app
-python tests.py                # 13 tests (baseline)
+python tests.py                # 11 tests (baseline)
 powershell ./build_exe.ps1     # build PyInstaller (onedir -> build_onedir/NEXUS/)
 python -m pytest tests/ -q     # suite pytest (si esta instalada)
 ```
@@ -62,7 +62,7 @@ Tablas principales: `matches`, `participantes`, `estado_emocional`, `lp_history`
 
 ## Tests
 
-- **Actual**: `python tests.py` (13 tests script). Cubre LiveClient, coaching, tags, logros.
+- **Actual**: `python tests.py` (11 tests script). Cubre LiveClient, coaching, tags, logros.
 - **Pytest**: `tests/conftest.py` tiene fixture `mock_db` (SQLite en memoria).
   Suite pytest en `tests/` para composicion y coaching (plan 003).
 - **GOTCHA**: `mock_db` usa placeholder `?` de SQLite pero `db_manager.py` usa `%s`

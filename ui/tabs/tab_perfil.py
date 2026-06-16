@@ -1150,6 +1150,8 @@ class PerfilTabMixin:
                 if not res or res.status_code != 200:
                     continue
                 detail = res.json()
+                if not daily_net:  # debug: imprimir keys del primer juego
+                    print(f"[LP] Keys endpoint individual: {sorted(detail.keys())}")
                 elo = detail.get("eloChange") or detail.get("playerScoreChange")
                 if elo is None:
                     continue

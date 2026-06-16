@@ -6,12 +6,27 @@ Todas las funciones tienen los mismos nombres y firmas que sus equivalentes
 en src/db_manager.py y src/riot_public_api.py para facilitar la migracion.
 """
 
+import json
 import os
 
 import requests
 
-URL_BASE = os.environ.get("NEXUS_BACKEND_URL", "http://localhost:8000")
-TOKEN = os.environ.get("NEXUS_APP_TOKEN", "")
+
+def _cargar_config_json():
+    try:
+        from src.paths import BASE_DIR
+        ruta = os.path.join(BASE_DIR, "config.json")
+        if os.path.exists(ruta):
+            with open(ruta, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+_cfg = _cargar_config_json()
+URL_BASE = os.environ.get("NEXUS_BACKEND_URL", _cfg.get("NEXUS_BACKEND_URL", "http://localhost:8000"))
+TOKEN = os.environ.get("NEXUS_APP_TOKEN", _cfg.get("NEXUS_APP_TOKEN", ""))
 
 
 def _headers():

@@ -5,14 +5,25 @@
 param(
     [switch]$Sign
 )
-$ErrorActionPreference = "Stop"
+# OJO: NO usar ErrorActionPreference='Stop'. PyInstaller escribe sus logs INFO en
+# stderr y, con 'Stop', PowerShell los trata como error terminante y aborta el
+# script. Controlamos el exito con $LASTEXITCODE.
+$ErrorActionPreference = "Continue"
 $ExePath = "build_onedir\NEXUS\NEXUS.exe"
 
 Write-Host "== Limpiando builds anteriores ==" -ForegroundColor Cyan
 Remove-Item -Recurse -Force "build_onedir", "build_temp" -ErrorAction SilentlyContinue
 
+# Generar icono_app.ico desde una imagen fuente (Icono_app.jpg/icono_app.png/...) si falta
 if (-not (Test-Path "icono_app.ico")) {
-    Write-Host "AVISO: icono_app.ico no encontrado -> se usa icono por defecto de PyInstaller." -ForegroundColor Yellow
+    $src = @("Icono_app.jpg", "icono_app.jpg", "icono_app.png", "Icono_app.png") |
+           Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($src) {
+        Write-Host "Generando icono_app.ico desde $src ..." -ForegroundColor Cyan
+        python -c "from PIL import Image; im=Image.open(r'$src').convert('RGBA'); w,h=im.size; s=min(w,h); im=im.crop(((w-s)//2,(h-s)//2,(w-s)//2+s,(h-s)//2+s)); im.save('icono_app.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+    } else {
+        Write-Host "AVISO: sin icono fuente -> se usa el icono por defecto de PyInstaller." -ForegroundColor Yellow
+    }
 }
 
 Write-Host "== Ejecutando PyInstaller (build_nexus.spec) ==" -ForegroundColor Cyan

@@ -21,7 +21,10 @@ DATA_DIR = _obtener_dir_datos()
 
 def cargar_config():
     try:
-        config_paths = ["config.json", os.path.join("..", "config.json")]
+        # En .exe el config.json va en %APPDATA%/LoLRecommender (carpeta escribible);
+        # en dev, en la raiz del proyecto. Tambien se acepta junto al ejecutable (CWD).
+        appdata_cfg = os.path.join(os.path.dirname(DATA_DIR), "config.json")
+        config_paths = ["config.json", os.path.join("..", "config.json"), appdata_cfg]
         for p in config_paths:
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:

@@ -646,15 +646,6 @@ class PerfilTabMixin:
                     historial_lp = self.lcu.obtener_historial_extendido(
                         puuid=puuid, inicio=0, cantidad=100
                     )
-                    print(f"[LP] Mini-fetch LCU: {len(historial_lp or [])} partidas")
-                    if historial_lp:
-                        g0 = historial_lp[0]
-                        print(f"[LP] Keys 1ra partida: {sorted(g0.keys())}")
-                        if "participants" in g0 and g0["participants"]:
-                            p0 = g0["participants"][0]
-                            print(f"[LP] Keys participants[0]: {sorted(p0.keys())}")
-                            if "stats" in p0:
-                                print(f"[LP] Keys stats: {sorted(p0['stats'].keys())}")
                 except Exception as e:
                     print(f"[LP] Mini-fetch LCU error: {e}")
             data["historial_lp"] = historial_lp or []
@@ -1142,33 +1133,41 @@ class PerfilTabMixin:
             print(f"[_actualizar_perfil_jugador] Error: {e}")
 
     def _reconstruir_lp_desde_partidas(self, games):
-        """Reconstruye LP diario hacia atras usando eloChange de partidas del LCU."""
+        """Reconstruye LP diario hacia atras usando eloChange de partidas del LCU.
+        Consulta el endpoint individual /lol-match-history/v1/games/{id}
+        porque el batch /matches no incluye eloChange."""
         from datetime import date
         from collections import defaultdict
 
-        # Sumar eloChange por dia
+        # Sumar eloChange por dia — endpoint individual por game (batch no tiene el field)
         daily_net = defaultdict(int)
-        for g in games:
-            # eloChange puede venir al nivel del juego o dentro de participants[0].stats
-            elo = g.get("eloChange") or g.get("playerScoreChange")
-            if elo is None and g.get("participants"):
-                stats = g["participants"][0].get("stats", {})
-                elo = stats.get("eloChange")
-            if elo is None:
-                continue
-
-            ts = g.get("gameCreation") or g.get("gameCreationDate")
-            if not ts:
+        for g in games[:30]:
+            game_id = g.get("gameId")
+            if not game_id:
                 continue
             try:
-                if isinstance(ts, (int, float)):
-                    fecha = str(date.fromtimestamp(ts / 1000 if ts > 1e12 else ts))
-                else:
-                    fecha = str(ts)[:10]
+                res = self.lcu.request('GET', f'/lol-match-history/v1/games/{game_id}', timeout=3)
+                if not res or res.status_code != 200:
+                    continue
+                detail = res.json()
+                elo = detail.get("eloChange") or detail.get("playerScoreChange")
+                if elo is None:
+                    continue
+
+                ts = detail.get("gameCreation") or detail.get("gameCreationDate") or g.get("gameCreation") or g.get("gameCreationDate")
+                if not ts:
+                    continue
+                try:
+                    if isinstance(ts, (int, float)):
+                        fecha = str(date.fromtimestamp(ts / 1000 if ts > 1e12 else ts))
+                    else:
+                        fecha = str(ts)[:10]
+                except Exception:
+                    continue
+
+                daily_net[fecha] += int(elo)
             except Exception:
                 continue
-
-            daily_net[fecha] += int(elo)
 
         print(f"[LP] Partidas con eloChange: {len(daily_net)} dias encontrados")
         if not daily_net:

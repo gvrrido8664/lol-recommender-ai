@@ -23,7 +23,7 @@ from cryptography.fernet import Fernet
 
 from src.secretos import NOMBRE_BLOB, _derivar_clave
 
-CLAVES_SECRETAS = ("API_KEY", "DATABASE_URL")
+CLAVES_SECRETAS = ("API_KEY", "DATABASE_URL", "NEXUS_APP_TOKEN")
 
 
 def main():

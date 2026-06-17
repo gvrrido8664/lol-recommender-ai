@@ -677,17 +677,6 @@ DEFAULT_SETTINGS = {
     "auto_switch_radar": True,
     "notificaciones_escritorio": True,
     "auto_aceptar": False,
-    # Umbrales de coaching
-    "min_partidas_coach": 3,
-    "umbral_cs_bajo": 4.5,
-    "umbral_cs_medio": 6.5,
-    "umbral_muertes_alto": 7,
-    "umbral_muertes_medio": 5,
-    "umbral_vision_bajo": 15,
-    "umbral_vision_medio": 28,
-    "umbral_wr_ventaja": 52,
-    "umbral_wr_desventaja": 48,
-    "umbral_pool_amplia": 5,
 }
 
 

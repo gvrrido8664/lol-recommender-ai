@@ -383,7 +383,7 @@ class VivoTabMixin:
         """Se ejecuta en hilo secundario. Obtiene draft de LCU y precomputa datos BD."""
         # Solo funciona en SoloQ (420) y Flex (440)
         qid = self.lcu.obtener_queue_id()
-        if qid is not None and qid not in (420, 440):
+        if qid is not None and qid not in (420, 440, 400, 430):
             self.radar_listo.emit({"draft": None, "db_data": None})
             return
         try:

@@ -139,7 +139,7 @@ class LCUConnector:
         return None
 
     def obtener_queue_id(self):
-        """Devuelve el queueId de la sesión actual (420=SoloQ, 440=Flex) o None."""
+        """Devuelve el queueId de la sesión actual (420=SoloQ, 440=Flex, 400/430=Normales) o None."""
         res = self.request("GET", "/lol-gameflow/v1/session")
         if res and res.status_code == 200:
             return res.json().get("queueId")

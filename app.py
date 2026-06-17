@@ -283,13 +283,9 @@ class LoLRecommenderApp(
         QApplication.quit()
 
     def closeEvent(self, event):
-        """Minimizar al tray en vez de cerrar."""
-        if self.tray_icon.isVisible():
-            self.hide()
-            event.ignore()
-        else:
-            self._salir_app()
-            event.accept()
+        """Cierra la app por completo."""
+        self._salir_app()
+        event.accept()
 
     def aplicar_estilos(self):
         self.setStyleSheet(hoja_estilos_global())
@@ -979,6 +975,24 @@ class LoLRecommenderApp(
 
 if __name__ == "__main__":
     import signal
+
+    # ── Instancia unica ──────────────────────────────────────────────────
+    from PySide6.QtCore import QSharedMemory
+
+    _mem = QSharedMemory("NEXUS_LOLRECOMMENDER_V2")
+    if not _mem.create(1):
+        # Ya hay otra instancia — traerla al frente y salir
+        try:
+            import win32con
+            import win32gui
+
+            hwnd = win32gui.FindWindow(None, "NEXUS // LoL Performance Engine")
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        sys.exit(0)
 
     app = QApplication(sys.argv)
     app.setApplicationName("NEXUS")

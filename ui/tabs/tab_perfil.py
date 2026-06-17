@@ -367,7 +367,7 @@ class PerfilTabMixin:
         from datetime import timezone as tz
 
         ahora = datetime.now(tz.utc)
-        start_time = int(datetime(ahora.year, 1, 1, tzinfo=tz.utc).timestamp())
+        start_time = int(datetime(ahora.year, 1, 1, tzinfo=tz.utc).timestamp()) * 1000
         all_ids = []
         offset = 0
         _, routing = self._riot_get_config()
@@ -895,7 +895,10 @@ class PerfilTabMixin:
     def _recalc_stats_cards(self):
         """Recalcula las 4 cards (WR, KDA, +Jugado, Mejor WR) segun filtro actual."""
         if not hasattr(self, "all_games_season") or not self.all_games_season:
-            return
+            if hasattr(self, "historial_games") and self.historial_games:
+                self.all_games_season = list(self.historial_games)
+            else:
+                return
         modo = getattr(self, "_season_modo_filtro", None)
         season_games = [g for g in self.all_games_season if self._es_ranked(g)]
         if modo:
@@ -1210,16 +1213,12 @@ class PerfilTabMixin:
             textos_color.get(estado, "#064e3b")
             estado_txt = textos.get(estado, "ÓPTIMO")
 
-            fat_pct_map = {"fresh": "20%", "neutral": "50%", "tired": "75%", "tilted": "95%"}
-            fat_pct = fat_pct_map.get(estado, "50%")
-
             self.lbl_fatiga_icono.setText(emoji)
             self.lbl_fatiga_icono.setStyleSheet("font-size: 28px; padding: 0px;")
             self.lbl_fatiga_estado.setText(estado_txt)
             self.lbl_fatiga_estado.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
             self.lbl_fatiga_barra.setStyleSheet(f"background-color: {bar_color}; border: 1px solid {bar_color}; border-radius: 4px;")
-            self.lbl_fatiga_pct.setText(fat_pct)
-            self.lbl_fatiga_pct.setStyleSheet(f"color: {color}; font-size: 9px; font-weight: bold;")
+            self.lbl_fatiga_pct.hide()
 
             if recomendacion:
                 self.lbl_fatiga_consejo.setText(f"💡 {recomendacion}")

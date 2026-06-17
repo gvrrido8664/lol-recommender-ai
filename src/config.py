@@ -43,14 +43,20 @@ def cargar_config():
         config = {}
 
     # Secretos embebidos cifrados (API_KEY, DATABASE_URL): en distribucion no van en
-    # texto plano en config.json, sino en secretos.bin dentro del bundle. Se descifran
-    # solo en memoria y se mergean SIN sobrescribir lo que el usuario haya puesto en su
-    # config.json (p.ej. una API key propia de dev). Ver src/secretos.py.
+    # texto plano en config.json, sino en secretos.bin dentro del bundle (regenerado con
+    # las credenciales ACTUALES en cada build). Se descifran solo en memoria.
+    #   - En dev (no frozen): rellenan lo que falte (no hay secretos.bin, suele ser no-op);
+    #     gana el config.json del usuario para que pueda usar una API key propia.
+    #   - En distribucion (frozen): GANAN sobre el config.json en disco, porque un
+    #     config.json viejo en %APPDATA% (de un build anterior a una rotacion) tapaba la
+    #     credencial correcta. El override por env var DATABASE_URL se respeta en
+    #     db_manager._obtener_db_url (prioriza el entorno). Ver src/secretos.py.
     try:
         from src.secretos import cargar_secretos_embebidos
 
+        frozen = getattr(sys, "frozen", False)
         for clave, valor in cargar_secretos_embebidos().items():
-            if valor and not config.get(clave):
+            if valor and (frozen or not config.get(clave)):
                 config[clave] = valor
     except Exception:
         pass

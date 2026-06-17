@@ -7,6 +7,7 @@ en src/db_manager.py y src/riot_public_api.py para facilitar la migracion.
 """
 
 import os
+import time
 
 import requests
 
@@ -69,15 +70,29 @@ def _headers_edge():
     }
 
 def _get_edge(path, params=None):
-    try:
-        r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers_edge(), timeout=15)
-        if r.status_code != 200:
-            _log_http_error("EDGE GET", path, r)
+    for intento in range(3):
+        try:
+            r = requests.get(f"{EDGE_URL}{path}", params=params, headers=_headers_edge(), timeout=15)
+            if r.status_code == 429:
+                retry_after = int(r.headers.get("Retry-After", 5))
+                log.warning("EDGE GET %s -> 429, esperando %ds (intento %d/3)", path, retry_after, intento + 1)
+                time.sleep(retry_after)
+                continue
+            if r.status_code != 200:
+                _log_http_error("EDGE GET", path, r)
+                return None
+            return r.json()
+        except requests.exceptions.Timeout:
+            log.error("EDGE GET %s -> TIMEOUT (15s)", path)
             return None
-        return r.json()
-    except Exception as e:
-        log.warning("EDGE GET %s -> error de red: %s", path, e)
-        return None
+        except requests.exceptions.ConnectionError as e:
+            log.error("EDGE GET %s -> CONNECTION ERROR: %s", path, e)
+            return None
+        except Exception as e:
+            log.error("EDGE GET %s -> error inesperado: %s: %s", path, type(e).__name__, e)
+            return None
+    log.error("EDGE GET %s -> agotados 3 intentos por rate limit", path)
+    return None
 
 
 # ─── Drafts ──────────────────────────────────────────────────────────────────

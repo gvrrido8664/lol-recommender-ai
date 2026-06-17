@@ -268,6 +268,24 @@ class CoachingTabMixin:
         html += "</div>"
         return html
 
+    @staticmethod
+    def _detectar_modo_principal(games):
+        """Retorna (queueId, tipo_str) del modo mas jugado: SoloQ(420), Flex(440) o Normales(400/430)."""
+        conteo = {420: 0, 440: 0, 400: 0, 430: 0}
+        for g in games:
+            qid = g.get("queueId", 0) or 0
+            if qid in conteo:
+                conteo[qid] += 1
+        normales = conteo[400] + conteo[430]
+        if normales >= conteo[420] and normales >= conteo[440]:
+            return None, "NORMALES"
+        return (420, "RANKED_SOLO_5x5") if conteo[420] >= conteo[440] else (440, "RANKED_FLEX_SR")
+
+    def _filtrar_por_modo(self, games, qid):
+        if qid is None:
+            return [g for g in games if (g.get("queueId", 0) or 0) in (400, 430)]
+        return [g for g in games if (g.get("queueId", 0) or 0) == qid]
+
     def _actualizar_coaching(self):
         if not hasattr(self, "historial_games") or not self.historial_games:
             self._mostrar_placeholder()
@@ -281,6 +299,18 @@ class CoachingTabMixin:
                         self._coaching_puuid = perfil.get("puuid", "default")
             except Exception:
                 self._coaching_puuid = "default"
+
+        # Detectar modo mas jugado
+        qid, queue_type = self._detectar_modo_principal(self.historial_games)
+        if qid is not None:
+            tipo_str = {420: "SoloQ", 440: "Flex"}.get(qid, "SoloQ")
+        else:
+            tipo_str = "Normales"
+        print(f"[Coaching] Modo detectado: {tipo_str}")
+        games_filtrados = self._filtrar_por_modo(self.historial_games, qid)
+        if not games_filtrados:
+            self._mostrar_placeholder()
+            return
 
         cached = self._load_coaching_cache()
         if cached:
@@ -300,18 +330,17 @@ class CoachingTabMixin:
                     nombre = "Invocador"
 
             datos_fatiga = None
-            if hasattr(self, "historial_games") and self.historial_games:
-                try:
-                    datos_fatiga = analizar_fatiga(self.historial_games)
-                except Exception:
-                    pass
+            try:
+                datos_fatiga = analizar_fatiga(games_filtrados)
+            except Exception:
+                pass
 
-            datos_extra = self._generar_datos_perfil_jugador()
+            datos_extra = self._generar_datos_perfil_jugador(games_filtrados)
             maestrias = getattr(self, "maestrias", None)
-            lp_history = self._obtener_lp_history()
+            lp_history = self._obtener_lp_history(queue_type)
 
             reporte = generar_reporte_coach(
-                self.historial_games, nombre, datos_extra, datos_fatiga, maestrias=maestrias, lp_history=lp_history
+                games_filtrados, nombre, datos_extra, datos_fatiga, maestrias=maestrias, lp_history=lp_history
             )
 
             if reporte and reporte.get("secciones"):
@@ -323,17 +352,20 @@ class CoachingTabMixin:
 
             traceback.print_exc()
 
-    def _obtener_lp_history(self):
+    def _obtener_lp_history(self, queue_type=None):
+        if queue_type is None:
+            return None
         try:
-            return obtener_historial_lp("RANKED_SOLO_5x5", dias=30)
+            return obtener_historial_lp(queue_type, dias=30)
         except Exception:
             return None
 
-    def _generar_datos_perfil_jugador(self):
-        if not hasattr(self, "historial_games") or not self.historial_games:
+    def _generar_datos_perfil_jugador(self, games=None):
+        if games is None:
+            games = getattr(self, "historial_games", None)
+        if not games:
             return None
         try:
-            games = self.historial_games
             datos = {}
             datos["personalidad"] = analizar_personalidad(games)
             datos["insights"] = detectar_habitos(games)

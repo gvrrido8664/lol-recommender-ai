@@ -122,7 +122,7 @@ class ReglaFaseLineas(ReglaCoach):
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 4px 0;'>Con <b>{avg_cs:.1f} CS/min</b>, pierdes ~{(7.0 - avg_cs) * 10:.0f} oro por minuto "
                 f"respecto al estándar de 7 CS/min. Una diferencia de 1500+ oro a los 15 min.</p>"
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 0 0;'><b>Ejercicio:</b> 10 min diarios en Practice Tool, solo last-hitting, sin items. "
-                f"Luego 5 min farmeando bajo torre. Repetilo 5 días. El farm es la habilidad más rentable del juego.</p>"
+                f"Luego 5 min farmeando bajo torre. Repítelo 5 días. El farm es la habilidad más rentable del juego.</p>"
             )
             color = RED_DANGER
             prio = 0
@@ -130,7 +130,7 @@ class ReglaFaseLineas(ReglaCoach):
             verdict = "🟡 Tu farmeo es decente pero tiene margen de mejora."
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 4px 0;'><b>{avg_cs:.1f} CS/min</b> está bien. "
-                f"Para dar el salto, trabajá el farm bajo presión (trades + last-hits simultáneos).</p>"
+                f"Para dar el salto, trabaja el farm bajo presión (trades + last-hits simultáneos).</p>"
             )
             color = YELLOW_WARNING
             prio = 2
@@ -138,7 +138,7 @@ class ReglaFaseLineas(ReglaCoach):
             verdict = "🟢 Tu farmeo es excelente. Buen trabajo."
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 4px 0;'><b>{avg_cs:.1f} CS/min</b> es nivel alto. "
-                f"Ahora el foco pasa a negarle farm al rival mientras mantenés el tuyo (trading + wave management).</p>"
+                f"Ahora el foco pasa a negarle farm al rival mientras mantienes el tuyo (trading + wave management).</p>"
             )
             color = GREEN_SUCCESS
             prio = 2
@@ -151,7 +151,7 @@ class ReglaFaseLineas(ReglaCoach):
 
         if m.get("primer_sangre_pct", 0) >= 30:
             html += (
-                f"<p style='font-size:12px;color:{GREEN_SUCCESS};margin:12px 0 0 0;'>⚔️ Conseguís First Blood en el <b>{m['primer_sangre_pct']:.0f}%</b> de tus partidas. "
+                f"<p style='font-size:12px;color:{GREEN_SUCCESS};margin:12px 0 0 0;'>⚔️ Consigues First Blood en el <b>{m['primer_sangre_pct']:.0f}%</b> de tus partidas. "
                 f"Excelente agresividad temprana. Usala con cabeza: si estás en matchup favorable, forzá el nivel 2 primero.</p>"
             )
 
@@ -166,14 +166,14 @@ class ReglaSupervivencia(ReglaCoach):
         avg_d = m["avg_d"]
         kda = m["kda"]
         if avg_d > 7:
-            verdict = "🔴 Morís demasiado. Cada muerte te saca del mapa ~40s y regala 300+ oro."
+            verdict = "🔴 Mueres demasiado. Cada muerte te saca del mapa ~40s y regala 300+ oro."
             gold_gifted = int(avg_d * 300)
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 4px 0;'><b>{avg_d:.1f} muertes</b> por partida "
                 f"equivalen a regalar ~{gold_gifted} de oro al equipo rival.</p>"
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 0 0;'><b>Regla de 2:</b> antes de cada engage, "
                 f"preguntate: ¿veo a 5 enemigos en el mapa? ¿Mi equipo me sigue? Si alguna es NO, no entres. "
-                f"Revisá tus deaths en el replay: ¿cuántas eran evitables?</p>"
+                f"Revisa tus deaths en el replay: ¿cuántas eran evitables?</p>"
             )
             color = RED_DANGER
             prio = 0
@@ -191,7 +191,7 @@ class ReglaSupervivencia(ReglaCoach):
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_d:.1f} muertes/partida</b> "
                 f"con <b>{kda:.1f} KDA</b>. Morís poco y generás impacto. "
-                f"Para el siguiente nivel: revisá si tus muertes ocurren en momentos clave (objetivos, late game).</p>"
+                f"Para el siguiente nivel: revisa si tus muertes ocurren en momentos clave (objetivos, late game).</p>"
             )
             color = GREEN_SUCCESS
             prio = 3
@@ -216,7 +216,7 @@ class ReglaVision(ReglaCoach):
             verdict = "🔴 Tu visión es muy baja. Estás jugando a ciegas."
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_vision:.0f} de visión/partida</b>. "
-                f"Comprá un Control Ward en CADA base. Ponelo en un arbusto de río o en la entrada de tu jungla. "
+                f"Compra un Control Ward en CADA base. Ponlo en un arbusto de río o en la entrada de tu jungla. "
                 f"Una ward bien puesta vale más que 300 de oro.</p>"
             )
             color = RED_DANGER
@@ -226,16 +226,16 @@ class ReglaVision(ReglaCoach):
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_vision:.0f} de visión/partida</b>. "
                 f"Buen hábito. Wardea con intención: ¿qué objetivo viene? Wardea 45s antes. "
-                f"Si sos support, mirá si tu equipo tiene visión en el próximo objetivo.</p>"
+                f"Si eres support, mira si tu equipo tiene visión en el próximo objetivo.</p>"
             )
             color = YELLOW_WARNING
             prio = 3
         else:
-            verdict = "🟢 Excelente control de visión. Sos los ojos de tu equipo."
+            verdict = "🟢 Excelente control de visión. Eres los ojos de tu equipo."
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_vision:.0f} de visión/partida</b>. "
-                f"Nivel alto. Ahora el desafío es negar visión rival: comprá Oracle Lens si no lo hacés, "
-                f"y despejá visión enemiga antes de objetivos.</p>"
+                f"Nivel alto. Ahora el desafío es negar visión rival: compra Oracle Lens si no lo haces, "
+                f"y despeja visión enemiga antes de objetivos.</p>"
             )
             color = GREEN_SUCCESS
             prio = 3
@@ -277,7 +277,7 @@ class ReglaFatiga(ReglaCoach):
                 f"El rendimiento cognitivo cae significativamente después de 3-4 partidas seguidas. "
                 f"La ciencia del juego muestra que jugar en bloques de 3 con pausas de 10 min duplica la calidad.</p>"
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 0 0;'><b>Plan:</b> máximo 3 partidas, "
-                f"luego pausa de 10 min (levantate, tomá agua, estirá). Si perdés 2 seguidas, cortá la sesión.</p>"
+                f"luego pausa de 10 min (levántate, toma agua, estira). Si pierdes 2 seguidas, corta la sesión.</p>"
             )
         elif wr_sesion >= 60:
             titulo = "GESTIÓN DE SESIONES — Buen Momento"
@@ -333,7 +333,7 @@ class ReglaRacha(ReglaCoach):
                 f"<p style='font-size:14px;color:{TEXT_WHITE};margin:0 0 8px 0;'>Llevás <b>{racha} derrotas seguidas</b>.</p>"
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 4px 0;'>Las rachas de pérdidas son normales: "
                 f"incluso jugadores con 55% WR tienen rachas de 5+ derrotas una de cada 30 sesiones.</p>"
-                f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 0 0;'><b>Estrategia:</b> cortá ya. "
+                f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 0 0;'><b>Estrategia:</b> corta ya. "
                 f"No intentes «recuperar» el ELO hoy. Mañana con la mente fresca, tus decisiones serán mejores. "
                 f"Una partida en tilt = 2 partidas perdidas (la actual y la siguiente).</p>"
             )
@@ -367,9 +367,9 @@ class ReglaBloques(ReglaCoach):
             f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 4px 0;'>El método más efectivo para escalar: "
             f"<b>3 partidas → revisión rápida → pausa</b>.</p>"
             f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:4px 0 4px 0;'>"
-            f"<b>1.</b> Jugá 3 partidas con foco total (sin música, sin stream, sin móvil).<br>"
+            f"<b>1.</b> Juega 3 partidas con foco total (sin música, sin stream, sin móvil).<br>"
             f"<b>2.</b> Al terminar el bloque, revisá 1 minuto: ¿qué hice bien? ¿qué repetí mal?<br>"
-            f"<b>3.</b> Pausa de 10 min (levantate, movete). Después decidí si jugás otro bloque.</p>"
+            f"<b>3.</b> Pausa de 10 min (levántate, muévete). Después decide si juegas otro bloque.</p>"
             f"<p style='font-size:12px;color:{TEXT_SUBTLE};margin:8px 0 0 0;'>Esto reduce el desgaste mental y mejora "
             f"la calidad de decisiones en cada partida.</p>"
             f"</div>"
@@ -425,7 +425,7 @@ class ReglaDano(ReglaCoach):
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_dmg:.0f} de daño/partida</b>. "
                 f"Muy bien. Ahora el foco: ¿ese daño se traduce en kills para tu carry? "
-                f"Revisá tu daño a objetivos (torres, dragones) — eso gana partidas.</p>"
+                f"Revisa tu daño a objetivos (torres, dragones) — eso gana partidas.</p>"
             )
 
         dmg_eff = m.get("dmg_eff", 1)
@@ -484,7 +484,7 @@ class ReglaObjetivos(ReglaCoach):
         if dragons < 0.5 and barons < 0.2:
             warning = (
                 f"<p style='font-size:12px;color:{YELLOW_WARNING};margin:8px 0 0 0;'>⚠️ Tu participación en dragones y barones es baja. "
-                f"Rotá hacia objetivos 30s antes de que aparezcan. Wardea el río.</p>"
+                f"Rota hacia objetivos 30s antes de que aparezcan. Wardea el río.</p>"
             )
         html = (
             f"<div style=\"font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;\">"
@@ -504,7 +504,7 @@ class ReglaCC(ReglaCoach):
         if avg_cc <= 0:
             return None
         if avg_cc > 30:
-            verdict = "🟢 Excelente uso de CC. Mantenés al rival fuera de juego."
+            verdict = "🟢 Excelente uso de CC. Mantienes al rival fuera de juego."
         elif avg_cc > 10:
             verdict = "🟡 Buen CC. Mejorable: apuntá a interrumpir canales clave (Katarina R, Miss Fortune R)."
         else:
@@ -525,7 +525,7 @@ class ReglaPinks(ReglaCoach):
         if avg_pink < 0.5:
             verdict = "🔴 No estás comprando Control Wards. Son el item más infravalorado del juego."
         elif avg_pink < 2:
-            verdict = "🟡 Comprás pocos Pinks. Uno por base como mínimo."
+            verdict = "🟡 Compras pocos Pinks. Uno por base como mínimo."
         else:
             verdict = "🟢 Buen uso de Control Wards."
         html = (
@@ -549,7 +549,7 @@ class ReglaMaestria(ReglaCoach):
             verdict = "🟢 Tus campeones más jugados tienen alta maestría. Bien alineado."
             color = GREEN_SUCCESS
         else:
-            verdict = "🟡 Tus campeones con más maestría no son los que más jugás."
+            verdict = "🟡 Tus campeones con más maestría no son los que más juegas."
             color = YELLOW_WARNING
         html = (
             f"<div style=\"font-family:'Segoe UI',Arial,sans-serif;line-height:1.7;\">"

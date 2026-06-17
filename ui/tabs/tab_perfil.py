@@ -337,6 +337,9 @@ class PerfilTabMixin:
             game_name, tag_line = game_name.split("#", 1)
         if not game_name or not tag_line:
             print(f"[Edge] Riot ID incompleto (name='{game_name}', tag='{tag_line}'), no se puede resolver")
+            print(f"[Edge] La LCU devolvio gameName sin tagLine. Intentando con displayName como summoner name...")
+            # Fallback: si tag_line esta vacio pero game_name tiene valor, intentar
+            # resolver como summoner name via account-v1 no funcionara.
             return None
         _, routing = self._riot_get_config()
         # URL-encode: los Riot ID admiten espacios y caracteres no-ASCII (frecuentes en LAS/LAN)
@@ -361,17 +364,16 @@ class PerfilTabMixin:
         return region, routing_para_region(region)
 
     def _riot_fetch_match_ids(self, puuid: str):
-        """Pagina la Edge Function para obtener TODOS los match IDs de la temporada actual."""
+        """Pagina la Edge Function para obtener match IDs de la temporada actual.
+        startTime se pasa en SEGUNDOS (Riot v5 acepta segundos aunque la doc diga ms)."""
         from src.backend_client import riot_get
-
         from datetime import timezone as tz
 
-        ahora = datetime.now(tz.utc)
-        start_time = int(datetime(ahora.year, 1, 1, tzinfo=tz.utc).timestamp()) * 1000
+        start_time = int(datetime.now(tz.utc).replace(month=1, day=8, hour=0, minute=0, second=0, microsecond=0).timestamp())
         all_ids = []
         offset = 0
         _, routing = self._riot_get_config()
-        print(f"[Edge] Paginando IDs (routing={routing}, startTime={start_time})")
+        print(f"[Edge] Paginando IDs (routing={routing}, start_time={start_time})...")
         while True:
             try:
                 data = riot_get(
@@ -379,6 +381,7 @@ class PerfilTabMixin:
                     {"start": offset, "count": 100, "start_time": start_time, "routing": routing},
                 )
                 if data is None:
+                    print(f"[Edge] ERROR: riot_get devolvio None puuid={str(puuid)[:24]}.. routing={routing} offset={offset}")
                     break
                 if not isinstance(data, list):
                     break
@@ -447,24 +450,24 @@ class PerfilTabMixin:
         }
 
     def _riot_fetch_one_match(self, match_id: str, my_puuid: str = ""):
-        """Descarga UNA partida vía Edge Function. Con backoff."""
+        """Descarga UNA partida vía Edge Function. Sin delay — el 429 handling en _get_edge regula el rate."""
         from src.backend_client import riot_get
 
         _, routing = self._riot_get_config()
-        for intento in range(4):
+        for intento in range(3):
             try:
                 data = riot_get(f"/match/detail/{match_id}", {"routing": routing})
                 if data:
                     return self._riot_convert_match(data, my_puuid)
-                return None
+                if intento < 2:
+                    time.sleep(2**intento)
             except Exception:
-                if intento < 3:
+                if intento < 2:
                     time.sleep(2**intento)
         return None
 
     def _riot_fetch_matches(self, match_ids: list, my_puuid: str = "", max_matches: int = None):
-        """Descarga partidas vía Edge Function en PARALELO (3 workers).
-        my_puuid filtra SOLO al jugador correcto. max_matches=None = todas."""
+        """Descarga partidas vía Edge Function (3 workers, rate auto-regulado por 429 en _get_edge)."""
         if not match_ids:
             return []
         total_ids = len(match_ids)
@@ -572,9 +575,11 @@ class PerfilTabMixin:
 
             # Descargar IDs + partidas
             if _puuid_valido(riot_puuid):
+                print(f"[Edge] Fetching match IDs con puuid={str(riot_puuid)[:30]}.. (len={len(riot_puuid)}) routing={self._riot_get_config()[1]}")
                 riot_ids = self._riot_fetch_match_ids(riot_puuid)
             else:
                 print(f"[RiotAPI] PUUID invalido (lcu='{str(puuid)[:30]}', resuelto='{new_puuid}'), saltando Riot API")
+                print(f"[RiotAPI] game_name='{game_name}' tag_line='{tag_line}' puuid_len={len(puuid or '')}")
                 tiene_riot_id = bool(game_name) and (bool(tag_line) or "#" in (game_name or ""))
                 if tiene_riot_id:
                     # Tenemos nombre+tag pero la resolucion fallo: casi siempre red/proxy.

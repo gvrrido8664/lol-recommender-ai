@@ -120,6 +120,18 @@ class PartidaTabMixin:
             return
 
         fase = self.lcu.obtener_fase_juego()
+
+        # Solo funciona en SoloQ (420) y Flex (440)
+        qid = self.lcu.obtener_queue_id()
+        if qid is not None and qid not in (420, 440) and fase in ("InProgress", "GameStart"):
+            self.pnl_partida_dash.setVisible(False)
+            self.tb_partida_aliados.setVisible(False)
+            self.tb_partida_enemigos.setVisible(False)
+            self.partida_empty.setVisible(False)
+            self.lbl_partida_header.setVisible(True)
+            self.lbl_partida_header.setText("🛡️ Partida en vivo solo disponible en SoloQ / Flex")
+            return
+
         if fase not in ("InProgress", "GameStart"):
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)

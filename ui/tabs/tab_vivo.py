@@ -330,13 +330,6 @@ class VivoTabMixin:
             except Exception:
                 pass
 
-        if fase == "ChampSelect":
-            if self.tabview.currentIndex() != 2 and self.user_settings.get("auto_switch_radar", True):
-                self.tabview.setCurrentIndex(2)  # RADAR EN VIVO
-        elif fase in ("GameStart", "InProgress"):
-            if self.tabview.currentIndex() != 3 and self.user_settings.get("auto_switch_radar", True):
-                self.tabview.setCurrentIndex(3)  # PARTIDA EN VIVO
-
     def _clasificar_modo_juego(self, g):
         game_type = g.get("gameType", "")
         game_mode = g.get("gameMode", "")
@@ -388,6 +381,11 @@ class VivoTabMixin:
     # ================= RADAR / DRAFT (HILO SEGUNDARIO) =================
     def _fetch_radar(self):
         """Se ejecuta en hilo secundario. Obtiene draft de LCU y precomputa datos BD."""
+        # Solo funciona en SoloQ (420) y Flex (440)
+        qid = self.lcu.obtener_queue_id()
+        if qid is not None and qid not in (420, 440):
+            self.radar_listo.emit({"draft": None, "db_data": None})
+            return
         try:
             draft = self.lcu.obtener_sesion_draft()
         except Exception:

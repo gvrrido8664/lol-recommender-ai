@@ -325,9 +325,7 @@ def obtener_top_items(campeon, carril, enemigos=None, conn=None):
         # Por defecto: la bota MAS USADA por este campeon en los datos descargados.
         bota_data = max(botas_count, key=botas_count.get)
         clase = obtener_tag(campeon).get("champion_class", "")
-        # Adaptamos a la composicion SOLO para frontline (Fighter/Tank), que
-        # genuinamente eligen entre armadura/RM. El resto usa su bota mas usada.
-        if enemigos and clase in ("Fighter", "Tank"):
+        if enemigos:
             bota_inteligente = _recomendar_botas_inteligentes(botas_count, enemigos, campeon, carril)
             build_final.append(bota_inteligente or bota_data)
         else:

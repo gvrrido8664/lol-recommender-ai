@@ -310,6 +310,57 @@ def compactar_base_de_datos():
     print("Base de datos compactada.")
 
 
+def limpiar_riot_cache(dias: int = 1):
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    cur.execute("""
+        DELETE FROM riot_cache
+        WHERE ts IS NULL OR ts < CURRENT_TIMESTAMP - INTERVAL '1 day' * %s
+    """, (dias,))
+    eliminadas = cur.rowcount
+    conn.commit()
+    conn.close()
+    if eliminadas:
+        print(f"  [CACHE] {eliminadas:,} filas eliminadas de riot_cache.")
+        try:
+            conn2 = obtener_conexion()
+            conn2.autocommit = True
+            conn2.cursor().execute("VACUUM riot_cache")
+            conn2.close()
+        except Exception:
+            pass
+    return eliminadas
+
+
+def reducir_indices_participantes():
+    conn = obtener_conexion()
+    cur = conn.cursor()
+    indices_redundantes = ["idx_win", "idx_position", "idx_pos_champ"]
+    eliminados = 0
+    for idx in indices_redundantes:
+        cur.execute(f"DROP INDEX IF EXISTS {idx}")
+        if cur.statusmessage == "DROP INDEX":
+            eliminados += 1
+    conn.commit()
+    conn.close()
+    if eliminados:
+        print(f"  [INDICES] {eliminados} indices redundantes eliminados de participantes.")
+    return eliminados
+
+
+def mantenimiento_completo(parche_actual: str | None = None):
+    print("=== MANTENIMIENTO COMPLETO ===")
+    total_liberado = 0
+    if parche_actual:
+        e, _ = purgar_parches_antiguos(parche_actual)
+        total_liberado += e
+    compactar_base_de_datos()
+    r = limpiar_riot_cache(dias=1)
+    total_liberado += r
+    d = reducir_indices_participantes()
+    print(f"=== FIN: ~{total_liberado:,} filas eliminadas ===")
+
+
 # ─── MOTOR EMOCIONAL (NEXUS) ───
 
 

@@ -1,13 +1,13 @@
 # Plan 001: Rotar credenciales expuestas y purgarlas del repo
 
-> **Instrucciones para el ejecutor**: Seguí este plan paso a paso. Corré cada
-> comando de verificación y confirmá el resultado esperado antes de avanzar. Si
-> ocurre algo de la sección "Condiciones STOP", pará y reportá — no improvises.
-> Al terminar, actualizá la fila de este plan en `plans/README.md`.
+> **Instrucciones para el ejecutor**: Sigue este plan paso a paso. Corre cada
+> comando de verificación y confirma el resultado esperado antes de avanzar. Si
+> ocurre algo de la sección "Condiciones STOP", para y reporta — no improvises.
+> Al terminar, actualiza la fila de este plan en `plans/README.md`.
 >
 > **Chequeo de drift (correr primero)**:
 > `git diff --stat e31df97..HEAD -- PLAN_DE_MEJORAS.md .gitignore config.example.json`
-> Si alguno cambió desde que se escribió este plan, compará los excerpts de
+> Si alguno cambió desde que se escribió este plan, compara los excerpts de
 > "Estado actual" con el código vivo antes de seguir; si no coincide, es STOP.
 
 ## Status
@@ -32,7 +32,7 @@ purga el texto plano del árbol actual y documenta (sin ejecutar) la opción de
 reescribir el historial.
 
 > **Regla de manejo de secretos**: en ningún archivo que generes (planes,
-> commits, código) debe aparecer el VALOR de una credencial. Referenciá solo
+> commits, código) debe aparecer el VALOR de una credencial. Referencia solo
 > `archivo:línea` y el tipo de credencial.
 
 ## Estado actual
@@ -62,7 +62,7 @@ reescribir el historial.
 
 ## Alcance
 
-**En alcance** (lo único que modificás como código/archivos):
+**En alcance** (lo único que modificas como código/archivos):
 - `PLAN_DE_MEJORAS.md` — redactar las líneas 264-265.
 
 **Acciones MANUALES del humano (no son edición de código; documentalas, no las ejecutes):**
@@ -123,7 +123,7 @@ requiere `--force` y coordinación; no ejecutar automáticamente).
 
 ### Step 4: Verificar que la app y los tests siguen intactos
 
-No se tocó código ejecutable; confirmá que nada se rompió.
+No se tocó código ejecutable; confirma que nada se rompió.
 
 **Verify**: `python tests.py` → `13/13 pasaron`
 
@@ -147,15 +147,15 @@ Machine-checkable, TODAS deben cumplirse:
 
 ## Condiciones STOP
 
-Pará y reportá (no improvises) si:
+Para y reporta (no improvises) si:
 
 - `git ls-files config.json` devuelve el archivo (fue re-trackeado): hace falta
-  `git rm --cached config.json` y revisar por qué volvió — reportá antes de tocar.
-- Encontrás los mismos valores en MÁS archivos de los listados (p.ej. en código
-  `.py`, en `README.md`, o en otros `.md`): listá las ubicaciones (sin valores) y
-  reportá; el alcance del plan crece.
+  `git rm --cached config.json` y revisar por qué volvió — reporta antes de tocar.
+- Encuentras los mismos valores en MÁS archivos de los listados (p.ej. en código
+  `.py`, en `README.md`, o en otros `.md`): lista las ubicaciones (sin valores) y
+  reporta; el alcance del plan crece.
 - Te piden ejecutar `git filter-repo` o un `push --force`: es destructivo y
-  reescribe historial compartido — NO lo hagas; reportá para decisión humana.
+  reescribe historial compartido — NO lo hagas; reporta para decisión humana.
 
 ## Notas de mantenimiento
 

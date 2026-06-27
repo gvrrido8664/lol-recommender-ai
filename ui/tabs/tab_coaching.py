@@ -103,6 +103,28 @@ class CoachingTabMixin:
         for layout in self._coaching_tab_widgets.values():
             layout.addStretch()
 
+    def _mostrar_sin_ranked(self):
+        if not hasattr(self, "_coaching_tab_widgets"):
+            return
+        self._limpiar_tabs()
+        lbl = QLabel(
+            f"<div style=\"font-family: 'Segoe UI', Arial, sans-serif; text-align: center; padding: 30px;\">"
+            f'<p style="font-size: 48px; margin: 0;">🎓</p>'
+            f'<p style="font-size: 14px; color: {ACCENT_RED}; font-weight: 700; margin: 12px 0 4px 0;">COACHING PRO</p>'
+            f'<p style="font-size: 13px; color: {YELLOW_WARNING}; font-weight: 600; margin: 16px 0 4px 0;">'
+            f"⚠️ Necesitas partidas rankeadas para el Coaching Pro</p>"
+            f'<p style="font-size: 12px; color: {TEXT_MUTED}; margin: 0; line-height: 1.6;">'
+            f"El análisis solo funciona con partidas de SoloQ o Flex.<br><br>"
+            f"Jugá algunas partidas rankeadas y volvé a intentarlo.</p>"
+            f"</div>"
+        )
+        lbl.setTextFormat(Qt.RichText)
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setWordWrap(True)
+        self._agregar_a_tab("Resumen", lbl)
+        for layout in self._coaching_tab_widgets.values():
+            layout.addStretch()
+
     def _exportar_coaching(self):
         if not self._last_coaching_report:
             return
@@ -270,20 +292,24 @@ class CoachingTabMixin:
 
     @staticmethod
     def _detectar_modo_principal(games):
-        """Retorna (queueId, tipo_str) del modo mas jugado: SoloQ(420), Flex(440) o Normales(400/430)."""
-        conteo = {420: 0, 440: 0, 400: 0, 430: 0}
+        """Retorna (queueId, tipo_str) del modo mas jugado entre todos los soportados."""
+        conteo = {}
         for g in games:
             qid = g.get("queueId", 0) or 0
-            if qid in conteo:
-                conteo[qid] += 1
-        normales = conteo[400] + conteo[430]
-        if normales >= conteo[420] and normales >= conteo[440]:
+            nombre = nombre_modo_por_queue(qid)
+            if nombre:
+                conteo[nombre] = conteo.get(nombre, 0) + 1
+        if not conteo:
             return None, "NORMALES"
-        return (420, "RANKED_SOLO_5x5") if conteo[420] >= conteo[440] else (440, "RANKED_FLEX_SR")
+        modo = max(conteo, key=conteo.get)
+        qid_inverso = {v: k for k, v in QUEUE_MAP.items()}
+        qid = qid_inverso.get(modo)
+        tipo_str = {"SoloQ": "RANKED_SOLO_5x5", "Flex": "RANKED_FLEX_SR"}.get(modo, modo.upper())
+        return qid, tipo_str
 
     def _filtrar_por_modo(self, games, qid):
         if qid is None:
-            return [g for g in games if (g.get("queueId", 0) or 0) in (400, 430)]
+            return games
         return [g for g in games if (g.get("queueId", 0) or 0) == qid]
 
     def _actualizar_coaching(self):
@@ -300,14 +326,17 @@ class CoachingTabMixin:
             except Exception:
                 self._coaching_puuid = "default"
 
-        # Detectar modo mas jugado
+        # Detectar modo mas jugado (para etiqueta)
         qid, queue_type = self._detectar_modo_principal(self.historial_games)
-        if qid is not None:
-            tipo_str = {420: "SoloQ", 440: "Flex"}.get(qid, "SoloQ")
-        else:
-            tipo_str = "Normales"
-        print(f"[Coaching] Modo detectado: {tipo_str}")
-        games_filtrados = self._filtrar_por_modo(self.historial_games, qid)
+        tipo_str = nombre_modo_por_queue(qid) or f"Normales ({queue_type})"
+
+        # Coaching solo usa ranked (SoloQ + Flex) para estadisticas
+        games_filtrados = [g for g in self.historial_games if (g.get("queueId", 0) or 0) in (420, 440)]
+        if not games_filtrados:
+            print("[Coaching] Sin partidas ranked disponibles")
+            self._mostrar_sin_ranked()
+            return
+        print(f"[Coaching] Modo detectado: {tipo_str} ({len(games_filtrados)} partidas)")
         if not games_filtrados:
             self._mostrar_placeholder()
             return

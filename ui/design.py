@@ -90,6 +90,7 @@ __all__ = [
     "AMBER_ACCENT",
     "RED_WR",
     "GREEN_WR",
+    "YELLOW_WARNING",
     "YELLOW_WR",
     "ALLY_BG",
     "ENEMY_BG",

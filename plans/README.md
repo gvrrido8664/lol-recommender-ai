@@ -31,7 +31,7 @@ Valores de estado: TODO | IN PROGRESS | DONE | BLOCKED (con motivo) | REJECTED (
 - **004 requiere 003**: reemplazar `except:` por excepciones especificas es un
   cambio de comportamiento sutil; la suite pytest de 003 da la red de seguridad
   para verificar que no se rompe nada. Si 003 no esta hecho, 004 se apoya solo
-  en `python tests.py` (13 tests) — aceptable pero mas debil; anotalo.
+  en `python tests.py` (13 tests) — aceptable pero mas debil; anótalo.
 - 001, 002, 005 son independientes entre si y del resto.
 
 ## Hallazgos considerados y rechazados (para no re-auditar)

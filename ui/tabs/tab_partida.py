@@ -121,15 +121,15 @@ class PartidaTabMixin:
 
         fase = self.lcu.obtener_fase_juego()
 
-        # Solo funciona en SoloQ (420), Flex (440) y Normales (400, 430)
+        # Partida en vivo disponible en ranked, normales y personalizadas
         qid = self.lcu.obtener_queue_id()
-        if qid is not None and qid not in (420, 440, 400, 430) and fase in ("InProgress", "GameStart"):
+        if qid is not None and qid not in (420, 440, 400, 430, 0) and fase in ("InProgress", "GameStart"):
             self.pnl_partida_dash.setVisible(False)
             self.tb_partida_aliados.setVisible(False)
             self.tb_partida_enemigos.setVisible(False)
             self.partida_empty.setVisible(False)
             self.lbl_partida_header.setVisible(True)
-            self.lbl_partida_header.setText("🛡️ Partida en vivo solo disponible en SoloQ / Flex / Normales")
+            self.lbl_partida_header.setText("🛡️ Partida en vivo no disponible para este modo")
             return
 
         if fase not in ("InProgress", "GameStart"):
@@ -1083,10 +1083,16 @@ class PartidaTabMixin:
             ranked_games = [g for g in unique_games if self._es_ranked(g)]
 
             # Modo segun filtro del usuario (o el mas jugado si no hay filtro)
-            soloq = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 420)
-            flex = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 440)
-            modo_principal = getattr(self, "_season_modo_filtro", 420 if soloq >= flex else 440)
-            season_games = [g for g in ranked_games if (g.get("queueId", 0) or 0) in (0, modo_principal)]
+            modo = getattr(self, "_season_modo_filtro", None)
+            if modo in (420, 440):
+                soloq = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 420)
+                flex = sum(1 for g in ranked_games if (g.get("queueId", 0) or 0) == 440)
+                modo_principal = modo or (420 if soloq >= flex else 440)
+                pool = ranked_games
+            else:
+                modo_principal = modo
+                pool = unique_games
+            season_games = [g for g in pool if (g.get("queueId", 0) or 0) in (0, modo_principal)] if modo_principal else list(pool)
 
             # Computar stats por campeon (todos, con CS y duracion)
             champ_stats = {}

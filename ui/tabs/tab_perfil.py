@@ -100,7 +100,7 @@ class PerfilTabMixin:
         fr_season_filtro.addWidget(QLabel("Modo:"))
         self.cb_season_modo = QComboBox()
         self.cb_season_modo.addItems(["SoloQ", "Flex"])
-        self.cb_season_modo.setFixedWidth(90)
+        self.cb_season_modo.setFixedWidth(100)
         self.cb_season_modo.currentIndexChanged.connect(self._on_season_modo_change)
         fr_season_filtro.addWidget(self.cb_season_modo)
         fr_season_filtro.addStretch()
@@ -248,9 +248,9 @@ class PerfilTabMixin:
         self.cb_filtro_champ.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_champ)
         self.cb_filtro_modo = QComboBox()
-        self.cb_filtro_modo.setMinimumWidth(120)
+        self.cb_filtro_modo.setMinimumWidth(130)
         self.cb_filtro_modo.addItem("Todos los modos")
-        self.cb_filtro_modo.addItems(["SoloQ", "Flex", "Normal", "ARAM"])
+        self.cb_filtro_modo.addItems(modos_soportados())
         self.cb_filtro_modo.currentTextChanged.connect(self.filtrar_historial)
         self.fr_filtro.addWidget(self.cb_filtro_modo)
         self.fr_filtro.addStretch()
@@ -885,15 +885,18 @@ class PerfilTabMixin:
         q = g.get("queueId", 0) or 0
         if q in (420, 440):
             return True
-        if q in (400, 430, 450, 700, 1700):  # Normal, ARAM, Clash, Arena
+        nombre = nombre_modo_por_queue(q)
+        if nombre and nombre not in modos_ranked():
             return False
         # LCU sin queueId: eloChange es la unica senial confiable
         elo = g.get("eloChange") or g.get("playerScoreChange")
         return elo is not None
 
     def _on_season_modo_change(self):
-        """Actualiza stats de temporada y cards al cambiar SoloQ/Flex."""
-        self._season_modo_filtro = 420 if self.cb_season_modo.currentText() == "SoloQ" else 440
+        """Actualiza stats de temporada y cards al cambiar modo."""
+        texto = self.cb_season_modo.currentText()
+        modo_a_qid = {"SoloQ": 420, "Flex": 440, "Swiftplay": 490, "Normal": 400, "Clash": 700, "vs IA": 840}
+        self._season_modo_filtro = modo_a_qid.get(texto, 420)
         self._cargar_stats_season()
         self._recalc_stats_cards()
 
@@ -905,10 +908,13 @@ class PerfilTabMixin:
             else:
                 return
         modo = getattr(self, "_season_modo_filtro", None)
-        season_games = [g for g in self.all_games_season if self._es_ranked(g)]
+        if modo in (420, 440):
+            season_games = [g for g in self.all_games_season if self._es_ranked(g)]
+        else:
+            season_games = list(self.all_games_season)
         if modo:
             season_games = [g for g in season_games if (g.get("queueId", 0) or 0) in (0, modo)]
-        modo_nombre = "SoloQ" if modo == 420 else ("Flex" if modo == 440 else "")
+        modo_nombre = nombre_modo_por_queue(modo) or ""
 
         total_k = 0
         total_d = 0
@@ -1350,7 +1356,7 @@ class PerfilTabMixin:
             modo_juego = self._clasificar_modo_juego(g)
             if filtro_modo == "Todos los modos":
                 pass
-            elif filtro_modo in ("SoloQ", "Flex") and not self._es_ranked(g):
+            elif filtro_modo in modos_ranked() and not self._es_ranked(g):
                 continue
             elif filtro_modo != modo_juego:
                 continue

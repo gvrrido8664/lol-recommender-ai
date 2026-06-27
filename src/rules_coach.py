@@ -187,10 +187,10 @@ class ReglaSupervivencia(ReglaCoach):
             color = YELLOW_WARNING
             prio = 1
         else:
-            verdict = "🟢 Buen control de muertes. Seguí así."
+            verdict = "🟢 Buen control de muertes. Sigue así."
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_d:.1f} muertes/partida</b> "
-                f"con <b>{kda:.1f} KDA</b>. Morís poco y generás impacto. "
+                f"con <b>{kda:.1f} KDA</b>. Mueres poco y generas impacto. "
                 f"Para el siguiente nivel: revisa si tus muertes ocurren en momentos clave (objetivos, late game).</p>"
             )
             color = GREEN_SUCCESS
@@ -415,7 +415,7 @@ class ReglaDano(ReglaCoach):
             prio = 3
             advice = (
                 f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_dmg:.0f} de daño/partida</b>. "
-                f"Para mejorar: en teamfights, identificá UNA ventana de daño y comprometete a usarla. "
+                f"Para mejorar: en teamfights, identifica UNA ventana de daño y comprométete a usarla. "
                 f"No esperes la jugada perfecta.</p>"
             )
         else:
@@ -457,11 +457,11 @@ class ReglaOro(ReglaCoach):
             color = RED_DANGER
         elif avg_gold < 12000:
             verdict = "🟡 Oro aceptable, con margen de mejora."
-            advice = f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_gold:.0f} oro/partida</b>. Buen ritmo. Optimizá backs y oleadas."
+            advice = f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_gold:.0f} oro/partida</b>. Buen ritmo. Optimiza backs y oleadas."
             color = YELLOW_WARNING
         else:
             verdict = "🟢 Excelente economía."
-            advice = f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_gold:.0f} oro/partida</b>. Asegurate de gastarlo bien: items correctos según la partida."
+            advice = f"<p style='font-size:12px;color:{TEXT_SECONDARY};margin:8px 0 0 0;'><b>{avg_gold:.0f} oro/partida</b>. Asegúrate de gastarlo bien: items correctos según la partida."
             color = GREEN_SUCCESS
 
         html = (

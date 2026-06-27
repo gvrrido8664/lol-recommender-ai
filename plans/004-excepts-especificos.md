@@ -1,14 +1,14 @@
 # Plan 004: Reemplazar `except:` desnudos por `except Exception` + logging
 
-> **Instrucciones para el ejecutor**: Seguí este plan paso a paso. Corré cada
-> verificación antes de avanzar. Si ocurre algo de "Condiciones STOP", pará y
-> reportá. Al terminar, actualizá la fila de este plan en `plans/README.md`.
+> **Instrucciones para el ejecutor**: Sigue este plan paso a paso. Corre cada
+> verificación antes de avanzar. Si ocurre algo de "Condiciones STOP", para y
+> reporta. Al terminar, actualiza la fila de este plan en `plans/README.md`.
 >
 > **Chequeo de drift (correr primero)**:
 > `git grep -nE "except:\s*$" -- app.py ui/ src/`
-> Compará la lista resultante con la de "Estado actual". Si las ubicaciones
-> difieren mucho (el código derivó), reconciliá por contenido, no por número de
-> línea: buscá cada `except:` desnudo que exista hoy.
+> Compara la lista resultante con la de "Estado actual". Si las ubicaciones
+> difieren mucho (el código derivó), reconcilia por contenido, no por número de
+> línea: busca cada `except:` desnudo que exista hoy.
 
 ## Status
 
@@ -16,7 +16,7 @@
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: plans/003-suite-pytest.md (red de seguridad; si no está hecho,
-  usá `python tests.py` como verificación — más débil, anotalo)
+  usa `python tests.py` como verificación — más débil, anótalo)
 - **Category**: bug
 - **Planned at**: commit `e31df97`, 2026-06-13
 
@@ -94,8 +94,8 @@ ya se usa en varios sitios como fallback aceptable.
   `src/recomendador.py`
 
 **Fuera de alcance** (NO tocar):
-- La LÓGICA dentro de los bloques try/except — solo cambiás la línea `except:`
-  (y, en `cargar_settings`/`guardar_settings`, agregás una línea de log). No
+- La LÓGICA dentro de los bloques try/except — solo cambias la línea `except:`
+  (y, en `cargar_settings`/`guardar_settings`, agregas una línea de log). No
   reescribas el flujo, no "mejores" el código de paso.
 - `except Exception:` o `except SomeError:` que YA existen — no los toques.
 - Cualquier otro archivo.
@@ -110,11 +110,11 @@ ya se usa en varios sitios como fallback aceptable.
 
 ### Step 1: Reemplazo mecánico `except:` → `except Exception:`
 
-En cada una de las 21 ubicaciones, cambiá exactamente `except:` por
+En cada una de las 21 ubicaciones, cambia exactamente `except:` por
 `except Exception:`, preservando indentación y el cuerpo. Es el cambio
 load-bearing: deja de tragar `KeyboardInterrupt`/`SystemExit`.
 
-NO uses un sed ciego global que pueda tocar strings o comentarios; cambiá cada
+NO uses un sed ciego global que pueda tocar strings o comentarios; cambia cada
 sitio confirmando que es una cláusula `except:` real. Trabajá archivo por archivo.
 
 **Verify**:
@@ -128,7 +128,7 @@ En `ui/helpers.py`:
   `from src.logger import get_logger` y `log = get_logger(__name__)`.
 - En el `except Exception:` de `guardar_settings` (antes `return False`), agregá
   antes del return: `log.warning("No se pudo guardar settings: %s", e)` — para eso
-  cambiá la cláusula a `except Exception as e:`.
+  cambia la cláusula a `except Exception as e:`.
 - En el `except Exception:` externo de `cargar_settings` (el de línea ~367), está
   bien que caiga al fallback silenciosamente (config.json puede no existir en
   primer arranque), así que NO es obligatorio loguear ahí; opcional
@@ -155,7 +155,7 @@ La verificación es:
 - `python tests.py` sigue en `13/13` y, si existe, la suite pytest pasa.
 - `guardar_settings`/`cargar_settings` siguen devolviendo `bool`/`dict`.
 
-Si querés blindarlo más (opcional): un test pytest que monkeypatchee `open` para
+Si quieres blindarlo más (opcional): un test pytest que monkeypatchee `open` para
 lanzar y verifique que `guardar_settings(...)` devuelve `False` y loguea, en
 `tests/test_settings.py`. Solo si 003 ya creó la infraestructura pytest.
 
@@ -172,17 +172,17 @@ TODAS deben cumplirse:
 
 ## Condiciones STOP
 
-Pará y reportá si:
+Para y reporta si:
 
 - Tras cambiar a `except Exception:`, `python tests.py` baja de `13/13` o la suite
   pytest falla: algún bloque dependía de capturar `SystemExit`/`KeyboardInterrupt`
-  (raro). Identificá cuál (por el test que rompe) y reportá; no lo revertás a
+  (raro). Identifica cuál (por el test que rompe) y reporta; no lo reviertas a
   `except:` sin más — puede ser un patrón intencional puntual que merece
   `except (Exception, KeyboardInterrupt)` explícito y comentado.
 - Una ubicación de la lista ya no es un `except:` desnudo (el código derivó):
-  saltala y anotalo; no fuerces.
+  sáltala y anótalo; no fuerces.
 - `from src.logger import get_logger` falla en `ui/helpers.py` por import circular:
-  usá `print(...)` como fallback y reportá el circular.
+  usa `print(...)` como fallback y reporta el circular.
 
 ## Notas de mantenimiento
 

@@ -98,7 +98,7 @@ Arrastrar el .exe al chat. Si Discord lo bloquea por tamaño (>25MB), usar Googl
 Con firma **self-signed**, SmartScreen muestra advertencia en otras PCs. El usuario debe
 hacer click en "Más información" → "Ejecutar de todas formas".
 
-Para eliminar el aviso completamente necesitás un **certificado de firma de código real**:
+Para eliminar el aviso completamente necesitas un **certificado de firma de código real**:
 - **Azure Trusted Signing** (~$10 USD/mes) — la opción más barata
 - **Sectigo / SSL.com OV** (~$100-250 USD/año)
 

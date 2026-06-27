@@ -531,7 +531,7 @@ def entrenar_modelo_1v1():
     conn.close()
 
     if modelos_binarios:
-        joblib.dump(modelos_binarios, MODELO_1V1_PATH, compress=3)
+        joblib.dump((modelos_binarios, todos_campeones), MODELO_1V1_PATH, compress=3)
         print(f"Modelo IA 1v1 guardado en {MODELO_1V1_PATH}")
         _sube_a_storage("modelo_1v1.pkl", MODELO_1V1_PATH)
         print(f"Tiempo total: {time.time() - t0:.1f}s\n")

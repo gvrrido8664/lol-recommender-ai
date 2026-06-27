@@ -1,12 +1,12 @@
 # Plan 005: Eliminar dependencias muertas de requirements.txt
 
-> **Instrucciones para el ejecutor**: Seguí este plan paso a paso. Corré cada
-> verificación. Si ocurre algo de "Condiciones STOP", pará y reportá. Al
-> terminar, actualizá la fila de este plan en `plans/README.md`.
+> **Instrucciones para el ejecutor**: Sigue este plan paso a paso. Corre cada
+> verificación. Si ocurre algo de "Condiciones STOP", para y reporta. Al
+> terminar, actualiza la fila de este plan en `plans/README.md`.
 >
 > **Chequeo de drift (correr primero)**:
 > `git diff --stat e31df97..HEAD -- requirements.txt`
-> Si cambió, reubicá las líneas por NOMBRE de paquete (no por número de línea).
+> Si cambió, reubica las líneas por NOMBRE de paquete (no por número de línea).
 
 ## Status
 
@@ -69,7 +69,7 @@ La app se ejecuta con `python app.py`; tests con `python tests.py` (`13/13`).
 **Fuera de alcance** (NO tocar):
 - `darkdetect` — se usa (transitiva viva de qdarktheme). NO quitar.
 - Las transitivas que queden (pydantic, pydantic_core, annotated-types, anyio,
-  h11, click, starlette si no la quitás, etc.) — no las toques en este plan.
+  h11, click, starlette si no la quitas, etc.) — no las toques en este plan.
 - `build_exe.ps1` — sus `--exclude-module` de PySide6 no se relacionan con esto.
 - Cualquier código `.py`.
 
@@ -83,14 +83,14 @@ La app se ejecuta con `python app.py`; tests con `python tests.py` (`13/13`).
 
 ### Step 1: Confirmar 0 imports (no asumir)
 
-Corré el grep de "Comandos". Debe dar **sin salida**. Si algún paquete aparece
-importado, sacalo de la lista a borrar y reportá.
+Corre el grep de "Comandos". Debe dar **sin salida**. Si algún paquete aparece
+importado, sácalo de la lista a borrar y reporta.
 
 **Verify**: el grep no devuelve nada.
 
 ### Step 2: Quitar las 6 líneas de requirements.txt
 
-Borrá exactamente las líneas de `customtkinter`, `fastapi`, `keyboard`, `PyPDF2`,
+Borra exactamente las líneas de `customtkinter`, `fastapi`, `keyboard`, `PyPDF2`,
 `starlette`, `uvicorn` en `requirements.txt`. No toques `darkdetect` ni ninguna
 otra.
 
@@ -99,8 +99,8 @@ otra.
 
 ### Step 3: Verificar en un venv limpio (verificación de oro)
 
-Para probar que ninguno era necesario en runtime, instalá `requirements.txt` en
-un entorno limpio y confirmá que la app importa y los tests pasan:
+Para probar que ninguno era necesario en runtime, instala `requirements.txt` en
+un entorno limpio y confirma que la app importa y los tests pasan:
 
 ```
 python -m venv .venv_check
@@ -110,17 +110,17 @@ QT_QPA_PLATFORM=offscreen .venv_check/Scripts/python.exe -c "import app; print('
 ```
 
 **Verify**: el import imprime `IMPORT OK` y `tests.py` imprime `13/13 pasaron`.
-Borrá `.venv_check/` al terminar (no commitearlo; debe estar gitignored o lo
-eliminás a mano).
+Borra `.venv_check/` al terminar (no commitearlo; debe estar gitignored o lo
+eliminas a mano).
 
-> Si no podés crear un venv en tu entorno, hacé la verificación mínima en el
+> Si no puedes crear un venv en tu entorno, haz la verificación mínima en el
 > entorno actual: `QT_QPA_PLATFORM=offscreen python -c "import app; print('ok')"`
-> y `python tests.py`. Anotá que la verificación de venv limpio quedó pendiente.
+> y `python tests.py`. Anota que la verificación de venv limpio quedó pendiente.
 
 ### Step 4: Limpieza
 
-Asegurate de que `.venv_check/` no quede en el árbol (`git status` no debe
-mostrarlo). Si aparece, borralo.
+Asegúrate de que `.venv_check/` no quede en el árbol (`git status` no debe
+mostrarlo). Si aparece, bórralo.
 
 **Verify**: `git status` muestra solo `requirements.txt` modificado.
 
@@ -146,13 +146,13 @@ TODAS deben cumplirse:
 
 ## Condiciones STOP
 
-Pará y reportá si:
+Para y reporta si:
 
 - El grep encuentra que alguno de los 6 SÍ se importa: ese paquete no está muerto;
-  sacalo del borrado y reportá.
+  sácalo del borrado y reporta.
 - En el venv limpio, `import app` o `tests.py` fallan por un `ModuleNotFoundError`
   de algo que quitaste o de su transitiva: significa que era necesario (directa o
-  indirectamente). Reincorporá esa línea y reportá cuál era.
+  indirectamente). Reincorpora esa línea y reporta cuál era.
 - `pip show <pkg>` muestra en "Required-by" un paquete que la app usa: es
   transitiva viva; no la quites.
 

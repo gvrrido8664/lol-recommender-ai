@@ -195,9 +195,48 @@ def _cargar_modelo(nombre_archivo, etiqueta):
     return modelo
 
 
-modelo_1v1 = _cargar_modelo("modelo_1v1.pkl", "Modelo 1v1")
+_raw_1v1 = _cargar_modelo("modelo_1v1.pkl", "Modelo 1v1")
+if isinstance(_raw_1v1, tuple) and len(_raw_1v1) == 2:
+    modelo_1v1, modelo_1v1_campeones = _raw_1v1
+else:
+    modelo_1v1 = _raw_1v1 if isinstance(_raw_1v1, dict) else {}
+    modelo_1v1_campeones = None
 
 ITEMS_DICT = cargar_objetos()
 RUNAS_DICT = cargar_runas()
 SPELLS_DICT = cargar_hechizos()
 MAPEO_IDS_CAMPEONES = cargar_mapeo_ids()
+
+# Mapeo canónico de queueId → nombre visible
+# https://static.developer.riotgames.com/docs/lol/queues.json
+QUEUE_MAP = {
+    420: "SoloQ",
+    440: "Flex",
+    480: "Swiftplay",
+    490: "Swiftplay",
+    400: "Normal",
+    430: "Normal",
+    450: "ARAM",
+    700: "Clash",
+    720: "Clash",
+    830: "vs IA",
+    840: "vs IA",
+    850: "vs IA",
+    31: "vs IA",
+    32: "vs IA",
+    33: "vs IA",
+    1700: "Arena",
+    1900: "Arena",
+}
+
+def nombre_modo_por_queue(queue_id):
+    """Retorna el nombre visible del modo según su queueId, o None si es desconocido."""
+    return QUEUE_MAP.get(queue_id)
+
+def modos_soportados():
+    """Lista de nombres de modos soportados (ordenados)."""
+    return ["SoloQ", "Flex", "Swiftplay", "Normal", "ARAM", "Clash", "vs IA", "Arena"]
+
+def modos_ranked():
+    """Lista de modos considerados ranked (con LP)."""
+    return ["SoloQ", "Flex"]

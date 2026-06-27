@@ -1,13 +1,13 @@
 # Plan 003: Suite pytest sobre rutas críticas (sin BD real)
 
-> **Instrucciones para el ejecutor**: Seguí este plan paso a paso. Corré cada
-> comando de verificación y confirmá el resultado antes de avanzar. Si ocurre
-> algo de "Condiciones STOP", pará y reportá — no improvises. Al terminar,
-> actualizá la fila de este plan en `plans/README.md`.
+> **Instrucciones para el ejecutor**: Sigue este plan paso a paso. Corre cada
+> comando de verificación y confirma el resultado antes de avanzar. Si ocurre
+> algo de "Condiciones STOP", para y reporta — no improvises. Al terminar,
+> actualiza la fila de este plan en `plans/README.md`.
 >
 > **Chequeo de drift (correr primero)**:
 > `git diff --stat e31df97..HEAD -- src/recomendador.py src/coach.py tests/ tests.py`
-> Si alguno cambió, compará las firmas de "Estado actual" con el código vivo
+> Si alguno cambió, compara las firmas de "Estado actual" con el código vivo
 > antes de escribir tests; si no coinciden, es STOP.
 
 ## Status
@@ -112,7 +112,7 @@ instalado** ni en `requirements.txt`.
 
 ### Step 1: Crear requirements-dev.txt e instalar pytest
 
-Creá `requirements-dev.txt` con una línea: `pytest` (sin pin, o el pin que
+Crea `requirements-dev.txt` con una línea: `pytest` (sin pin, o el pin que
 prefieras). Instalalo en tu entorno.
 
 **Verify**: `python -m pip install -r requirements-dev.txt` → exit 0; luego
@@ -120,34 +120,34 @@ prefieras). Instalalo en tu entorno.
 
 ### Step 2: tests/test_composicion.py — función pura analizar_composicion
 
-Creá `tests/test_composicion.py` que importe `from src.recomendador import
+Crea `tests/test_composicion.py` que importe `from src.recomendador import
 analizar_composicion` y cubra:
 - **Happy path**: una lista de aliados conocidos AD-pesada → `pct_ad > pct_ap`.
 - **Regresión del bug de redondeo**: con 2 campeones AD + 1 AP, `pct_ad + pct_ap`
-  no debe sumar 99 por truncamiento; verificá que la suma sea coherente (>= 99 y
+  no debe sumar 99 por truncamiento; verifica que la suma sea coherente (>= 99 y
   consistente con `round`). (El fix usa `round()`; este test lo protege.)
 - **Borde - lista vacía**: `analizar_composicion([])` → no debe crashear; según el
-  código devuelve `(50, 50, ...)` cuando no hay daño total (línea 390). Afirmá ese
+  código devuelve `(50, 50, ...)` cuando no hay daño total (línea 390). Afirma ese
   contrato exacto leyendo primero qué devuelve.
 - **Campeón desconocido**: un nombre que no esté en tags → no crashea.
 
-Usá nombres de campeones reales (mirá `src/tags_champions.py` o los que usa
+Usa nombres de campeones reales (mira `src/tags_champions.py` o los que usa
 `tests.py`). Si no estás seguro del valor exacto que devuelve un caso borde,
-**corré la función en un REPL primero** y afirmá el valor observado (no inventes).
+**corre la función en un REPL primero** y afirma el valor observado (no inventes).
 
 **Verify**: `python -m pytest tests/test_composicion.py -q` → todos pasan.
 
 ### Step 3: tests/test_coaching.py — contrato de generar_reporte_coach
 
-Creá `tests/test_coaching.py` que importe `from src.coach import
+Crea `tests/test_coaching.py` que importe `from src.coach import
 generar_reporte_coach` (NO `from app import ...`: importar `app` arranca todo el
 módulo de UI). Cubrí:
-- **Contrato**: con 20 partidas fake (usá el patrón del excerpt de arriba), el
+- **Contrato**: con 20 partidas fake (usa el patrón del excerpt de arriba), el
   resultado tiene las claves `secciones`, `resumen`, `consejo_final`.
 - **Cada sección bien formada**: cada item de `secciones` tiene `titulo` y `html`
-  no vacíos (confirmá los nombres de campos leyendo `src/coach.py` primero).
+  no vacíos (confirma los nombres de campos leyendo `src/coach.py` primero).
 - **Borde - historial vacío**: `generar_reporte_coach([])` no crashea y devuelve
-  el contrato (afirmá lo que realmente devuelve; si lanza, ajustá el test a
+  el contrato (afirma lo que realmente devuelve; si lanza, ajustá el test a
   esperar el comportamiento real, no lo "deseado").
 - **Anti-contradicción** (port del test existente): con un pool de >10 campeones,
   el reporte sugiere reducir/enfocar, no ampliar.
@@ -183,16 +183,16 @@ TODAS deben cumplirse:
 
 ## Condiciones STOP
 
-Pará y reportá si:
+Para y reporta si:
 
 - Al testear cualquier función aparece un error de placeholder SQL (`%s` vs `?`)
   o un intento de conexión real a PostgreSQL: significa que la función toca la BD;
-  sacala del alcance y reportá (NO parchees `conftest.py` ni `db_manager.py` para
+  sacala del alcance y reporta (NO parchees `conftest.py` ni `db_manager.py` para
   forzarlo — eso es otro plan).
 - `generar_reporte_coach([])` o `analizar_composicion([])` lanzan en vez de
-  devolver: documentá el comportamiento real y reportá si parece un bug (podría
+  devolver: documenta el comportamiento real y reporta si parece un bug (podría
   ser un finding nuevo), en vez de "arreglar" el código (fuera de alcance).
-- `import src.coach` falla por dependencias pesadas: reportá la traza.
+- `import src.coach` falla por dependencias pesadas: reporta la traza.
 
 ## Notas de mantenimiento
 

@@ -4,9 +4,9 @@ Render apaga la BD gratuita por inactividad (reintroduce latencia y puede borrar
 Migramos a **Supabase** (Postgres gratis). La app no cambia de código: solo el `DATABASE_URL`.
 
 ## 1. Crear el proyecto
-1. Crear cuenta y proyecto en https://supabase.com (región más cercana a vos; para LAS,
+1. Crear cuenta y proyecto en https://supabase.com (región más cercana a ti; para LAS,
    **South America (São Paulo)** da menor latencia).
-2. Anotar la **Database password** que definís al crear el proyecto.
+2. Anotar la **Database password** que defines al crear el proyecto.
 
 ## 2. Connection string correcta (importante)
 En *Project Settings → Database → Connection string* usar el **Session pooler** (no la
@@ -29,7 +29,7 @@ pg_restore --no-owner --no-privileges -d "postgresql://postgres.<ref>:<pwd>@aws-
 Tablas que se migran: `matches`, `participantes`, `estado_emocional`, `player_cache`.
 Los índices se recrean solos al arrancar la app (`inicializar_db`), pero el dump ya los trae.
 
-> Si el dump es muy grande, podés migrar solo el esquema + `matches`/`participantes` y dejar que
+> Si el dump es muy grande, puedes migrar solo el esquema + `matches`/`participantes` y dejar que
 > el recolector siga llenando. Para empezar pruebas no hace falta migrar todo.
 
 ## 4. Apuntar la app a Supabase
@@ -47,4 +47,4 @@ Hay un GitHub Action que hace `SELECT 1` dos veces por semana:
 2. Crear el secret **`DATABASE_URL`** con la Session pooler string de Supabase.
 3. El workflow corre lunes y jueves (y se puede disparar a mano con *Run workflow*).
 
-El uso regular de la app también la mantiene activa; el cron es el seguro por si no la abrís.
+El uso regular de la app también la mantiene activa; el cron es el seguro por si no la abres.

@@ -338,18 +338,12 @@ class VivoTabMixin:
             return "Custom"
         if game_type == "PRACTICE_GAME":
             return "vs IA"
-        if queue_id == 420:
-            return "SoloQ"
-        if queue_id == 440:
-            return "Flex"
-        if queue_id in (400, 430):
-            return "Normal"
-        if game_mode == "ARAM":
-            return "ARAM"
+        if nombre_modo_por_queue(queue_id):
+            return nombre_modo_por_queue(queue_id)
         if game_mode == "CLASSIC":
             elo = g.get("eloChange") or g.get("playerScoreChange")
             return "Ranked" if elo is not None else "Normal"
-        return game_mode or "Ranked"
+        return game_mode or "Normal"
 
     def procesar_nombre_champ(self, cid, intent):
         final_id = str(cid) if str(cid) != "0" else str(intent)
@@ -381,9 +375,9 @@ class VivoTabMixin:
     # ================= RADAR / DRAFT (HILO SEGUNDARIO) =================
     def _fetch_radar(self):
         """Se ejecuta en hilo secundario. Obtiene draft de LCU y precomputa datos BD."""
-        # Solo funciona en SoloQ (420) y Flex (440)
+        # Draft/builds funcionan en ranked, normales y partidas personalizadas
         qid = self.lcu.obtener_queue_id()
-        if qid is not None and qid not in (420, 440, 400, 430):
+        if qid is not None and qid not in (420, 440, 400, 430, 0):
             self.radar_listo.emit({"draft": None, "db_data": None})
             return
         try:

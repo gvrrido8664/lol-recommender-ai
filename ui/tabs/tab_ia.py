@@ -394,13 +394,14 @@ class IATabMixin:
         self._rellenar_tarjeta_stats(self.stats_enemigo, enemigo, rol_api, RED_WR)
 
         # === FEATURE ENGINEERING: mismo vector que en entrenamiento ===
-        n = len(self.nombres_campeones_global)
+        lista_champs = modelo_1v1_campeones or self.nombres_campeones_global
+        n = len(lista_champs)
         N_COMP = 15
         X = np.zeros(n * 2 + N_COMP)
-        if aliado in self.nombres_campeones_global:
-            X[self.nombres_campeones_global.index(aliado)] = 1
-        if enemigo in self.nombres_campeones_global:
-            X[n + self.nombres_campeones_global.index(enemigo)] = 1
+        if aliado in lista_champs:
+            X[lista_champs.index(aliado)] = 1
+        if enemigo in lista_champs:
+            X[n + lista_champs.index(enemigo)] = 1
         try:
             feats = extraer_features_comparativas(aliado, enemigo)
             X[n * 2 :] = feats

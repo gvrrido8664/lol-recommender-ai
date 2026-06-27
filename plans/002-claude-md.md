@@ -1,12 +1,12 @@
 # Plan 002: Crear CLAUDE.md (arquitectura + comandos para agentes)
 
-> **Instrucciones para el ejecutor**: Seguí este plan paso a paso. Corré cada
-> comando de verificación. Si ocurre algo de "Condiciones STOP", pará y reportá.
-> Al terminar, actualizá la fila de este plan en `plans/README.md`.
+> **Instrucciones para el ejecutor**: Sigue este plan paso a paso. Corre cada
+> comando de verificación. Si ocurre algo de "Condiciones STOP", para y reporta.
+> Al terminar, actualiza la fila de este plan en `plans/README.md`.
 >
 > **Chequeo de drift (correr primero)**:
 > `git diff --stat e31df97..HEAD -- app.py ui/ src/ build_exe.ps1`
-> Si la estructura de `ui/` cambió mucho, verificá los nombres de archivo del
+> Si la estructura de `ui/` cambió mucho, verifica los nombres de archivo del
 > Step 1 contra la realidad (`ls ui/ ui/tabs/ ui/dialogs/`) antes de escribir.
 
 ## Status
@@ -30,7 +30,7 @@ arranque orientada y reduce errores. Es barato y sin riesgo (archivo nuevo).
 
 ## Estado actual
 
-Arquitectura real tras el refactor (confirmá con `ls` si dudás):
+Arquitectura real tras el refactor (confirma con `ls` si dudas):
 
 - `app.py` (~870 líneas) — entry point. Hace `init_logging()`, luego
   `from ui.contexto import *`, define `LoLRecommenderApp(QMainWindow)` que **hereda
@@ -78,7 +78,7 @@ Convenciones observadas (`git log --oneline`): conventional commits en español
 
 **Fuera de alcance** (NO tocar):
 - Cualquier archivo `.py`, `build_exe.ps1`, `requirements.txt` — este plan es
-  documentación pura. Si sentís la tentación de "arreglar algo de paso", no lo hagas.
+  documentación pura. Si sientes la tentación de "arreglar algo de paso", no lo hagas.
 
 ## Git workflow
 
@@ -90,8 +90,8 @@ Convenciones observadas (`git log --oneline`): conventional commits en español
 
 ### Step 1: Escribir CLAUDE.md
 
-Creá `CLAUDE.md` en la raíz con estas secciones (usá el "Estado actual" de arriba
-como fuente de verdad; confirmá nombres con `ls` antes de escribir):
+Crea `CLAUDE.md` en la raíz con estas secciones (usa el "Estado actual" de arriba
+como fuente de verdad; confirma nombres con `ls` antes de escribir):
 
 1. **Qué es** — app de escritorio PySide6 para LoL (perfil, coaching, radar de
    draft en vivo, partida en vivo, meta/builds, simulador 1v1, tier list de bans).
@@ -130,7 +130,7 @@ nuevo.
 
 Sin tests de código (documentación). Verificación:
 - `CLAUDE.md` existe y cubre las 7 secciones.
-- Cada comando citado en CLAUDE.md realmente funciona: probá `python tests.py`.
+- Cada comando citado en CLAUDE.md realmente funciona: prueba `python tests.py`.
 - `git status` muestra únicamente `CLAUDE.md` como cambio.
 
 ## Done criteria
@@ -147,13 +147,13 @@ TODAS deben cumplirse:
 
 ## Condiciones STOP
 
-Pará y reportá si:
+Para y reporta si:
 
 - La estructura real de `ui/` (vía `ls`) no coincide con el "Estado actual" (el
-  repo derivó): documentá la estructura real y reportá la discrepancia antes de
+  repo derivó): documenta la estructura real y reporta la discrepancia antes de
   escribir afirmaciones incorrectas.
 - Algún comando documentado falla al probarlo (p.ej. `python tests.py` no da
-  `13/13`): no documentes un comando roto; reportá.
+  `13/13`): no documentes un comando roto; reporta.
 
 ## Notas de mantenimiento
 

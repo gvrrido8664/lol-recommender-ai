@@ -59,24 +59,56 @@ class LCUConnector:
         return rutas[0]
 
     def conectar(self):
-        if not self.lol_path or not os.path.exists(self.lockfile_path):
-            # Intentar redetectar si el lockfile no existe
-            self.lol_path = self._detectar_lol_path()
-            self.lockfile_path = os.path.join(self.lol_path, "lockfile")
-            if not os.path.exists(self.lockfile_path):
-                return False
+        if self.lol_path and os.path.exists(self.lockfile_path):
+            try:
+                with open(self.lockfile_path, "r") as file:
+                    data = file.read().split(":")
+                    self.port = data[2]
+                    self.password = data[3]
+                    self.protocol = data[4]
+                    auth_string = f"riot:{self.password}"
+                    auth_base64 = b64encode(auth_string.encode("ascii")).decode("ascii")
+                    self.headers = {"Authorization": f"Basic {auth_base64}", "Accept": "application/json"}
+                    return True
+            except (OSError, IndexError, ValueError):
+                pass
+        # Rutas hardcodeadas (C:\, D:\) no cubren instalaciones en otra unidad/carpeta.
+        # Fallback: leer puerto/token directo del proceso LeagueClientUx.exe, que
+        # funciona sin importar donde este instalado el cliente.
+        return self._conectar_via_proceso()
+
+    @staticmethod
+    def _parsear_args_proceso(cmdline):
+        args = {}
+        for arg in cmdline or []:
+            if arg.startswith("--") and "=" in arg:
+                k, v = arg[2:].split("=", 1)
+                args[k] = v.strip('"')
+        return args
+
+    def _conectar_via_proceso(self):
         try:
-            with open(self.lockfile_path, "r") as file:
-                data = file.read().split(":")
-                self.port = data[2]
-                self.password = data[3]
-                self.protocol = data[4]
-                auth_string = f"riot:{self.password}"
-                auth_base64 = b64encode(auth_string.encode("ascii")).decode("ascii")
+            import psutil
+        except ImportError:
+            return False
+        try:
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                if proc.info.get("name") != "LeagueClientUx.exe":
+                    continue
+                args = self._parsear_args_proceso(proc.info.get("cmdline"))
+                port = args.get("app-port")
+                token = args.get("remoting-auth-token")
+                if not port or not token:
+                    continue
+                self.port = port
+                self.password = token
+                self.protocol = "https"
+                auth_base64 = b64encode(f"riot:{token}".encode("ascii")).decode("ascii")
                 self.headers = {"Authorization": f"Basic {auth_base64}", "Accept": "application/json"}
                 return True
-        except (OSError, IndexError, ValueError):
-            return False
+        except (psutil.Error, OSError):
+            pass
+        return False
 
     def reconnect(self):
         self.port = None

@@ -1,7 +1,7 @@
 import threading
 import time
 
-from .db_manager import obtener_conexion
+from .db_manager import obtener_conexion, ConexionDBError
 from .itemizador_dinamico import recomendar_bota, recomendar_items_situacionales
 from .riot_api import cargar_objetos
 from .roles import normalizar_posicion
@@ -108,7 +108,11 @@ def obtener_campeones_por_rol(rol_api, min_partidas=20):
         if hit and (ahora - hit[1] < _CAMPS_ROL_TTL):
             return list(hit[0])
 
-    conn = obtener_conexion()
+    try:
+        conn = obtener_conexion()
+    except ConexionDBError:
+        # No statistics are available offline; do not invent or cache a sample.
+        return []
     cur = conn.cursor()
 
     cur.execute(

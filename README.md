@@ -1,106 +1,36 @@
-# NEXUS — Asistente de Draft con IA para League of Legends
+# NEXUS — análisis y recomendaciones
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![PySide6](https://img.shields.io/badge/GUI-PySide6-green)
-![DB](https://img.shields.io/badge/DB-PostgreSQL-336791)
+Proyecto personal de **Ignacio Garrido**, Ingeniero en Informática titulado. Desarrollo propio de la aplicación; librerías, plantillas, datos e imágenes de terceros conservan su autoría.
 
-Aplicación de escritorio que se conecta al cliente de League of Legends para
-ofrecer recomendaciones en tiempo real durante la selección de campeones y la
-partida, además de un análisis de coaching personalizado de tu juego.
+Aplicación Python/PySide6 con recomendaciones heurísticas, análisis de composiciones, coaching, persistencia y tareas de red en segundo plano. El dominio es League of Legends; el valor técnico está en integración de APIs, gestión de estado y separación de trabajo de red de la interfaz.
 
-## Características
+## Comprobación offline
+Python 3.12+:
+```powershell
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-offline.txt
+.venv/Scripts/python -m pytest tests -q
+```
+Resultado verificado: **25 pruebas aprobadas**. Usan partidas ficticias y un adaptador SQLite en memoria; se bloquean las peticiones HTTP externas. No requieren Riot, PostgreSQL ni tokens. Los catálogos locales permiten analizar composiciones sin depender de descargas.
 
-- **Mi Perfil** — Estadísticas completas: winrate por línea/campeón, historial de partidas con **selector de cola ranked** (Todas / SoloQ / Flex) y **barra de progreso de descarga**, ligas, maestrías, gráfica de LP, fatiga y estado mental. Cada partida del historial tiene un **widget de estado emocional** (columna Estado) para etiquetar cómo te sentiste.
-- **Coaching Pro** — Reporte personalizado por sub-pestañas (Resumen, Filosofía, Campeones, Rendimiento, Hábitos, Gestión): tablero de métricas por partida, fortalezas/áreas de mejora, auditoría de champion pool, daño/economía/visión, gestión de sesiones y filosofía de juego. **Umbrales configurables** (9 ajustes: CS, muertes, visión, WR de draft, pool, mínimo de partidas) desde Ajustes, y botón **Exportar como HTML** que abre el reporte en el navegador.
-- **Radar en Vivo** — Draft en tiempo real: counter picks, runas, hechizos, items y orden de habilidades recomendados; bans sugeridos; winrate estimado 5v5; análisis de composición. Con indicador de carga ("Analizando draft…") mientras se calcula.
-- **Partida en Vivo** — Datos de la partida en curso (equipos, KDA, CS, WR de cada jugador) y resumen post-partida.
-- **Meta & Builds** — Análisis de matchups y builds óptimas por campeón y rol.
-- **Simulador 1v1** — Predicción con ML + datos reales + consejos tácticos por clase.
-- **Tier List de Bans** — Bans contextuales: **selector de ELO** (Iron → Master+), **mínimo de partidas** (5-200) y columna de **Prioridad** (Alta / Media / Baja), con botón Refrescar. Global o personalizada con tu historial.
-- **Importación Automática** — Runas, hechizos y orden de habilidades directamente al cliente de LoL.
-- **Overlay en Partida** — Datos en vivo superpuestos sobre el juego.
-- **UX** — Notificaciones tipo *toast* para acciones rápidas e indicadores de carga en operaciones de red/BD.
-
-## Instalación
-
-```bash
-git clone https://github.com/tu_usuario/nexus-lol-assistant.git
-cd nexus-lol-assistant
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python setup.py    # descarga inicial de datos y modelos
+## Aplicación completa
+```powershell
+git clone https://github.com/gvrrido8664/lol-recommender-ai.git
+```
+Para utilizar esta entrega corregida, descomprime su paquete y trabaja en esa carpeta:
+```powershell
+python -m pip install -r requirements.txt
+Copy-Item config.example.json config.json
 python app.py
 ```
+La aplicación se inicia mediante `app.py`; no existe `setup.py`. El arranque gráfico completo no se comprobó en esta revisión y requiere PySide6.
 
-> Requiere un `config.json` con `DATABASE_URL` (PostgreSQL) y `API_KEY` de Riot.
-> Copia `config.example.json` a `config.json` y completa tus valores. **Nunca
-> subas `config.json`** (ya está en `.gitignore`).
+## Arquitectura y configuración
+Coexisten el cliente HTTP `src/backend_client.py` (proxy backend y edge) y acceso PostgreSQL directo `src/db_manager.py` en módulos aún no migrados. Supabase puede alojar modelos e integración; no es una dependencia necesaria para las pruebas offline. Las URLs de la copia apuntan a localhost o deben configurarse con `SUPABASE_PROJECT_URL`, `NEXUS_BACKEND_URL` y `NEXUS_EDGE_URL`. Configura claves propias solo localmente; las variables de entorno tienen prioridad sobre `config.json`.
 
-## Pestañas
+La entrega no incluye bases, replays, modelos privados ni credenciales embebidas. Se retiró el flujo de empaquetar secretos dentro del ejecutable. El historial original contiene una configuración con API_KEY: rota esa clave antes de compartir el historial existente. La copia tiene código sin `.git`.
 
-| Pestaña | Función |
-|---------|---------|
-| Mi Perfil | Nombre, nivel, ligas, maestrías, historial (selector de cola SoloQ/Flex + estado emocional), WR por línea y campeón, gráfica de LP |
-| Coaching Pro | Reporte personalizado: tablero de métricas, fortalezas/debilidades, hábitos y filosofía; umbrales configurables + export HTML |
-| Radar en Vivo | Draft en tiempo real: counters, runas, hechizos, items, bans, WR 5v5 |
-| Partida en Vivo | Datos de la partida en curso y resumen post-partida |
-| Meta & Builds | Matchups y builds óptimas |
-| Simulador 1v1 | ML + datos reales + consejos tácticos |
-| Tier List de Bans | Bans contextuales por ELO, mínimo de partidas y prioridad (global o personal) |
+## Límites
+Las recomendaciones son heurísticas; no se afirma precisión predictiva ni mejora de victorias. El entrenamiento/inferencia completa de modelos y el proxy no se validaron. Datos e imágenes de Riot conservan sus derechos: [documentación Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon).
 
-## Arquitectura
-
-`app.py` es el punto de entrada y orquestador (ventana principal). La interfaz
-vive en el paquete `ui/` y cada pestaña es un *mixin* que `LoLRecommenderApp`
-combina por herencia. La lógica de dominio vive en `src/`.
-
-El acceso a datos pasa por un **backend proxy** vía HTTP (`src/backend_client.py`),
-y las llamadas a la **API de Riot** se enrutan a través de una **Supabase Edge
-Function** (`riot-proxy`) que custodia la API key. Ya no hay backend Python propio
-ni conexiones directas a la API de Riot desde el cliente.
-
-```
-├── app.py                # Ventana principal (orquestador): __init__, señales, timers, __main__
-├── setup.py              # Descarga inicial de datos/modelos
-├── build_exe.ps1         # Compila el .exe (PyInstaller)
-├── ui/                   # Capa de interfaz (PySide6)
-│   ├── contexto.py       # Superficie compartida: imports y datos cargados una vez
-│   ├── design.py         # Paleta de color NEXUS (Rojo + Oro)
-│   ├── theme_qss.py      # Hoja de estilos global (QSS)
-│   ├── helpers.py        # Utilidades y datos puros (settings, jungla, matchups)
-│   ├── dialogs/          # settings_dialog, lp_graph, postgame_dialog
-│   └── tabs/             # Una pestaña = un mixin (perfil, coaching, vivo, partida, counters, ia, bans)
-├── src/
-│   ├── backend_client.py # Cliente HTTP del backend proxy + Riot vía Supabase Edge Function
-│   ├── db_manager.py     # PostgreSQL (Supabase) con pool de conexiones
-│   ├── recomendador.py   # Algoritmos de recomendación
-│   ├── coach.py          # Generación del reporte de Coaching Pro
-│   ├── lcu_api.py        # Conexión con el cliente de LoL (LCU + Live Client)
-│   ├── motor_ia.py / entrenador_ia.py  # Modelo ML (Random Forest)
-│   ├── roles.py, theme.py, paths.py, config.py  # Centralización (roles, paleta, rutas, config)
-│   └── overlay.py, logros.py, discord_rpc.py, ...  # Módulos auxiliares
-├── plans/                # Planes de mejora priorizados (skill /improve)
-├── assets/               # Iconos (auto-descargados por Data Dragon)
-└── data/                 # Modelos y datos descargados por setup.py
-```
-
-## Desarrollo
-
-```bash
-python app.py        # ejecutar la app
-python tests.py      # 11 tests (deben pasar 11/11)
-powershell ./build_exe.ps1   # compilar el ejecutable (Windows)
-```
-
-- Base de datos: **PostgreSQL** (Supabase) a través de un pool de conexiones en `src/db_manager.py`. Las consultas usan `obtener_conexion()`; nunca abras psycopg2 directo. Detalles de la migración en [docs/migracion-supabase.md](docs/migracion-supabase.md).
-- Tema: lo define el QSS propio (`ui/theme_qss.py` + `ui/design.py`). Identidad **Rojo + Oro** sobre fondo oscuro cálido. Reutiliza las constantes de color, no hardcodees hex nuevos.
-- Concurrencia: el trabajo bloqueante (red/BD) corre en hilos que emiten señales Qt (`Signal` + `threading.Thread` + `.emit()`); ver `_fetch_perfil` / `_inicializar_db_background`.
-
-## Notas
-
-- El arranque inicializa la BD en segundo plano: la ventana aparece al instante.
-- La primera ejecución descarga automáticamente los iconos de Data Dragon.
-- El Radar y la Partida en vivo requieren tener League of Legends abierto.
-- La BD y el proxy de la API de Riot viven en **Supabase**; la API key de Riot queda del lado del servidor (Edge Function), no en el cliente.
-- No subas tu `config.json` a GitHub (ya está en `.gitignore`).
+English: desktop API integration, asynchronous network work and relational persistence; 25 isolated offline checks. Complete Qt/proxy integration remains to be exercised.

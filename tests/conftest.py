@@ -83,3 +83,14 @@ def mock_db(monkeypatch):
     yield adaptador
     adaptador.close()
     conn.close()
+
+
+@pytest.fixture(autouse=True)
+def offline_only(monkeypatch):
+    """No external requests or credentials during portfolio checks."""
+    import requests
+    from src import coach
+    monkeypatch.setattr(coach, '_CHAMP_ID_TO_NAME', {})
+    def blocked(*args, **kwargs):
+        raise RuntimeError('Red deshabilitada en pruebas de portafolio')
+    monkeypatch.setattr(requests.sessions.Session, 'request', blocked)

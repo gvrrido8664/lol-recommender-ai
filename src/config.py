@@ -23,7 +23,7 @@ BASE_DIR = _obtener_dir_base()
 DATA_DIR = _obtener_dir_datos()
 
 # ─── Supabase Storage (modelos IA) ─────────────────────────────────────────
-SUPABASE_PROJECT_URL = "https://qqtxohmqkdlupuexgjuf.supabase.co"
+SUPABASE_PROJECT_URL = os.environ.get("SUPABASE_PROJECT_URL", "http://127.0.0.1:8000")
 STORAGE_MODELOS_URL = f"{SUPABASE_PROJECT_URL}/storage/v1/object/public/nexus-ml"
 
 
@@ -42,23 +42,7 @@ def cargar_config():
     except Exception:
         config = {}
 
-    # Secretos embebidos cifrados (API_KEY, DATABASE_URL): en distribucion no van en
-    # texto plano en config.json, sino en secretos.bin dentro del bundle (regenerado con
-    # las credenciales ACTUALES en cada build). Se descifran solo en memoria.
-    #   - En dev (no frozen): rellenan lo que falte (no hay secretos.bin, suele ser no-op);
-    #     gana el config.json del usuario para que pueda usar una API key propia.
-    #   - En distribucion (frozen): GANAN sobre el config.json en disco, porque un
-    #     config.json viejo en %APPDATA% (de un build anterior a una rotacion) tapaba la
-    #     credencial correcta. El override por env var DATABASE_URL se respeta en
-    #     db_manager._obtener_db_url (prioriza el entorno). Ver src/secretos.py.
-    try:
-        from src.secretos import cargar_secretos_embebidos
-
-        frozen = getattr(sys, "frozen", False)
-        for clave, valor in cargar_secretos_embebidos().items():
-            if valor and (frozen or not config.get(clave)):
-                config[clave] = valor
-    except Exception:
-        pass
-
+    for key in ['API_KEY','DATABASE_URL','NEXUS_BACKEND_URL','NEXUS_APP_TOKEN','NEXUS_EDGE_URL']:
+        if os.environ.get(key):
+            config[key] = os.environ[key]
     return config

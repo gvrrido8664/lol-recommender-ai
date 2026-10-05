@@ -1,84 +1,30 @@
-# Entornos virtuales
-venv/
-.venv/
-env/
-
-# Cache de Python
-__pycache__/
-*.pyc
-*.pyo
-*.spec
-!build_nexus.spec
-
-# Datos descargados por setup.py
-data/*.db
-data/*.db-shm
-data/*.db-wal
-data/*.pkl
-data/*.json
-data/*.txt
-
-# Datos temporales de setup
-datos_iniciales.zip
-
-# Logs de la app
-*.log
-*.log.*
-
-# Configuracion local (API keys, preferencias de usuario)
+.env
+.env.*
+!.env.example
 config.json
-
-# Blob de secretos cifrados generado en build-time (no commitear)
 secretos.bin
-
-# Assets descargados por Data Dragon
-assets/items/*.png
-assets/champs/*.png
-assets/spells/*.png
-assets/runas/*.png
-assets/profile_icons/*.png
-
-# Builds de PyInstaller
-distribucion/
-build_temp/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Sistema operativo
-.DS_Store
-Thumbs.db
-
-# Cache de linting
-.mypy_cache/
-.ruff_cache/
-
-# Builds de PyInstaller (onedir)
-build_onedir/
+*.pem
+*.key
+*.db
+*.sqlite*
+*.pkl
+*.joblib
+*.log
+*.pyc
+__pycache__/
+.venv/
+venv/
+node_modules/
+.next/
 dist/
+build/
+.dart_tool/
+.wrangler/
+.local-/data/
+/data/
+/models/
 
-# Instalador
-installer_output/
-test_install/
-installer.iss
-!installer.iss
-
-# Iconos / assets fuente
-Icono_app.jpg
-icono_app.ico
-
-# Version
-version.txt
-app_version.txt
-
-# Cache de temporada (runtime)
-season_cache_*.json
-ui/tabs/data/
-
-coaching_cache.json
-
-# Migracion: URL temporal de Supabase (secreto)
-supabase_url.txt
+!/data/
+/data/*
+!/data/*.json
+!/data/version_local.txt

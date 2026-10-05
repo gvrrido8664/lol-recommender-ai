@@ -19,7 +19,7 @@ log = get_logger(__name__)
 _cfg = cargar_config()
 URL_BASE = os.environ.get("NEXUS_BACKEND_URL", _cfg.get("NEXUS_BACKEND_URL", "http://localhost:8000"))
 TOKEN = os.environ.get("NEXUS_APP_TOKEN", _cfg.get("NEXUS_APP_TOKEN", ""))
-EDGE_URL = os.environ.get("NEXUS_EDGE_URL", _cfg.get("NEXUS_EDGE_URL", "https://qqtxohmqkdlupuexgjuf.supabase.co/functions/v1/riot-proxy"))
+EDGE_URL = os.environ.get("NEXUS_EDGE_URL", _cfg.get("NEXUS_EDGE_URL", "http://127.0.0.1:8000/functions/v1/riot-proxy"))
 
 
 def _headers():
